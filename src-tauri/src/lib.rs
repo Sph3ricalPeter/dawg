@@ -1,3 +1,6 @@
+mod audio;
+mod commands;
+
 use serde::Serialize;
 use tauri::Manager;
 
@@ -34,11 +37,16 @@ fn app_info(app: tauri::AppHandle) -> AppInfo {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(commands::AppState::new(commands::file_from_args(
+            std::env::args_os().skip(1),
+        )))
         .setup(|app| {
             if is_release(app.handle()) {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
+            commands::prune_backups(app.handle());
             if let Some(window) = app.get_webview_window("main") {
                 if !is_release(app.handle()) {
                     window.set_title("dawg dev")?;
@@ -46,7 +54,25 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_info])
+        .invoke_handler(tauri::generate_handler![
+            app_info,
+            commands::startup_file,
+            commands::open_file,
+            commands::session_state,
+            commands::apply,
+            commands::end_gesture,
+            commands::undo,
+            commands::redo,
+            commands::peaks,
+            commands::play,
+            commands::stop,
+            commands::transport,
+            commands::save_preview,
+            commands::replace_original,
+            commands::save_as,
+            commands::last_replace,
+            commands::restore_last_replace,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running dawg");
 }

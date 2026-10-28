@@ -87,3 +87,30 @@ fn process_does_not_allocate() {
         }
     }
 }
+
+#[test]
+fn player_fill_does_not_allocate_or_free() {
+    use dawg_core::player::{player, PlayerMsg};
+
+    for scene in common::scenes() {
+        for device_rate in [scene.project.sample_rate, 44_100] {
+            let (mut player, mut handle) = player(scene.project.clone(), device_rate, 2);
+            let mut buf = vec![0.0f32; 480 * 2];
+            // Swapping in a new snapshot hands the old one back instead of
+            // freeing it in the callback.
+            let next = std::sync::Arc::new((*scene.project).clone());
+            handle.send(PlayerMsg::Project(next));
+            handle.send(PlayerMsg::Play {
+                from: 0,
+                to: scene.frames as u64,
+            });
+            assert_no_alloc(scene.name, || {
+                for _ in 0..20 {
+                    player.fill(&mut buf);
+                }
+            });
+            handle.send(PlayerMsg::Stop);
+            assert_no_alloc(scene.name, || player.fill(&mut buf));
+        }
+    }
+}

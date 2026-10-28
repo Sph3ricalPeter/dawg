@@ -9,6 +9,7 @@
 pub mod command;
 mod model;
 pub mod peaks;
+pub mod player;
 mod render;
 pub mod save;
 pub mod session;

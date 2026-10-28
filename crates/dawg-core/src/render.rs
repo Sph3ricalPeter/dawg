@@ -28,6 +28,16 @@ impl Renderer {
         self.pos = pos;
     }
 
+    pub fn project(&self) -> &Arc<Project> {
+        &self.project
+    }
+
+    /// Plays `project` from now on and hands back the previous snapshot, so
+    /// the caller decides which thread frees it.
+    pub fn swap_project(&mut self, project: Arc<Project>) -> Arc<Project> {
+        std::mem::replace(&mut self.project, project)
+    }
+
     /// Fills `out` (interleaved stereo) with the next frames and advances.
     pub fn process(&mut self, out: &mut [f32]) {
         debug_assert_eq!(out.len() % OUT_CHANNELS, 0);
