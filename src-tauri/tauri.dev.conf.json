@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "dawg dev",
+  "identifier": "com.sph3ricalpeter.dawg.dev",
+  "bundle": {
+    "createUpdaterArtifacts": false
+  }
+}

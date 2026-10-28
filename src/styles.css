@@ -1,0 +1,233 @@
+/* Tokens from the design mockup (design/mockup.html). */
+:root {
+  --page: #050505;
+  --bg-0: #0d0d0d;
+  --bg-1: #141414;
+  --bg-2: #0a0a0a;
+  --bg-3: #191919;
+  --bg-4: #242424;
+  --line: #1e1e1e;
+  --line-strong: #262626;
+  --text: #ececec;
+  --text-dim: #a3a3a3;
+  --text-faint: #6b6b6b;
+  --accent: #e8e8e8;
+  --accent-ink: #0b0b0b;
+  --ok: #3fd46a;
+  --danger: #ff4d4d;
+  --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text);
+  font: 12px/1.4 var(--font);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* title bar */
+.titlebar {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line);
+}
+.tleft,
+.tright {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.tfill {
+  flex: 1;
+  height: 100%;
+}
+
+.menu-wrap {
+  position: relative;
+}
+.logo {
+  height: 24px;
+  margin-left: 4px;
+  padding: 0 7px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+.logo:hover,
+.logo.open {
+  background: var(--bg-4);
+}
+.logo .mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.logo .car {
+  font-size: 8px;
+  color: var(--text-faint);
+  margin-left: -1px;
+}
+.pill {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--text-faint);
+  color: var(--text-dim);
+}
+
+.menu {
+  position: absolute;
+  top: 28px;
+  left: 4px;
+  z-index: 10;
+  min-width: 230px;
+  padding: 4px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line-strong);
+  margin-bottom: 4px;
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-4);
+}
+.menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* update indicator */
+.upd {
+  height: 20px;
+  margin-right: 8px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+button.upd {
+  cursor: pointer;
+}
+.upd-ready {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.upd-ready .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.upd-error {
+  color: var(--danger);
+}
+.upd-error:hover {
+  background: var(--bg-4);
+}
+
+/* window controls */
+.winctl {
+  display: flex;
+  height: 100%;
+}
+.winctl button {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+}
+.winctl button:hover {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.winctl button.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.winctl svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+/* arrangement (empty until M1) */
+.arrangement {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  background: var(--bg-2);
+}
+.empty {
+  margin: 0;
+}

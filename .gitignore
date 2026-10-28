@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+
+# Tauri generated schemas
+src-tauri/gen/
+
+# Environment
+.env
+.env.*
+
+# Signing keys never belong in the repo
+*.key
+
+# Claude Code local state (release.md and settings.json are committed)
+.claude/settings.local.json
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

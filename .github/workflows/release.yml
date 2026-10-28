@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-notes:
+    name: Generate release notes
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build release notes from commits
+        id: notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          # Top 5 conventional-commit subjects: features first, then fixes.
+          FEATURES=$(git log $RANGE --pretty=format:"%s" --grep="^feat" -i | head -5)
+          FIXES=$(git log $RANGE --pretty=format:"%s" --grep="^fix" -i | head -5)
+
+          ITEMS=""
+          COUNT=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            [ $COUNT -ge 5 ] && break
+            ITEMS="${ITEMS}- ${line}\n"
+            COUNT=$((COUNT + 1))
+          done <<< "$FEATURES"$'\n'"$FIXES"
+
+          if [ -z "$ITEMS" ]; then
+            ITEMS="- Various improvements and maintenance updates\n"
+          fi
+
+          {
+            echo "body<<RELEASE_EOF"
+            echo "## What's new in ${TAG}"
+            echo ""
+            echo -e "$ITEMS"
+            echo "---"
+            echo ""
+            echo "Installed copies update themselves. For a fresh install, download \`dawg_*_x64-setup.exe\`."
+            echo "Windows SmartScreen may warn on the first install since the installer is unsigned: More info, then Run anyway."
+            echo "RELEASE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Windows x64
+    needs: release-notes
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check version and updater key
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match tauri.conf.json version ${VERSION}"
+            exit 1
+          fi
+          if grep -q "REPLACE_WITH_UPDATER_PUBLIC_KEY" src-tauri/tauri.conf.json; then
+            echo "::error::plugins.updater.pubkey in tauri.conf.json is still the placeholder"
+            exit 1
+          fi
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "::error::The TAURI_SIGNING_PRIVATE_KEY repo secret is missing"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "dawg ${{ github.ref_name }}"
+          releaseBody: ${{ needs.release-notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
