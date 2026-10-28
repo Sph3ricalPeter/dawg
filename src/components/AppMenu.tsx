@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AppInfo } from "@/lib/app-info";
+import { openFileDialog, restoreLastReplace, saveAsDialog, showReplaceDialog } from "@/lib/actions";
+import { useSession } from "@/stores/session-store";
 import { useUpdaterStore } from "@/stores/updater-store";
 import { DawgMark } from "./DawgMark";
 
@@ -22,7 +24,7 @@ function updateLine(status: string, lastChecked: number | null): string {
   }
 }
 
-/** The logo button and its menu. File and edit items join it in M1. */
+/** The logo button and its menu. */
 export function AppMenu({ info }: { info: AppInfo | null }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -46,6 +48,21 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
   }, [open]);
 
   const canCheck = status === "idle" || status === "error";
+  const hasFile = useSession((s) => !!s.session);
+  const item = (label: string, keys: string, run: () => void, disabled = false) => (
+    <button
+      className="menu-item"
+      role="menuitem"
+      disabled={disabled}
+      onClick={() => {
+        setOpen(false);
+        run();
+      }}
+    >
+      {label}
+      {keys && <kbd>{keys}</kbd>}
+    </button>
+  );
 
   return (
     <div className="menu-wrap" ref={ref}>
@@ -61,6 +78,11 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
             <b>dawg {info?.version}</b>
             <span className="faint">{updateLine(status, lastChecked)}</span>
           </div>
+          {item("Open…", "Ctrl+O", () => void openFileDialog())}
+          {item("Replace original…", "Ctrl+S", showReplaceDialog, !hasFile)}
+          {item("Save as new file…", "Ctrl+Shift+S", () => void saveAsDialog(), !hasFile)}
+          {item("Restore last replace", "", () => void restoreLastReplace())}
+          <div className="menu-sep" />
           <button
             className="menu-item"
             role="menuitem"

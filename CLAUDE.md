@@ -11,7 +11,11 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 
 - `crates/dawg-core`: headless project model and mixer. No UI, no device I/O.
   The app, the future `dawg-cli` and the MCP server all drive it.
-- `src-tauri`: the Tauri app crate (`dawg`). Commands, plugins, installer config.
+  `wav` (format-preserving RIFF codec), `save` (safe replace and backups),
+  `command` (edits as serde data), `session` (one-file scratch session with
+  undo), `player` (the audio callback minus the device), `peaks`.
+- `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
+  `audio.rs` (cpal output), plugins, installer config.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
   `src/styles.css`; zustand stores in `src/stores`.
 - `.github/workflows`: `ci.yml` (checks, tests, Windows "dawg dev" installer
@@ -32,8 +36,16 @@ npm run build:dev   # local installable "dawg dev" build
 - **Real-time path**: `Renderer::process` and anything the audio callback
   calls never allocates, locks or blocks. `crates/dawg-core/tests/realtime.rs`
   enforces no allocation; extend it when you add to the path.
-- **One render path**: playback and export both go through
-  `Renderer::process`, so what you hear is what you export.
+- **One render path**: playback and mixdown export both go through
+  `Renderer::process`, so what you hear is what you export. The one
+  exception is saving an edited WAV (`wav::WavFile::render_clip`): it keeps
+  the file's own format and copies untouched sample bytes, using the same
+  `Clip::gain_at` as the renderer; `golden.rs::saved_file_matches_playback`
+  holds the two together.
+- **Never damage a user's file**: writes over an existing file go through
+  `save::replace` (verified temp, backup, `ReplaceFileW`). An untouched
+  file must save byte-identical and a crop must be a slice of the source
+  bytes; `wav.rs` tests enforce both.
 - **Golden renders**: `crates/dawg-core/tests/golden.rs` compares scenes with
   WAVs in `tests/golden/`. A mismatch means the sound changed. Re-bless with
   `DAWG_BLESS=1 cargo test -p dawg-core --test golden` only when that was the
