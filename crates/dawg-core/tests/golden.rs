@@ -119,3 +119,50 @@ fn chunked_playback_matches_offline_render() {
         assert_eq!(chunked, whole, "{}", scene.name);
     }
 }
+
+/// The WAV a session saves holds what playback renders for that clip.
+#[test]
+fn saved_file_matches_playback() {
+    use dawg_core::wav::{encode_simple, WavFile, WavFormat};
+    use std::sync::Arc;
+
+    let format = WavFormat {
+        channels: 2,
+        sample_rate: common::RATE,
+        bits: 32,
+        container_bytes: 4,
+        float: true,
+    };
+    let signal: Vec<f64> = common::triangle(8000, 101, 0.8)
+        .into_iter()
+        .map(f64::from)
+        .collect();
+    let file = WavFile::parse(encode_simple(format, &signal)).unwrap();
+    let source = Arc::new(file.decode());
+    let clip = dawg_core::Clip {
+        offset: 500,
+        len: 3000,
+        gain: 1.4,
+        fade_in: 300,
+        fade_out: 900,
+        ..dawg_core::Clip::new(source, 500)
+    };
+    let project = Arc::new(dawg_core::Project {
+        sample_rate: common::RATE,
+        tracks: vec![dawg_core::Track {
+            clips: vec![clip.clone()],
+            ..Default::default()
+        }],
+    });
+    let played = render(project, clip.start, clip.len as usize);
+    let saved = WavFile::parse(file.render_clip(&clip).unwrap())
+        .unwrap()
+        .decode();
+    assert_eq!(saved.samples().len(), played.len());
+    for (i, (a, b)) in saved.samples().iter().zip(&played).enumerate() {
+        assert!(
+            (a - b).abs() <= TOLERANCE,
+            "sample {i}: saved {a}, played {b}"
+        );
+    }
+}

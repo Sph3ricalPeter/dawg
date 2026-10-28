@@ -117,5 +117,23 @@ pub fn scenes() -> Vec<Scene> {
             }),
             frames: 4800,
         },
+        Scene {
+            name: "fades_and_gain",
+            project: Arc::new(Project {
+                sample_rate: RATE,
+                tracks: vec![Track {
+                    clips: vec![Clip {
+                        offset: 300,
+                        len: 3000,
+                        gain: 0.7,
+                        fade_in: 480,
+                        fade_out: 1200,
+                        ..Clip::new(stereo(&triangle(4000, 97, 0.9), &noise(4000, 5, 0.5)), 1000)
+                    }],
+                    ..Track::default()
+                }],
+            }),
+            frames: 4800,
+        },
     ]
 }

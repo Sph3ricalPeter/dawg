@@ -45,9 +45,15 @@ impl Renderer {
                 if start >= end {
                     continue;
                 }
-                let gain = clip.gain * track.gain;
+                let unity = clip.is_unity();
                 for t in start..end {
-                    let (l, r) = clip.source.frame(clip.offset + t - clip.start);
+                    let rel = t - clip.start;
+                    let (l, r) = clip.source.frame(clip.offset + rel);
+                    let gain = if unity {
+                        track.gain
+                    } else {
+                        (clip.gain_at(rel) as f32) * track.gain
+                    };
                     let i = (t - from) as usize * OUT_CHANNELS;
                     out[i] += l * gain;
                     out[i + 1] += r * gain;
