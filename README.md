@@ -33,7 +33,8 @@ install. CI also uploads this installer as an artifact on every push.
 
 ## Release
 
-Work lands on `dev`; `main` only moves at release time. The user-level
+Work is committed straight to `dev` (no pull requests); `main` only moves at
+release time. The user-level
 `release` skill reads [`.claude/release.md`](.claude/release.md), bumps the
 version, fast-forwards `main` and pushes a `vX.Y.Z` tag. The tag runs
 `.github/workflows/release.yml`, which builds and signs the installer and

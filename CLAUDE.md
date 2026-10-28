@@ -40,8 +40,11 @@ npm run build:dev   # local installable "dawg dev" build
   intent, and say so in the commit.
 - **Test signals** use integer arithmetic only (no `sin`) so goldens match on
   every platform.
-- **Branches**: work on `dev` (or a feature branch into `dev`). `main` is
-  release-only, fast-forwarded by the release skill.
+- **No PRs, fast iteration**: Peter doesn't review code. Commit and push
+  straight to `dev`; don't open pull requests or use feature branches. You
+  are the reviewer: run the checks below and make CI green before moving on.
+  Releases are checkpoints cut from `dev` with the user-level release skill
+  (`.claude/release.md`); `main` only moves at release time, fast-forwarded.
 - **Commits**: conventional (`feat:`, `fix:`, `refactor:`, `chore:` …); release
   notes are built from `feat`/`fix` subjects.
 - **Updates reach every install**, so `.dawg` format changes stay additive and

@@ -24,7 +24,8 @@ Bump commit message: `chore: bump version to <x.y.z>` (no `release:` prefix;
 release notes are built from `feat`/`fix` subjects only).
 
 ## Branch and deploy
-Work happens on `dev`. Releases ship from `main`, fast-forward only:
+Work is committed straight to `dev`, no pull requests. Releases ship from
+`main`, fast-forward only:
 ```bash
 git checkout main && git merge dev --ff-only   # refuses? fetch; still refuses → investigate, never force
 git tag -a v<x.y.z> -m "dawg v<x.y.z>"
