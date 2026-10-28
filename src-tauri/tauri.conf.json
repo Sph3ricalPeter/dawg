@@ -31,7 +31,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_WITH_UPDATER_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0MTJBQURCMEUxRjRCNEQKUldSTlN4OE8yNm9TeEJpUDFPZFpaTjZFa0RKS0lQUWkra2VlQjErajN6RTJ5Qmg1dXpsOFlwMnUK",
       "endpoints": [
         "https://github.com/Sph3ricalPeter/dawg/releases/latest/download/latest.json"
       ],
