@@ -2,7 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, apiMessage, isApiError } from "./api";
-import { dirOf } from "./format";
+import { dirOf, stem } from "./format";
 import { useSession } from "@/stores/session-store";
 
 const WAV = { name: "WAV audio", extensions: ["wav", "wave"] };
@@ -13,10 +13,33 @@ export function isAudio(path: string): boolean {
   return /\.(wave?|mp3)$/i.test(path);
 }
 
-/** Open a WAV or MP3 (asks before dropping unsaved edits). */
-export function openPath(path: string) {
+/** Open a WAV or MP3 (asks before dropping unsaved edits). Any further
+ * files go onto tracks of their own. */
+export function openPath(path: string, more: string[] = []) {
   const s = useSession.getState();
-  s.guard("open another file", () => void s.open(path));
+  s.guard("open another file", () => {
+    void s.open(path).then(() => {
+      if (more.length && useSession.getState().session?.path === path) {
+        void useSession.getState().importFiles(more, { track: null, start: 0 });
+      }
+    });
+  });
+}
+
+/** Add files to the open session, each on a new track at the playhead. */
+export async function addFilesDialog() {
+  if (!isTauri()) return;
+  const s = useSession.getState();
+  const picked = await open({
+    multiple: true,
+    directory: false,
+    filters: OPEN_FILTERS,
+    defaultPath: s.session ? dirOf(s.session.path) : undefined,
+  });
+  const paths = Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+  if (!paths.length) return;
+  if (!s.session) openPath(paths[0], paths.slice(1));
+  else await s.importFiles(paths, { track: null, start: s.playhead });
 }
 
 export async function openFileDialog() {
@@ -55,17 +78,23 @@ async function replaceOriginal(): Promise<boolean> {
 }
 
 /**
- * Export the edit through the system save dialog. It starts on the original
- * file, so Save there asks (in the dialog itself) whether to replace it;
- * that path goes through the safe replace with a backup. The file type
- * picks WAV or MP3; the file's own format comes first.
+ * Export the edit through the system save dialog. For a plain edit of the
+ * original it starts on that file, so Save there asks (in the dialog itself)
+ * whether to replace it; that path goes through the safe replace with a
+ * backup. A mixdown of several clips starts on "<name> mix" instead. The file
+ * type picks WAV or MP3; the original's format comes first.
  */
 export async function exportDialog(): Promise<boolean> {
   const s = useSession.getState();
   if (!s.session || !isTauri()) return false;
   await s.stop();
   const filters = s.session.codec === "mp3" ? [MP3, WAV] : [WAV, MP3];
-  const path = await save({ filters, defaultPath: s.session.path });
+  // Just the original file's clip saves over it by default; a mix starts as
+  // a new file next to it, so the original isn't replaced by accident.
+  const original = s.session.path;
+  const ext = s.session.codec === "mp3" ? "mp3" : "wav";
+  const defaultPath = s.session.simple ? original : `${dirOf(original)}${stem(s.session.name)} mix.${ext}`;
+  const path = await save({ filters, defaultPath });
   if (!path) return false;
   useSession.setState({ busy: "Saving…" });
   try {

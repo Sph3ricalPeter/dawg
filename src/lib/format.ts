@@ -1,4 +1,4 @@
-import type { ClipState, WavFormat } from "./api";
+import type { ClipState, EnvPoint, WavFormat } from "./api";
 
 export const MIN_GAIN_DB = -96;
 export const MAX_GAIN_DB = 24;
@@ -11,13 +11,26 @@ export function dbToGain(db: number): number {
 }
 
 /** Same as `Clip::fade_at` in dawg-core: frame `i` of the clip. */
-export function fadeAt(clip: ClipState, i: number): number {
+export function fadeAt(clip: Pick<ClipState, "len" | "fadeIn" | "fadeOut">, i: number): number {
   let f = 1;
   if (i < clip.fadeIn) f *= i / clip.fadeIn;
   if (clip.fadeOut > 0 && i >= clip.len - clip.fadeOut) {
     f *= Math.max(0, clip.len - (i + 1)) / clip.fadeOut;
   }
   return f;
+}
+
+/** Same as `Clip::envelope_at` in dawg-core: gain at source frame `at`. */
+export function envelopeAt(env: EnvPoint[], at: number): number {
+  if (!env.length) return 1;
+  if (at <= env[0].at) return env[0].gain;
+  const last = env[env.length - 1];
+  if (at >= last.at) return last.gain;
+  let k = 1;
+  while (env[k].at <= at) k++;
+  const a = env[k - 1];
+  const b = env[k];
+  return a.gain + ((b.gain - a.gain) * (at - a.at)) / (b.at - a.at);
 }
 
 /** "0:01.250" */

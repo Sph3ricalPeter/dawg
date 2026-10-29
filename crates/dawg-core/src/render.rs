@@ -45,10 +45,12 @@ impl Renderer {
         let frames = (out.len() / OUT_CHANNELS) as u64;
         let (from, to) = (self.pos, self.pos + frames);
 
+        let any_solo = self.project.tracks.iter().any(|t| t.solo);
         for track in &self.project.tracks {
-            if track.muted {
+            if track.muted || (any_solo && !track.solo) {
                 continue;
             }
+            let (gl, gr) = track.side_gains();
             for clip in &track.clips {
                 let start = clip.start.max(from);
                 let end = clip.end().min(to);
@@ -59,14 +61,10 @@ impl Renderer {
                 for t in start..end {
                     let rel = t - clip.start;
                     let (l, r) = clip.source.frame(clip.offset + rel);
-                    let gain = if unity {
-                        track.gain
-                    } else {
-                        (clip.gain_at(rel) as f32) * track.gain
-                    };
+                    let g = if unity { 1.0 } else { clip.gain_at(rel) as f32 };
                     let i = (t - from) as usize * OUT_CHANNELS;
-                    out[i] += l * gain;
-                    out[i + 1] += r * gain;
+                    out[i] += l * (g * gl);
+                    out[i + 1] += r * (g * gr);
                 }
             }
         }

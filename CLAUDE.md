@@ -14,8 +14,11 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   `wav` (format-preserving RIFF codec), `mp3` (Symphonia decode, LAME
   encode, gapless, tags kept), `file` (WAV or MP3 behind one type, and
   converting between them), `save` (safe replace and backups),
-  `command` (edits as serde data), `session` (one-file scratch session with
-  undo), `player` (the audio callback minus the device), `peaks`.
+  `command` (edits as serde data; tracks and clips by stable id), `session`
+  (the session opened from a file, plus files added onto other tracks, with
+  undo; exports the original's format while it is one clip, else a
+  mixdown), `resample` (offline rate conversion for added files), `player`
+  (the audio callback minus the device), `peaks`.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output), plugins, installer config.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in

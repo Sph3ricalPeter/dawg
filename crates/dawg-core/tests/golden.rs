@@ -147,13 +147,13 @@ fn saved_file_matches_playback() {
         fade_out: 900,
         ..dawg_core::Clip::new(source, 500)
     };
-    let project = Arc::new(dawg_core::Project {
-        sample_rate: common::RATE,
-        tracks: vec![dawg_core::Track {
+    let project = Arc::new(dawg_core::Project::with_tracks(
+        common::RATE,
+        vec![dawg_core::Track {
             clips: vec![clip.clone()],
             ..Default::default()
         }],
-    });
+    ));
     let played = render(project, clip.start, clip.len as usize);
     let saved = WavFile::parse(file.render_clip(&clip).unwrap())
         .unwrap()

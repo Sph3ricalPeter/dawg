@@ -13,12 +13,13 @@ pub mod mp3;
 pub mod peaks;
 pub mod player;
 mod render;
+pub mod resample;
 pub mod save;
 pub mod session;
 pub mod wav;
 
-pub use command::{ClipRef, Command, CommandError};
-pub use model::{Clip, Project, Source, Track};
+pub use command::{Command, CommandError};
+pub use model::{Clip, EnvPoint, Project, Source, Track, ENV_MAX};
 pub use render::{render, Renderer, OUT_CHANNELS};
 pub use session::Session;
 

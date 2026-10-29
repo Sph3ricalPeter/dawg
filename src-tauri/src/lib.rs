@@ -75,6 +75,7 @@ pub fn run() {
             commands::end_gesture,
             commands::undo,
             commands::redo,
+            commands::import_files,
             commands::peaks,
             commands::play,
             commands::stop,

@@ -1,213 +1,537 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, type ClipState, type SessionState } from "@/lib/api";
+import { api, type ClipState, type EnvPoint, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
-import { clamp, dbToGain, fadeAt, fmtDb, fmtMs, stem } from "@/lib/format";
-import { MIN_LEN, timelineEnd, useClip, useSession, type View } from "@/stores/session-store";
+import { clamp, dbToGain, envelopeAt, fadeAt, fmtDb, fmtMs, stem } from "@/lib/format";
+import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
+import { MIN_LEN, allClips, useSession, type View } from "@/stores/session-store";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
 const EDGE = 6;
-/** A moved clip snaps to the start of the timeline within this many pixels. */
+/** A moved clip snaps to other clips' edges, 0 and the playhead within this
+ * many pixels (Alt skips it). */
 const SNAP_PX = 8;
-const CLIP_COLOR = "#ee9f98";
+/** The envelope line takes clicks this many pixels either side of it. */
+const ENV_BAND = 4;
+
+/** `hex` scaled towards black by `k` (0 to 1). */
+function shade(hex: string, k: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (v: number) => Math.round(v * k);
+  return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`;
+}
 
 interface Peaks {
-  view: View;
-  width: number;
-  key: string;
+  /** Source frame of the first bucket, and frames per bucket. */
+  from: number;
+  per: number;
   data: Float32Array;
 }
 
-/** Peaks for what's on screen, refetched when the view or the file changes.
- * `shift` is the timeline frame of the source's first frame; the peaks keep
- * source frames in `view`, so a clip being dragged still lines up. */
-function usePeaks(session: SessionState | null, view: View, width: number, shift: number): Peaks | null {
-  const [peaks, setPeaks] = useState<Peaks | null>(null);
+/** Min/max peaks over source frames `from..to`, refetched when they change. */
+function usePeaks(source: number, from: number, to: number, buckets: number): Peaks | null {
+  const [peaks, setPeaks] = useState<(Peaks & { key: string }) | null>(null);
   const fileRev = useSession((s) => s.fileRev);
-  const key = session ? `${session.path}:${fileRev}` : "";
+  const key = `${source}:${fileRev}`;
+  const a = Math.max(0, Math.floor(from));
+  const z = Math.max(a + 1, Math.ceil(to));
+  const n = Math.max(1, Math.ceil(buckets));
   useEffect(() => {
-    if (!key) return;
     let live = true;
-    const src = { ...view, start: view.start - shift };
-    const to = src.start + width * view.fpp;
     const raf = requestAnimationFrame(() => {
-      void api.peaks(Math.max(0, src.start), Math.max(0, to), Math.ceil(width)).then((data) => {
-        if (live) setPeaks({ view: { ...src, start: Math.max(0, src.start) }, width, key, data });
-      });
+      void api
+        .peaks(source, a, z, n)
+        .then((data) => {
+          if (live) setPeaks({ key, from: a, per: (z - a) / n, data });
+        })
+        .catch(() => undefined);
     });
     return () => {
       live = false;
       cancelAnimationFrame(raf);
     };
-  }, [key, view, width, shift]);
+  }, [key, source, a, z, n]);
   return peaks && peaks.key === key ? peaks : null;
 }
 
-function draw(
-  canvas: HTMLCanvasElement,
-  width: number,
-  height: number,
-  view: View,
-  clip: ClipState,
-  frames: number,
-  peaks: Peaks | null,
-) {
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
-  const x = canvas.getContext("2d");
-  if (!x) return;
-  x.setTransform(dpr, 0, 0, dpr, 0, 0);
-  x.clearRect(0, 0, width, height);
-
-  const px = (f: number) => (f - view.start) / view.fpp;
-  const cx0 = px(clip.start);
-  const cx1 = px(clip.start + clip.len);
-  const top = 2;
-  const bottom = height - 3;
-  const waveTop = top + TITLE_H;
-  const mid = (waveTop + bottom) / 2;
-  const half = (bottom - waveTop) / 2 - 2;
-  // Timeline frame of the source's first frame.
-  const shift = clip.start - clip.offset;
-  const fileStart = px(shift);
-  const fileEnd = px(shift + frames);
-
-  // The clip body.
-  x.fillStyle = "#a9706b";
-  x.fillRect(cx0, top, cx1 - cx0, bottom - top);
-
-  if (!peaks) return;
-  // Peaks were fetched for a slightly older view while scrolling: map by frame.
-  const pv = peaks.view;
-  const gain = dbToGain(clip.gainDb);
-  const cut = "rgba(255,255,255,.13)";
-  const ghost = "rgba(16,16,16,.2)";
-  const ink = "rgba(16,16,16,.8)";
-  const over: number[] = [];
-
-  // Zoomed out, draw a smoothed amplitude outline like the mockup; zoomed in,
-  // the real min/max so single cycles show.
-  const outline = view.fpp > 24;
-  const lo = new Float32Array(width);
-  const hi = new Float32Array(width);
-  const state = new Int8Array(width); // 0 none, 1 cut away, 2 in clip
-  const gains = new Float32Array(width);
-  for (let i = 0; i < width; i++) {
-    const f0 = view.start + i * view.fpp;
-    const f1 = f0 + view.fpp;
-    if (f0 - shift >= frames) break;
-    if (f1 - shift <= 0) continue;
-    const b = Math.floor((f0 - shift - pv.start) / pv.fpp);
-    if (b < 0 || b >= peaks.width) continue;
-    lo[i] = peaks.data[2 * b];
-    hi[i] = peaks.data[2 * b + 1];
-    if (outline) {
-      const a = Math.max(Math.abs(lo[i]), Math.abs(hi[i]));
-      lo[i] = -a;
-      hi[i] = a;
-    }
-    const inClip = f1 > clip.start && f0 < clip.start + clip.len;
-    state[i] = inClip ? 2 : 1;
-    if (inClip) {
-      const rel = clamp((f0 + f1) / 2 - clip.start, 0, clip.len - 1);
-      gains[i] = gain * fadeAt(clip, rel);
-    }
+/** Peak amplitude (min, max) of the source frames one pixel covers. */
+function peakAt(peaks: Peaks, f0: number, f1: number): [number, number] | null {
+  const b0 = Math.floor((f0 - peaks.from) / peaks.per);
+  const b1 = Math.max(b0, Math.ceil((f1 - peaks.from) / peaks.per) - 1);
+  let lo = 0;
+  let hi = 0;
+  let any = false;
+  for (let b = Math.max(0, b0); b <= b1 && b < peaks.data.length / 2; b++) {
+    lo = Math.min(lo, peaks.data[2 * b]);
+    hi = Math.max(hi, peaks.data[2 * b + 1]);
+    any = true;
   }
-  if (outline) {
-    // Light smoothing over ±2 px, as the mockup draws it.
-    const a = Float32Array.from(hi);
-    for (let i = 0; i < width; i++) {
-      let m = 0;
-      let k = 0;
-      for (let j = Math.max(0, i - 2); j <= Math.min(width - 1, i + 2); j++) {
-        if (state[j] === state[i]) {
+  return any ? [lo, hi] : null;
+}
+
+function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  const x = canvas.getContext("2d");
+  x?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x?.clearRect(0, 0, w, h);
+  return x;
+}
+
+/** Waveform, fades and envelope of one clip, `w` px wide starting at timeline
+ * frame `f0`. */
+function drawClip(
+  canvas: HTMLCanvasElement,
+  w: number,
+  h: number,
+  clip: ClipState,
+  f0: number,
+  fpp: number,
+  peaks: Peaks | null,
+  showEnv: boolean,
+) {
+  const x = setupCanvas(canvas, w, h);
+  if (!x) return;
+  const mid = h / 2;
+  const half = h / 2 - 2;
+  const gain = dbToGain(clip.gainDb);
+  const over: number[] = [];
+  if (peaks) {
+    // Zoomed out, a smoothed outline like the mockup; zoomed in, the real
+    // min/max so single cycles show.
+    const outline = fpp > 24;
+    const lo = new Float32Array(w);
+    const hi = new Float32Array(w);
+    const gains = new Float32Array(w);
+    for (let i = 0; i < w; i++) {
+      const t0 = f0 + i * fpp;
+      const rel0 = t0 - clip.start;
+      const p = peakAt(peaks, clip.offset + rel0, clip.offset + rel0 + fpp);
+      if (!p) continue;
+      [lo[i], hi[i]] = p;
+      if (outline) {
+        const a = Math.max(-lo[i], hi[i]);
+        lo[i] = -a;
+        hi[i] = a;
+      }
+      const rel = clamp(rel0 + fpp / 2, 0, clip.len - 1);
+      gains[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, clip.offset + rel);
+    }
+    if (outline) {
+      const a = Float32Array.from(hi);
+      for (let i = 0; i < w; i++) {
+        let m = 0;
+        let k = 0;
+        for (let j = Math.max(0, i - 2); j <= Math.min(w - 1, i + 2); j++) {
           m += a[j];
           k++;
         }
+        hi[i] = m / k;
+        lo[i] = -hi[i];
       }
-      hi[i] = k ? m / k : a[i];
-      lo[i] = -hi[i];
     }
-  }
-
-  const bar = (i: number, l: number, h: number) =>
-    x.fillRect(i, mid - h * half, 1, Math.max(1, (h - l) * half));
-  for (let i = 0; i < width; i++) {
-    if (state[i] === 0) continue;
-    if (state[i] === 1) {
-      // Audio the trim cuts away, so you can see what you're losing.
-      x.fillStyle = cut;
+    const bar = (i: number, l: number, hh: number) => x.fillRect(i, mid - hh * half, 1, Math.max(1, (hh - l) * half));
+    for (let i = 0; i < w; i++) {
+      x.fillStyle = "rgba(16,16,16,.2)";
       bar(i, lo[i], hi[i]);
-      continue;
+      const plo = lo[i] * gains[i];
+      const phi = hi[i] * gains[i];
+      x.fillStyle = "rgba(16,16,16,.8)";
+      bar(i, Math.max(-1, plo), Math.min(1, phi));
+      if (phi > 1 || plo < -1) over.push(i);
     }
-    x.fillStyle = ghost;
-    bar(i, lo[i], hi[i]);
-    const g = gains[i];
-    const plo = lo[i] * g;
-    const phi = hi[i] * g;
-    x.fillStyle = ink;
-    bar(i, Math.max(-1, plo), Math.min(1, phi));
-    if (phi > 1 || plo < -1) over.push(i);
   }
-
   // Anything over full scale.
   x.fillStyle = "#ff4d4d";
   for (const i of over) {
-    x.fillRect(i, waveTop + 1, 1, 2);
-    x.fillRect(i, bottom - 3, 1, 2);
+    x.fillRect(i, 1, 1, 2);
+    x.fillRect(i, h - 3, 1, 2);
   }
 
   // Fades: shade outside the diagonal.
+  const px = (f: number) => (f - f0) / fpp;
+  const cx0 = px(clip.start);
+  const cx1 = px(clip.start + clip.len);
   x.fillStyle = "rgba(0,0,0,.28)";
   x.strokeStyle = "rgba(0,0,0,.4)";
   x.lineWidth = 1;
-  if (clip.fadeIn > 0) {
-    const fx = px(clip.start + clip.fadeIn);
+  const fade = (edge: number, inner: number) => {
     x.beginPath();
-    x.moveTo(cx0, waveTop);
-    x.lineTo(fx, waveTop);
-    x.lineTo(cx0, bottom);
+    x.moveTo(edge, 0);
+    x.lineTo(inner, 0);
+    x.lineTo(edge, h);
     x.closePath();
     x.fill();
     x.beginPath();
-    x.moveTo(cx0, bottom);
-    x.lineTo(fx, waveTop);
+    x.moveTo(edge, h);
+    x.lineTo(inner, 0);
     x.stroke();
-  }
-  if (clip.fadeOut > 0) {
-    const fx = px(clip.start + clip.len - clip.fadeOut);
-    x.beginPath();
-    x.moveTo(cx1, waveTop);
-    x.lineTo(fx, waveTop);
-    x.lineTo(cx1, bottom);
-    x.closePath();
-    x.fill();
-    x.beginPath();
-    x.moveTo(cx1, bottom);
-    x.lineTo(fx, waveTop);
-    x.stroke();
-  }
+  };
+  if (clip.fadeIn > 0) fade(cx0, px(clip.start + clip.fadeIn));
+  if (clip.fadeOut > 0) fade(cx1, px(clip.start + clip.len - clip.fadeOut));
 
-  // Start and end of the file.
-  x.fillStyle = "rgba(255,255,255,.06)";
-  if (fileStart > 0 && fileStart < width) x.fillRect(fileStart, 0, 1, height);
-  if (fileEnd < width) x.fillRect(fileEnd, 0, 1, height);
+  // The envelope line.
+  if (showEnv) {
+    x.strokeStyle = "rgba(18,18,18,.88)";
+    x.lineWidth = 1.5;
+    x.beginPath();
+    for (let i = 0; i <= w; i += 2) {
+      const rel = clamp(f0 + i * fpp - clip.start, 0, clip.len - 1);
+      const y = envY(envelopeAt(clip.envelope, clip.offset + rel), h);
+      if (i === 0) x.moveTo(i, y);
+      else x.lineTo(i, y);
+    }
+    x.stroke();
+  }
 }
 
-/** The one track of a scratch session: the clip and everything on it. */
-export function Lane() {
-  const session = useSession((s) => s.session);
-  const clip = useClip();
+/** The source audio a trim leaves out, drawn faintly behind the clip. */
+function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; width: number; height: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const frames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? 0);
+  const shift = clip.start - clip.offset;
+  const x0 = clamp((shift - view.start) / view.fpp, 0, width);
+  const x1 = clamp((shift + frames - view.start) / view.fpp, 0, width);
+  const w = Math.ceil(x1 - x0);
+  const f0 = view.start + x0 * view.fpp;
+  const peaks = usePeaks(clip.source, f0 - shift, f0 - shift + w * view.fpp, w);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c || w <= 0) return;
+    const h = height - TITLE_H - 5;
+    const x = setupCanvas(c, w, h);
+    if (!x || !peaks) return;
+    x.fillStyle = "rgba(255,255,255,.13)";
+    for (let i = 0; i < w; i++) {
+      const t = f0 + i * view.fpp;
+      if (t + view.fpp > clip.start && t < clip.start + clip.len) continue;
+      const p = peakAt(peaks, t - shift, t - shift + view.fpp);
+      if (!p) continue;
+      const a = Math.max(-p[0], p[1]);
+      x.fillRect(i, h / 2 - a * (h / 2 - 2), 1, Math.max(1, 2 * a * (h / 2 - 2)));
+    }
+  }, [w, height, peaks, f0, view.fpp, shift, clip.start, clip.len]);
+  if (w <= 0) return null;
+  return <canvas ref={ref} className="ghostcv" style={{ left: x0, top: 2 + TITLE_H }} />;
+}
+
+/** Timeline frames worth snapping to: 0, the playhead and every other clip's
+ * edges. */
+function snapPoints(exclude: number): number[] {
+  const s = useSession.getState();
+  const out = [0, s.playhead];
+  if (s.session) {
+    for (const { clip } of allClips(s.session)) {
+      if (clip.id !== exclude) out.push(clip.start, clip.start + clip.len);
+    }
+  }
+  return out;
+}
+
+/** The track a pointer is over, by the lane under it. */
+function trackAt(x: number, y: number): number | null {
+  const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-track]");
+  return el ? Number(el.dataset.track) : null;
+}
+
+interface ClipProps {
+  clip: ClipState;
+  track: TrackState;
+  color: string;
+  height: number;
+  view: View;
+  width: number;
+  selected: boolean;
+  /** Timeline frame for a pointer x. */
+  toFrame: (clientX: number) => number;
+}
+
+function ClipView({ clip, track, color, height, view, width, selected, toFrame }: ClipProps) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const envEdit = useSession((s) => s.envEdit);
+  const rate = useSession((s) => s.session?.rate ?? 48_000);
+  const sourceFrames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? clip.len);
+  const sourceName = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.name ?? "");
+
+  const px = (f: number) => (f - view.start) / view.fpp;
+  const x0 = px(clip.start);
+  const x1 = px(clip.start + clip.len);
+  // Keep the element a sane size when zoomed far in.
+  const left = Math.max(x0, -EDGE - 2);
+  const right = Math.min(x1, width + EDGE + 2);
+  const w = Math.max(0, Math.round(right - left));
+  const f0 = view.start + left * view.fpp;
+  const waveH = Math.max(8, height - TITLE_H - 5);
+  const peaks = usePeaks(clip.source, clip.offset + f0 - clip.start, clip.offset + f0 - clip.start + w * view.fpp, w);
+
+  useEffect(() => {
+    if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
+  }, [w, waveH, clip, f0, view.fpp, peaks, envEdit]);
+
+  if (w <= 0) return null;
+  const store = useSession.getState;
+
+  const sendMove = (c0: ClipState, start: number, trackId: number) =>
+    store().drag({ type: "move_clip", clip: c0.id, track: trackId, start }, { kind: "clip", track: trackId, clip: { ...c0, start } });
+
+  /** y of the envelope at a pointer x, in px from the top of the wave area. */
+  const envYAt = (clientX: number) => {
+    const rel = clamp(toFrame(clientX) - clip.start, 0, clip.len - 1);
+    return envY(envelopeAt(clip.envelope, clip.offset + rel), waveH);
+  };
+
+  /** Drag envelope point `i` of `pts` (already holding the new point, if
+   * one was just added). */
+  const dragPoint = (e: React.PointerEvent | PointerEvent, pts: EnvPoint[], i: number, added: boolean) => {
+    const c0 = clip;
+    const top = body.current!.getBoundingClientRect().top + TITLE_H;
+    const lo = Math.max(c0.offset, i > 0 ? pts[i - 1].at + 1 : 0);
+    const hi = Math.min(c0.offset + c0.len - 1, i < pts.length - 1 ? pts[i + 1].at - 1 : Infinity);
+    const send = (p: EnvPoint) => {
+      const next = pts.slice();
+      next[i] = p;
+      store().drag({ type: "set_envelope", clip: c0.id, points: next }, { kind: "clip", track: track.id, clip: { ...c0, envelope: next } });
+    };
+    if (added) send(pts[i]);
+    startDrag(e, {
+      move: (_dx, _dy, ev) => {
+        const at = Math.round(clamp(toFrame(ev.clientX) - c0.start + c0.offset, lo, hi));
+        let gain = clamp((1 - (ev.clientY - top - 1) / (waveH - 2)) * ENV_MAX, 0, ENV_MAX);
+        if (!ev.altKey && Math.abs(gain - 1) < 0.04) gain = 1;
+        send({ at, gain });
+      },
+      end: () => void store().commit(),
+    });
+  };
+
+  const onBody = (e: React.PointerEvent) => {
+    if (e.button === 2) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    const r = body.current!.getBoundingClientRect();
+    const y = e.clientY - r.top - TITLE_H;
+    // The envelope line: click adds a point and drags it.
+    if (envEdit && !ctrl && y >= 0 && Math.abs(y - envYAt(e.clientX)) <= ENV_BAND) {
+      const at = Math.round(clamp(toFrame(e.clientX) - clip.start, 0, clip.len - 1) + clip.offset);
+      const g = envelopeAt(clip.envelope, at);
+      let pts = clip.envelope.filter((p) => p.at !== at);
+      if (!pts.length) {
+        // A fresh envelope starts flat across the clip.
+        const first = clip.offset;
+        const last = clip.offset + clip.len - 1;
+        pts = [{ at: first, gain: g }, { at: last, gain: g }].filter((p) => p.at !== at);
+      }
+      pts.push({ at, gain: g });
+      pts.sort((a, b) => a.at - b.at);
+      store().select(clip.id);
+      dragPoint(e, pts, pts.findIndex((p) => p.at === at), true);
+      return;
+    }
+    const c0 = clip;
+    const a = toFrame(e.clientX);
+    if (ctrl) {
+      // Ctrl+drag picks a range; Ctrl+click toggles the selection.
+      startDrag(e, {
+        move: (_dx, _dy, ev) => {
+          const b = toFrame(ev.clientX);
+          store().setRange({ a: Math.min(a, b), b: Math.max(a, b) });
+        },
+        end: (moved) => {
+          if (!moved) store().select(c0.id, true);
+        },
+      });
+      return;
+    }
+    store().select(c0.id);
+    const snaps = snapPoints(c0.id);
+    let target = track.id;
+    startDrag(e, {
+      move: (dx, _dy, ev) => {
+        let start = Math.max(0, c0.start + Math.round(dx * view.fpp));
+        if (!ev.altKey) {
+          const tol = SNAP_PX * view.fpp;
+          let best = tol;
+          let snapped = start;
+          for (const p of snaps) {
+            for (const [d, s] of [
+              [Math.abs(p - start), p],
+              [Math.abs(p - (start + c0.len)), p - c0.len],
+            ]) {
+              if (d < best && s >= 0) {
+                best = d;
+                snapped = s;
+              }
+            }
+          }
+          start = snapped;
+        }
+        target = trackAt(ev.clientX, ev.clientY) ?? target;
+        sendMove(c0, start, target);
+      },
+      end: (moved) => {
+        if (moved) void store().commit();
+        else {
+          store().setRange(null);
+          store().setPlayhead(a);
+        }
+      },
+    });
+  };
+
+  const onEdge = (side: "l" | "r") => (e: React.PointerEvent) => {
+    const c0 = clip;
+    store().select(c0.id);
+    startDrag(e, {
+      move: (dx) => {
+        const d = Math.round(dx * view.fpp);
+        let next: ClipState;
+        if (side === "l") {
+          const first = Math.max(0, c0.start - c0.offset);
+          const start = clamp(c0.start + d, first, c0.start + c0.len - MIN_LEN);
+          const shift = start - c0.start;
+          next = { ...c0, start, offset: c0.offset + shift, len: c0.len - shift };
+        } else {
+          next = { ...c0, len: clamp(c0.len + d, MIN_LEN, sourceFrames - c0.offset) };
+        }
+        store().drag(
+          { type: "trim_clip", clip: c0.id, start: next.start, offset: next.offset, len: next.len },
+          { kind: "clip", track: track.id, clip: next, ghost: true },
+        );
+      },
+      end: () => void store().commit(),
+    });
+  };
+
+  const fades = (fadeIn: number, fadeOut: number) =>
+    ({ type: "set_clip_fades", clip: clip.id, fade_in: fadeIn, fade_out: fadeOut }) as const;
+  const onFade = (side: "in" | "out") => (e: React.PointerEvent) => {
+    const c0 = clip;
+    startDrag(e, {
+      move: (dx) => {
+        const d = Math.round(dx * view.fpp);
+        const fi = side === "in" ? clamp(c0.fadeIn + d, 0, c0.len - c0.fadeOut) : c0.fadeIn;
+        const fo = side === "out" ? clamp(c0.fadeOut - d, 0, c0.len - c0.fadeIn) : c0.fadeOut;
+        store().drag(fades(fi, fo), { kind: "clip", track: track.id, clip: { ...c0, fadeIn: fi, fadeOut: fo } });
+      },
+      end: () => void store().commit(),
+    });
+  };
+
+  const fadeInX = clamp(px(clip.start + clip.fadeIn) - left, 0, w - EDGE);
+  const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left - EDGE, 0, w - EDGE);
+  const points = envEdit
+    ? clip.envelope
+        .map((p, i) => ({ p, i, x: px(clip.start + p.at - clip.offset) - left }))
+        .filter(({ p }) => p.at >= clip.offset && p.at < clip.offset + clip.len)
+    : [];
+
+  return (
+    <div
+      ref={body}
+      className={`clip${selected ? " sel" : ""}${track.muted ? " muted" : ""}`}
+      style={{ left, width: w, ["--c" as string]: color, background: shade(color, 0.71) }}
+      onPointerDown={onBody}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        void store().deleteClips([clip.id]);
+      }}
+      data-hint="Drag to move the clip, onto other tracks too (it snaps to clip edges, 0 and the playhead; Alt skips the snap) · click the envelope line to add a point · right-click deletes"
+    >
+      <div className="ct">
+        <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
+          {stem(sourceName)}
+        </span>
+        <GainReadout clip={clip} track={track.id} className="gain" />
+      </div>
+      <canvas ref={canvas} className="clipcv" />
+      {x0 >= -EDGE && <div className="edge l" onPointerDown={onEdge("l")} data-hint="Drag to trim the start" />}
+      {x1 <= width + EDGE && <div className="edge r" onPointerDown={onEdge("r")} data-hint="Drag to trim the end" />}
+      <div
+        className={`fh${clip.fadeIn > 0 ? " on" : ""}`}
+        style={{ left: fadeInX }}
+        onPointerDown={onFade("in")}
+        onDoubleClick={() => void store().apply(fades(0, clip.fadeOut))}
+        data-hint={`Fade in ${fmtMs(clip.fadeIn, rate)} · drag to change, double-click to remove`}
+      />
+      <div
+        className={`fh${clip.fadeOut > 0 ? " on" : ""}`}
+        style={{ left: fadeOutX }}
+        onPointerDown={onFade("out")}
+        onDoubleClick={() => void store().apply(fades(clip.fadeIn, 0))}
+        data-hint={`Fade out ${fmtMs(clip.fadeOut, rate)} · drag to change, double-click to remove`}
+      />
+      {points.map(({ p, i, x }) => (
+        <div
+          key={i}
+          className="ep"
+          style={{ left: clamp(x, 3, w - 3), top: TITLE_H + envY(p.gain, waveH) }}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            store().select(clip.id);
+            dragPoint(e, clip.envelope, i, false);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void store().apply({ type: "set_envelope", clip: clip.id, points: clip.envelope.filter((_, k) => k !== i) });
+          }}
+          onDoubleClick={() =>
+            void store().apply({
+              type: "set_envelope",
+              clip: clip.id,
+              points: clip.envelope.map((q, k) => (k === i ? { ...q, gain: 1 } : q)),
+            })
+          }
+          data-hint={`Envelope ${fmtDb(20 * Math.log10(Math.max(p.gain, 1e-6)))} · drag to move (Alt skips the 0 dB snap) · right-click deletes · double-click for 0 dB`}
+        />
+      ))}
+      {w > 60 && height > 60 && <GainReadout clip={clip} track={track.id} className="gh" />}
+    </div>
+  );
+}
+
+/** Clip gain, FL style: drag up or down, double-click for 0 dB. */
+export function GainReadout({ clip, track, className }: { clip: ClipState; track: number; className: string }) {
+  const onDown = (e: React.PointerEvent) => {
+    const g0 = clip.gainDb <= -96 ? -60 : clip.gainDb;
+    const store = useSession.getState();
+    startDrag(e, {
+      move: (_dx, dy, ev) => {
+        const step = ev.shiftKey ? 0.03 : 0.15;
+        let db = Math.round(clamp(g0 - dy * step, -60, 24) * 10) / 10;
+        if (!ev.altKey && Math.abs(db) < 0.45) db = 0;
+        const gainDb = db <= -60 ? -96 : db;
+        store.drag({ type: "set_clip_gain", clip: clip.id, gain_db: gainDb }, { kind: "clip", track, clip: { ...clip, gainDb } });
+      },
+      end: () => void store.commit(),
+    });
+  };
+  return (
+    <span
+      className={className}
+      onPointerDown={onDown}
+      onDoubleClick={() => void useSession.getState().apply({ type: "set_clip_gain", clip: clip.id, gain_db: 0 })}
+      data-hint="Clip gain · drag up or down (Shift for fine, Alt skips the 0 dB snap) · double-click for 0 dB"
+    >
+      {fmtDb(clip.gainDb, false)}
+    </span>
+  );
+}
+
+/** One track's lane: its clips, the range and the playhead. */
+export function Lane({ track, index }: { track: TrackState; index: number }) {
   const view = useSession((s) => s.view);
   const width = useSession((s) => s.width);
   const playhead = useSession((s) => s.playhead);
   const range = useSession((s) => s.range);
   const playing = useSession((s) => s.playing);
+  const selected = useSession((s) => s.selected);
+  const draft = useSession((s) => s.draft);
   const ref = useRef<HTMLDivElement>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const [height, setHeight] = useState(300);
-  const peaks = usePeaks(session, view, width, clip ? clip.start - clip.offset : 0);
+  const [height, setHeight] = useState(96);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -220,28 +544,10 @@ export function Lane() {
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (canvas.current && clip && session) {
-      draw(canvas.current, width, height, view, clip, session.frames, peaks);
-    }
-  }, [width, height, view, clip, session, peaks]);
-
-  useWheel(ref);
-
-  if (!session || !clip) return <div className="lane" ref={ref} />;
-
-  const rate = session.format.sampleRate;
-  const px = (f: number) => (f - view.start) / view.fpp;
   const toFrame = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
-    return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session));
+    return Math.max(0, view.start + (clientX - r.left) * view.fpp);
   };
-  const x0 = px(clip.start);
-  const x1 = px(clip.start + clip.len);
-  // Keep the clip element a sane size when zoomed far in.
-  const left = Math.max(x0, -EDGE - 2);
-  const right = Math.min(x1, width + EDGE + 2);
-  const w = right - left;
 
   const onBackground = (e: React.PointerEvent) => {
     const a = toFrame(e.clientX);
@@ -253,6 +559,7 @@ export function Lane() {
       },
       end: (moved) => {
         if (!moved) {
+          store.select(null);
           store.setRange(null);
           store.setPlayhead(a);
         }
@@ -260,174 +567,37 @@ export function Lane() {
     });
   };
 
-  /** Drag the clip along the timeline; it snaps to 0 (Alt skips the snap).
-   * Ctrl+drag picks a range instead, and a plain click places the playhead. */
-  const onBody = (e: React.PointerEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      onBackground(e);
-      return;
-    }
-    const c0 = clip;
-    const a = toFrame(e.clientX);
-    const store = useSession.getState();
-    startDrag(e, {
-      move: (dx, _dy, ev) => {
-        let start = Math.max(0, c0.start + Math.round(dx * view.fpp));
-        if (!ev.altKey && start / view.fpp < SNAP_PX) start = 0;
-        store.drag({ ...c0, start });
-      },
-      end: (moved) => {
-        if (moved) void store.commit();
-        else {
-          store.setRange(null);
-          store.setPlayhead(a);
-        }
-      },
-    });
-  };
-
-  const onEdge = (side: "l" | "r") => (e: React.PointerEvent) => {
-    const c0 = clip;
-    const store = useSession.getState();
-    startDrag(e, {
-      move: (dx) => {
-        const d = Math.round(dx * view.fpp);
-        if (side === "l") {
-          const first = Math.max(0, c0.start - c0.offset);
-          const start = clamp(c0.start + d, first, c0.start + c0.len - MIN_LEN);
-          const shift = start - c0.start;
-          store.drag({ ...c0, start, offset: c0.offset + shift, len: c0.len - shift });
-        } else {
-          const len = clamp(c0.len + d, MIN_LEN, session.frames - c0.offset);
-          store.drag({ ...c0, len });
-        }
-      },
-      end: () => void store.commit(),
-    });
-  };
-
-  const onFade = (side: "in" | "out") => (e: React.PointerEvent) => {
-    const c0 = clip;
-    const store = useSession.getState();
-    startDrag(e, {
-      move: (dx) => {
-        const d = Math.round(dx * view.fpp);
-        if (side === "in") {
-          store.drag({ ...c0, fadeIn: clamp(c0.fadeIn + d, 0, c0.len - c0.fadeOut) });
-        } else {
-          store.drag({ ...c0, fadeOut: clamp(c0.fadeOut - d, 0, c0.len - c0.fadeIn) });
-        }
-      },
-      end: () => void store.commit(),
-    });
-  };
-
-  const fadeInX = clamp(px(clip.start + clip.fadeIn) - left, 0, w - EDGE);
-  const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left - EDGE, 0, w - EDGE);
+  const px = (f: number) => (f - view.start) / view.fpp;
   const phX = px(playhead);
+  const ghost = draft?.kind === "clip" && draft.ghost && draft.track === track.id ? draft.clip : null;
+  const color = trackColor(index);
 
   return (
-    <div className="lane" ref={ref} onPointerDown={onBackground} data-hint="Click to place the playhead · drag to pick a range, then Ctrl+T crops to it">
-      <canvas ref={canvas} className="lanecv" />
-      {w > 0 && (
-        <div
-          className="clip sel"
-          style={{ left, width: w, ["--c" as string]: CLIP_COLOR }}
-          onPointerDown={onBody}
-          data-hint="Drag to move the clip (it snaps to 0, Alt skips the snap) · Ctrl+drag picks a range · drag its edges to trim"
-        >
-          <div className="ct">
-            <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
-              {stem(session.name)}
-            </span>
-            <GainReadout clip={clip} className="gain" />
-          </div>
-          {x0 >= -EDGE && (
-            <div className="edge l" onPointerDown={onEdge("l")} data-hint="Drag to trim the start" />
-          )}
-          {x1 <= width + EDGE && (
-            <div className="edge r" onPointerDown={onEdge("r")} data-hint="Drag to trim the end" />
-          )}
-          <div
-            className={`fh${clip.fadeIn > 0 ? " on" : ""}`}
-            style={{ left: fadeInX }}
-            onPointerDown={onFade("in")}
-            onDoubleClick={() =>
-              void useSession.getState().apply({ type: "set_clip_fades", track: 0, clip: 0, fade_in: 0, fade_out: clip.fadeOut })
-            }
-            title={`Fade in ${fmtMs(clip.fadeIn, rate)}`}
-            data-hint={`Fade in ${fmtMs(clip.fadeIn, rate)} · drag to change, double-click to remove`}
-          />
-          <div
-            className={`fh${clip.fadeOut > 0 ? " on" : ""}`}
-            style={{ left: fadeOutX }}
-            onPointerDown={onFade("out")}
-            onDoubleClick={() =>
-              void useSession.getState().apply({ type: "set_clip_fades", track: 0, clip: 0, fade_in: clip.fadeIn, fade_out: 0 })
-            }
-            title={`Fade out ${fmtMs(clip.fadeOut, rate)}`}
-            data-hint={`Fade out ${fmtMs(clip.fadeOut, rate)} · drag to change, double-click to remove`}
-          />
-          {w > 60 && <GainReadout clip={clip} className="gh" />}
-        </div>
-      )}
-      {range && (
-        <div
-          className="rangeov"
-          style={{ left: px(range.a), width: Math.max(1, (range.b - range.a) / view.fpp) }}
+    <div
+      className="lane"
+      ref={ref}
+      data-track={track.id}
+      onPointerDown={onBackground}
+      data-hint="Click to place the playhead · drag to pick a range, then Ctrl+T crops to it"
+    >
+      {ghost && <Ghost clip={ghost} view={view} width={width} height={height} />}
+      {track.clips.map((c) => (
+        <ClipView
+          key={c.id}
+          clip={c}
+          track={track}
+          color={color}
+          height={height}
+          view={view}
+          width={width}
+          selected={selected.includes(c.id)}
+          toFrame={toFrame}
         />
+      ))}
+      {range && (
+        <div className="rangeov" style={{ left: px(range.a), width: Math.max(1, (range.b - range.a) / view.fpp) }} />
       )}
       {(playing || phX > 0) && phX >= 0 && phX <= width && <div className="playhead" style={{ left: phX }} />}
     </div>
   );
-}
-
-/** Clip gain, FL style: drag up or down, double-click for 0 dB. */
-export function GainReadout({ clip, className }: { clip: ClipState; className: string }) {
-  const onDown = (e: React.PointerEvent) => {
-    const g0 = clip.gainDb <= -96 ? -60 : clip.gainDb;
-    const store = useSession.getState();
-    startDrag(e, {
-      move: (_dx, dy, ev) => {
-        const step = ev.shiftKey ? 0.03 : 0.15;
-        let db = Math.round(clamp(g0 - dy * step, -60, 24) * 10) / 10;
-        if (!ev.altKey && Math.abs(db) < 0.45) db = 0;
-        store.drag({ ...clip, gainDb: db <= -60 ? -96 : db });
-      },
-      end: () => void store.commit(),
-    });
-  };
-  return (
-    <span
-      className={className}
-      onPointerDown={onDown}
-      onDoubleClick={() =>
-        void useSession.getState().apply({ type: "set_clip_gain", track: 0, clip: 0, gain_db: 0 })
-      }
-      data-hint="Clip gain · drag up or down (Shift for fine, Alt skips the 0 dB snap) · double-click for 0 dB"
-    >
-      {fmtDb(clip.gainDb, false)}
-    </span>
-  );
-}
-
-/** Ctrl+wheel zooms around the mouse; the wheel scrolls through time. */
-function useWheel(ref: React.RefObject<HTMLDivElement | null>) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const s = useSession.getState();
-      const r = el.getBoundingClientRect();
-      if (e.ctrlKey) {
-        s.zoomAt(e.clientX - r.left, Math.exp(e.deltaY * 0.0025));
-      } else {
-        const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-        s.scrollTo(s.view.start + d * s.view.fpp);
-      }
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [ref]);
 }

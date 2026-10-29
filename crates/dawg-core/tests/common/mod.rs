@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use dawg_core::{Clip, Project, Source, Track};
+use dawg_core::{Clip, EnvPoint, Project, Source, Track};
 
 pub const RATE: u32 = 48_000;
 
@@ -58,20 +58,20 @@ pub fn scenes() -> Vec<Scene> {
     vec![
         Scene {
             name: "mono_clip_offset",
-            project: Arc::new(Project {
-                sample_rate: RATE,
-                tracks: vec![Track {
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![Track {
                     clips: vec![Clip::new(mono(triangle(2400, 109, 0.8)), 600)],
                     ..Track::default()
                 }],
-            }),
+            )),
             frames: 4800,
         },
         Scene {
             name: "two_tracks_overlap",
-            project: Arc::new(Project {
-                sample_rate: RATE,
-                tracks: vec![
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![
                     Track {
                         clips: vec![Clip {
                             gain: 0.5,
@@ -81,7 +81,7 @@ pub fn scenes() -> Vec<Scene> {
                             )
                         }],
                         gain: 0.8,
-                        muted: false,
+                        ..Track::default()
                     },
                     Track {
                         clips: vec![
@@ -91,14 +91,14 @@ pub fn scenes() -> Vec<Scene> {
                         ..Track::default()
                     },
                 ],
-            }),
+            )),
             frames: 4800,
         },
         Scene {
             name: "trim_and_mute",
-            project: Arc::new(Project {
-                sample_rate: RATE,
-                tracks: vec![
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![
                     Track {
                         clips: vec![Clip {
                             offset: 700,
@@ -110,18 +110,18 @@ pub fn scenes() -> Vec<Scene> {
                     },
                     Track {
                         clips: vec![Clip::new(mono(noise(4800, 3, 1.0)), 0)],
-                        gain: 1.0,
                         muted: true,
+                        ..Track::default()
                     },
                 ],
-            }),
+            )),
             frames: 4800,
         },
         Scene {
             name: "fades_and_gain",
-            project: Arc::new(Project {
-                sample_rate: RATE,
-                tracks: vec![Track {
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![Track {
                     clips: vec![Clip {
                         offset: 300,
                         len: 3000,
@@ -132,7 +132,52 @@ pub fn scenes() -> Vec<Scene> {
                     }],
                     ..Track::default()
                 }],
-            }),
+            )),
+            frames: 4800,
+        },
+        Scene {
+            name: "envelope_pan_solo",
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![
+                    Track {
+                        clips: vec![Clip {
+                            offset: 200,
+                            len: 3600,
+                            envelope: Arc::new([
+                                EnvPoint { at: 400, gain: 0.0 },
+                                EnvPoint {
+                                    at: 1600,
+                                    gain: 1.25,
+                                },
+                                EnvPoint {
+                                    at: 3000,
+                                    gain: 0.5,
+                                },
+                            ]),
+                            ..Clip::new(mono(triangle(4000, 83, 0.7)), 600)
+                        }],
+                        pan: -0.5,
+                        solo: true,
+                        ..Track::default()
+                    },
+                    Track {
+                        clips: vec![Clip::new(
+                            stereo(&noise(4800, 13, 0.4), &noise(4800, 17, 0.4)),
+                            0,
+                        )],
+                        gain: 0.7,
+                        pan: 0.75,
+                        solo: true,
+                        ..Track::default()
+                    },
+                    Track {
+                        // Silent: other tracks are soloed.
+                        clips: vec![Clip::new(mono(noise(4800, 19, 1.0)), 0)],
+                        ..Track::default()
+                    },
+                ],
+            )),
             frames: 4800,
         },
     ]

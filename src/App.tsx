@@ -7,6 +7,7 @@ import { Editor } from "@/components/Editor";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@/lib/api";
 import {
+  addFilesDialog,
   exportDialog,
   isAudio,
   openFileDialog,
@@ -24,8 +25,8 @@ function EmptyState({ dropping }: { dropping: boolean }) {
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="1.4">
         <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3" />
       </svg>
-      <h3>Drop a WAV or MP3 file here</h3>
-      <p>It opens on one track so you can trim it, change its gain or fade it, then export it, over the original or as a new file.</p>
+      <h3>Drop WAV or MP3 files here</h3>
+      <p>One file opens on its own track so you can trim it, shape its volume and export it over the original. Drop several and each gets a track; Export mixes them down to one file.</p>
       <div className="row">
         <button className="btn" onClick={() => void openFileDialog()}>
           Open file… <kbd>Ctrl+O</kbd>
@@ -42,14 +43,16 @@ function StatusBar({ hint }: { hint: string }) {
   const session = useSession((s) => s.session);
   const busy = useSession((s) => s.busy);
   const fallback = session
-    ? "Drag the clip to move it · drag its edges to trim · drag across the ruler and press Ctrl+T to crop · Ctrl+S exports"
-    : "Drop a WAV or MP3 file anywhere, or press Ctrl+O";
+    ? "Drag clips to move them · drag edges to trim · click a clip's line for envelope points · drop more files to add tracks · Ctrl+S exports"
+    : "Drop WAV or MP3 files anywhere, or press Ctrl+O";
   return (
     <footer className="status">
       <span className="hint">{busy ?? (hint || fallback)}</span>
       {session && (
         <span className="r">
-          <span>{fmtFormat(session.format, session.kbps)} (from file)</span>
+          <span>
+            {session.simple ? `${fmtFormat(session.format, session.kbps)} (from file)` : `Mixdown at ${session.rate / 1000} kHz`}
+          </span>
         </span>
       )}
     </footer>
@@ -95,21 +98,29 @@ function useShortcuts() {
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
       let handled = true;
-      if (ctrl && k === "o") void openFileDialog();
+      if (ctrl && e.shiftKey && k === "o") void addFilesDialog();
+      else if (ctrl && e.shiftKey && k === "t") void s.addTrack();
+      else if (ctrl && k === "o") void openFileDialog();
       else if (ctrl && (k === "s" || k === "r")) void exportDialog();
       else if (ctrl && (k === "y" || (e.shiftKey && k === "z"))) void s.redo();
       else if (ctrl && k === "z") void s.undo();
       else if (ctrl && k === "t") void s.cropToRange();
+      else if (ctrl && k === "b") void s.duplicateSelected();
+      else if (ctrl && k === "e") void s.splitAtPlayhead();
+      else if (ctrl && k === "a") s.selectAll();
       else if (ctrl && k === "w") requestClose();
       else if (ctrl && (k === "0" || k === "f")) s.fit();
       else if (ctrl && (k === "=" || k === "+")) s.zoomAt(s.width / 2, 0.5);
       else if (ctrl && k === "-") s.zoomAt(s.width / 2, 2);
       else if (!ctrl && e.key === " ") void s.togglePlay();
+      else if (!ctrl && (e.key === "Delete" || e.key === "Backspace")) void s.deleteClips(s.selected);
+      else if (!ctrl && k === "e" && s.session) s.toggleEnvEdit();
       else if (!ctrl && e.key === "Home") {
         void s.stop();
-        s.setPlayhead(s.session?.clip.start ?? 0);
+        s.setPlayhead(0);
       } else if (!ctrl && e.key === "Escape") {
         if (s.range) s.setRange(null);
+        else s.select(null);
       } else handled = false;
       if (handled) e.preventDefault();
     };
@@ -137,23 +148,61 @@ function usePlayheadPolling() {
   }, [playing]);
 }
 
-/** Files dropped on the window open; the close button asks about edits. */
-function useWindowEvents(setDropping: (on: boolean) => void) {
+/** Where a drop at window point (x, y) lands: onto a track at a time, or
+ * onto new tracks. */
+function dropTarget(x: number, y: number): { track: number | null; start: number; over: boolean } {
+  const s = useSession.getState();
+  const el = document.elementFromPoint(x, y);
+  const lane = el?.closest<HTMLElement>(".lane");
+  if (!lane || !s.session) return { track: null, start: 0, over: false };
+  const r = lane.getBoundingClientRect();
+  const start = Math.max(0, Math.round(s.view.start + (x - r.left) * s.view.fpp));
+  const track = lane.dataset.track ? Number(lane.dataset.track) : null;
+  return { track, start, over: true };
+}
+
+export type DropState = { files: number; track: string | null } | null;
+
+/** Dropped files open, or join the open session; the close button asks
+ * about edits. */
+function useWindowEvents(setDrop: (d: DropState) => void) {
   useEffect(() => {
     if (!isTauri()) return;
     const unlisten: Array<() => void> = [];
+    let files = 0;
+    const at = (p: { x: number; y: number }) => {
+      const dpr = window.devicePixelRatio || 1;
+      return dropTarget(p.x / dpr, p.y / dpr);
+    };
+    const trackName = (id: number | null) => {
+      if (id === null) return null;
+      const t = useSession.getState().session?.tracks.find((t) => t.id === id);
+      return t ? t.name || "the track" : null;
+    };
     void getCurrentWebview()
       .onDragDropEvent((e) => {
         const p = e.payload;
-        if (p.type === "over" || p.type === "enter") setDropping(true);
-        else if (p.type === "leave") setDropping(false);
+        if (p.type === "enter") {
+          files = p.paths.filter(isAudio).length;
+          setDrop({ files, track: files === 1 ? trackName(at(p.position).track) : null });
+        } else if (p.type === "over") {
+          setDrop({ files, track: files === 1 ? trackName(at(p.position).track) : null });
+        } else if (p.type === "leave") setDrop(null);
         else if (p.type === "drop") {
-          setDropping(false);
-          const file = p.paths.find(isAudio);
-          if (file) openPath(file);
-          else if (p.paths.length) {
-            useSession.getState().showToast("Only WAV and MP3 files can be opened for now", { error: true });
+          setDrop(null);
+          const audio = p.paths.filter(isAudio);
+          const s = useSession.getState();
+          if (!audio.length) {
+            if (p.paths.length) s.showToast("Only WAV and MP3 files can be added for now", { error: true });
+            return;
           }
+          if (!s.session) {
+            openPath(audio[0], audio.slice(1));
+            return;
+          }
+          const t = at(p.position);
+          // One file goes where it's dropped; several get a track each.
+          void s.importFiles(audio, { track: audio.length === 1 ? t.track : null, start: t.over ? t.start : 0 });
         }
       })
       .then((u) => unlisten.push(u));
@@ -166,7 +215,7 @@ function useWindowEvents(setDropping: (on: boolean) => void) {
       })
       .then((u) => unlisten.push(u));
     return () => unlisten.forEach((u) => u());
-  }, [setDropping]);
+  }, [setDrop]);
 }
 
 /** The window title follows the file, for the taskbar. */
@@ -184,7 +233,8 @@ function useWindowTitle(info: AppInfo | null) {
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [hint, setHint] = useState("");
-  const [dropping, setDropping] = useState(false);
+  const [drop, setDrop] = useState<DropState>(null);
+  const dropping = drop !== null;
   const session = useSession((s) => s.session);
 
   useEffect(() => {
@@ -210,7 +260,7 @@ export function App() {
 
   useShortcuts();
   usePlayheadPolling();
-  useWindowEvents(setDropping);
+  useWindowEvents(setDrop);
   useWindowTitle(info);
 
   const onOver = (e: React.MouseEvent) => {
@@ -223,7 +273,15 @@ export function App() {
       <TitleBar info={info} />
       <main className="arrangement">
         {session ? <Editor /> : <EmptyState dropping={dropping} />}
-        {session && dropping && <div className="dropov">Drop to open this file instead</div>}
+        {session && drop && (
+          <div className="dropbar">
+            {drop.track
+              ? `Drop to add it to ${drop.track} where you let go`
+              : drop.files > 1
+                ? `Drop to add ${drop.files} files, each on a new track`
+                : "Drop to add it on a new track"}
+          </div>
+        )}
       </main>
       <StatusBar hint={hint} />
       <Dialogs />

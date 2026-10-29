@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use dawg_core::file::Codec;
 use dawg_core::save::{self, Replaced};
-use dawg_core::session::{SavePreview, Session, SessionState};
+use dawg_core::session::{Imported, Placement, SavePreview, Session, SessionState};
 use dawg_core::Command;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -153,21 +153,48 @@ pub fn redo(state: State<AppState>) -> Result<SessionState> {
     Ok(s.state().expect("session is open"))
 }
 
-/// `buckets` (min, max) pairs over source frames `from..to`, as little-endian
-/// `f32`s.
+#[derive(Serialize)]
+pub struct ImportResult {
+    state: SessionState,
+    imported: Imported,
+}
+
+/// Adds WAV or MP3 files to the session as clips, in one undo step.
+#[tauri::command]
+pub fn import_files(
+    state: State<AppState>,
+    paths: Vec<PathBuf>,
+    at: Placement,
+) -> Result<ImportResult> {
+    let mut s = state.lock();
+    let imported = s
+        .session()?
+        .import(&paths, at)
+        .map_err(|e| Error::new("command", e.to_string()))?;
+    s.publish();
+    Ok(ImportResult {
+        state: s.state().expect("session is open"),
+        imported,
+    })
+}
+
+/// `buckets` (min, max) pairs over frames `from..to` of a source, as
+/// little-endian `f32`s.
 #[tauri::command]
 pub fn peaks(
     state: State<AppState>,
+    source: u64,
     from: f64,
     to: f64,
     buckets: u32,
 ) -> Result<tauri::ipc::Response> {
     let mut s = state.lock();
     let session = s.session()?;
+    let (audio, peaks) = session
+        .source(source)
+        .ok_or_else(|| Error::new("command", format!("no source {source}")))?;
     let buckets = buckets.min(1 << 16) as usize;
-    let pairs = session
-        .peaks()
-        .query(session.source(), from, to.max(from), buckets);
+    let pairs = peaks.query(audio, from, to.max(from), buckets);
     let mut bytes = Vec::with_capacity(pairs.len() * 8);
     for (lo, hi) in pairs {
         bytes.extend_from_slice(&lo.to_le_bytes());
@@ -244,9 +271,7 @@ pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<
     let codec = Codec::for_path(&path).unwrap_or(session.codec());
     let to_err = |e: dawg_core::session::SessionSaveError| Error::new(e.kind(), e.to_string());
     if path.exists() {
-        let bytes = session
-            .render_file(codec)
-            .map_err(|e| Error::new("format", e.to_string()))?;
+        let bytes = session.render_file(codec).map_err(to_err)?;
         save::replace(&path, &bytes, &backup_dir(&app)?, None)
             .map_err(|e| Error::new(e.kind(), e.to_string()))?;
         Ok(())

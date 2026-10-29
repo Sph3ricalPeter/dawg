@@ -1,7 +1,10 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import type { TrackState } from "@/lib/api";
+import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
-import { clamp, fmtDb, fmtFormat, fmtMs, fmtSeconds, fmtTime, stem } from "@/lib/format";
-import { timelineEnd, useClip, useSession } from "@/stores/session-store";
+import { clamp, fmtDb, fmtMs, fmtSeconds, fmtTime } from "@/lib/format";
+import { timelineEnd, useSession, useTracks } from "@/stores/session-store";
+import { trackColor, useWheel } from "@/lib/timeline";
 import { Lane } from "./Lane";
 
 /** Seconds between ruler labels, picked so labels sit at least ~70 px apart. */
@@ -16,7 +19,7 @@ function Ruler() {
   const ref = useRef<HTMLDivElement>(null);
   if (!session) return <div className="ruler" />;
 
-  const rate = session.format.sampleRate;
+  const rate = session.rate;
   const pxPerSec = rate / view.fpp;
   const step = STEPS.find((s) => s * pxPerSec >= 70) ?? 600;
   const digits = step >= 1 ? 0 : step >= 0.1 ? (step === 0.25 ? 2 : 1) : step >= 0.01 ? 2 : 3;
@@ -40,7 +43,7 @@ function Ruler() {
 
   const toFrame = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
-    return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session));
+    return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session) * 1.5);
   };
   const onDown = (e: React.PointerEvent) => {
     const a = toFrame(e.clientX);
@@ -59,8 +62,8 @@ function Ruler() {
     });
   };
   const onDouble = () => {
-    const c = useSession.getState().session?.clip;
-    if (c) useSession.getState().setRange({ a: c.start, b: c.start + c.len });
+    const s = useSession.getState().session;
+    if (s && s.end > s.start) useSession.getState().setRange({ a: s.start, b: s.end });
   };
 
   const px = (f: number) => (f - view.start) / view.fpp;
@@ -70,7 +73,7 @@ function Ruler() {
       ref={ref}
       onPointerDown={onDown}
       onDoubleClick={onDouble}
-      data-hint="Click to place the playhead · drag for a range · double-click selects the whole clip"
+      data-hint="Click to place the playhead · drag for a range · double-click selects everything"
     >
       {ticks}
       {range && (
@@ -81,45 +84,204 @@ function Ruler() {
   );
 }
 
-function TrackHeader() {
+/** A value dragged up and down, FL style. */
+function DragValue({
+  value,
+  label,
+  hint,
+  step,
+  min,
+  max,
+  onDrag,
+  onReset,
+}: {
+  value: number;
+  label: string;
+  hint: string;
+  step: number;
+  min: number;
+  max: number;
+  onDrag: (v: number, done: boolean) => void;
+  onReset: () => void;
+}) {
+  const onDown = (e: React.PointerEvent) => {
+    const v0 = value;
+    let last = v0;
+    startDrag(e, {
+      move: (_dx, dy, ev) => {
+        last = clamp(v0 - dy * step * (ev.shiftKey ? 0.2 : 1), min, max);
+        onDrag(last, false);
+      },
+      end: (moved) => {
+        if (moved) onDrag(last, true);
+      },
+    });
+  };
+  return (
+    <span className="dv" onPointerDown={onDown} onDoubleClick={onReset} data-hint={hint}>
+      {label}
+    </span>
+  );
+}
+
+function fmtRate(rate: number): string {
+  const khz = rate / 1000;
+  return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`;
+}
+
+function fmtPan(p: number): string {
+  const v = Math.round(p * 100);
+  return v === 0 ? "C" : v < 0 ? `L${-v}` : `R${v}`;
+}
+
+function TrackHeader({ track, index, tall }: { track: TrackState; index: number; tall: boolean }) {
   const session = useSession((s) => s.session);
-  const clip = useClip();
-  if (!session || !clip) return <div className="th" />;
-  const rate = session.format.sampleRate;
-  const cutStart = clip.offset;
-  const cutEnd = session.frames - clip.offset - clip.len;
+  const selected = useSession((s) => s.selected);
+  const [renaming, setRenaming] = useState(false);
+  if (!session) return <div className="th" />;
+  const store = useSession.getState;
+  const mix = (m: { gain_db?: number; pan?: number; muted?: boolean; solo?: boolean }, done: boolean) => {
+    const cmd = { type: "set_track_mix" as const, track: track.id, ...m };
+    if (done) {
+      void store().commit();
+      return;
+    }
+    store().drag(cmd, {
+      kind: "track",
+      track: {
+        ...track,
+        gainDb: m.gain_db ?? track.gainDb,
+        pan: m.pan ?? track.pan,
+      },
+    });
+  };
+  const rate = session.rate;
+  // In a tall track, details of its selected clip (the scratch session's view).
+  const clip = tall ? track.clips.find((c) => selected.includes(c.id)) ?? (track.clips.length === 1 ? track.clips[0] : null) : null;
+  const src = clip ? session.sources.find((s) => s.id === clip.source) : null;
+  const cutStart = clip ? clip.offset : 0;
+  const cutEnd = clip && src ? src.frames - clip.offset - clip.len : 0;
+
   return (
     <div className="th">
       <div className="ti">
         <div className="tn">
-          <span style={{ ["--c" as string]: "#ee9f98" }} title={session.path}>
-            {stem(session.name)}
-          </span>
-        </div>
-        <div className="tinfo">
-          <div className="dim">{fmtFormat(session.format, session.kbps)}</div>
-          <div className="kv">
-            <span>Length</span>
-            <span className="mono">{fmtSeconds(clip.len / rate)}</span>
-            {(cutStart > 0 || cutEnd > 0) && (
-              <>
-                <span>Cut</span>
-                <span className="mono">
-                  {(cutStart / rate).toFixed(3)} + {(cutEnd / rate).toFixed(3)} s
-                </span>
-              </>
-            )}
-            <span>Gain</span>
-            <span className="mono">{fmtDb(clip.gainDb)}</span>
-            <span>Fades</span>
-            <span className="mono">
-              {fmtMs(clip.fadeIn, rate)} · {fmtMs(clip.fadeOut, rate)}
+          {renaming ? (
+            <input
+              className="rn"
+              autoFocus
+              defaultValue={track.name}
+              onBlur={(e) => {
+                setRenaming(false);
+                if (e.target.value.trim() && e.target.value !== track.name) {
+                  void store().apply({ type: "rename_track", track: track.id, name: e.target.value });
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Escape") setRenaming(false);
+              }}
+            />
+          ) : (
+            <span
+              style={{ ["--c" as string]: trackColor(index) }}
+              onDoubleClick={() => setRenaming(true)}
+              data-hint="Double-click to rename"
+            >
+              {track.name || `Track ${index + 1}`}
             </span>
-          </div>
-          {session.truncated && (
-            <div className="warn-note">The file ended early; saving writes a repaired header.</div>
           )}
+          <button
+            className="tx"
+            title="Delete track"
+            onClick={() => {
+              void store()
+                .apply({ type: "delete_track", track: track.id })
+                .then((ok) => {
+                  if (ok) store().showToast(`Deleted ${track.name || "the track"}`, { action: { label: "Undo", run: () => void store().undo() } });
+                });
+            }}
+            data-hint="Delete the track and its clips"
+          >
+            ✕
+          </button>
         </div>
+        <div className="tcl">
+          <button
+            className={`ms m${track.muted ? " on" : ""}`}
+            onClick={() => void store().apply({ type: "set_track_mix", track: track.id, muted: !track.muted })}
+            data-hint="Mute"
+          >
+            M
+          </button>
+          <button
+            className={`ms s${track.solo ? " on" : ""}`}
+            onClick={() => void store().apply({ type: "set_track_mix", track: track.id, solo: !track.solo })}
+            data-hint="Solo"
+          >
+            S
+          </button>
+          <DragValue
+            value={track.gainDb <= -96 ? -60 : track.gainDb}
+            label={fmtDb(track.gainDb)}
+            hint="Track volume · drag up or down (Shift for fine) · double-click for 0 dB"
+            step={0.25}
+            min={-60}
+            max={12}
+            onDrag={(v, done) => {
+              let db = Math.round(v * 10) / 10;
+              if (Math.abs(db) < 0.3) db = 0;
+              mix({ gain_db: db <= -60 ? -96 : db }, done);
+            }}
+            onReset={() => void store().apply({ type: "set_track_mix", track: track.id, gain_db: 0 })}
+          />
+          <DragValue
+            value={track.pan}
+            label={fmtPan(track.pan)}
+            hint="Pan · drag up for right, down for left · double-click to centre"
+            step={0.01}
+            min={-1}
+            max={1}
+            onDrag={(v, done) => {
+              let pan = Math.round(v * 100) / 100;
+              if (Math.abs(pan) < 0.03) pan = 0;
+              mix({ pan }, done);
+            }}
+            onReset={() => void store().apply({ type: "set_track_mix", track: track.id, pan: 0 })}
+          />
+        </div>
+        {clip && src && (
+          <div className="tinfo">
+            <div className="dim">{src.name}</div>
+            <div className="kv">
+              <span>Length</span>
+              <span className="mono">{fmtSeconds(clip.len / rate)}</span>
+              {(cutStart > 0 || cutEnd > 0) && (
+                <>
+                  <span>Cut</span>
+                  <span className="mono">
+                    {(cutStart / rate).toFixed(3)} + {(cutEnd / rate).toFixed(3)} s
+                  </span>
+                </>
+              )}
+              <span>Gain</span>
+              <span className="mono">{fmtDb(clip.gainDb)}</span>
+              <span>Fades</span>
+              <span className="mono">
+                {fmtMs(clip.fadeIn, rate)} · {fmtMs(clip.fadeOut, rate)}
+              </span>
+              {clip.envelope.length > 0 && (
+                <>
+                  <span>Envelope</span>
+                  <span className="mono">{clip.envelope.length} points</span>
+                </>
+              )}
+            </div>
+            {session.truncated && src.path === session.path && (
+              <div className="warn-note">The file ended early; saving writes a repaired header.</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -130,7 +292,7 @@ function Scrollbar() {
   const view = useSession((s) => s.view);
   const width = useSession((s) => s.width);
   if (!session) return <div className="hscroll" />;
-  const total = timelineEnd(session) * 1.03;
+  const total = timelineEnd(session) * 1.5;
   const shown = width * view.fpp;
   if (shown >= total) return <div className="hscroll" />;
   const thumbW = Math.max(24, (shown / total) * width);
@@ -151,16 +313,45 @@ function Scrollbar() {
   );
 }
 
-/** The playlist, cut down to the one track a scratch session edits. */
+/** The playlist: a ruler over the tracks, each a header and a lane. */
 export function Editor() {
+  const session = useSession((s) => s.session);
+  const tracks = useTracks();
+  const ref = useRef<HTMLDivElement>(null);
+  useWheel(ref);
+  if (!session) return null;
+  const tall = tracks.length === 1;
   return (
     <div className="editor">
-      <div className="corner">1 track</div>
+      <div className="corner">
+        {tracks.length} track{tracks.length === 1 ? "" : "s"}
+        <span className="r">{fmtRate(session.rate)}</span>
+      </div>
       <Ruler />
-      <TrackHeader />
-      <Lane />
+      <div className={`tracks${tall ? " one" : ""}`} ref={ref}>
+        {tracks.map((t, i) => (
+          <div className={`trow${t.muted ? " muted" : ""}`} key={t.id}>
+            <TrackHeader track={t} index={i} tall={tall} />
+            <Lane track={t} index={i} />
+          </div>
+        ))}
+        <div className="trow add">
+          <div className="th">
+            <button className="btn addbtn" onClick={() => void addFilesDialog()} data-hint="Add WAV or MP3 files, each on a new track at the playhead (Ctrl+Shift+O)">
+              + Add files…
+            </button>
+            <button className="btn ghost addbtn" onClick={() => void useSession.getState().addTrack()} data-hint="Add an empty track">
+              + Track
+            </button>
+          </div>
+          <div className="lane addlane" data-hint="Drop WAV or MP3 files here, each gets a new track">
+            <span className="lhint">Drop files here for new tracks · drop onto a track to add there</span>
+          </div>
+        </div>
+      </div>
       <div className="hscroll-corner" />
       <Scrollbar />
     </div>
   );
 }
+

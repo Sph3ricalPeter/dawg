@@ -481,6 +481,87 @@ button.upd {
   grid-template-columns: var(--hdr-w) minmax(0, 1fr);
   grid-template-rows: 26px minmax(0, 1fr) 12px;
 }
+.corner .r {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+/* Tracks fill the playlist and share it, 96 px at least, then scroll. */
+.tracks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+.tracks::-webkit-scrollbar {
+  width: 10px;
+}
+.tracks::-webkit-scrollbar-thumb {
+  background: var(--bg-4);
+  border-radius: 5px;
+  border: 2px solid var(--bg-1);
+}
+.trow {
+  flex: 1 0 96px;
+  max-height: 260px;
+  display: grid;
+  grid-template-columns: var(--hdr-w) minmax(0, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+.tracks.one .trow:not(.add) {
+  flex: 1 0 140px;
+  max-height: none;
+}
+.trow.add {
+  flex: 0 0 64px;
+  border-bottom: 0;
+}
+.trow.add .th {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  background: transparent;
+}
+.addbtn {
+  height: 24px;
+  justify-content: center;
+  font-size: 11px;
+}
+.lane.addlane {
+  background: transparent;
+  cursor: default;
+}
+.lane .lhint {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  color: var(--text-faint);
+  font-size: 11px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.trow:nth-child(even):not(.add) .lane {
+  background: var(--bg-2);
+}
+.trow.muted .clip {
+  opacity: 0.4;
+}
+.dropbar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--bg-4);
+  border: 1px dashed var(--text-dim);
+  font-weight: 600;
+  pointer-events: none;
+}
 .corner {
   background: var(--bg-1);
   border-right: 1px solid var(--line-strong);
@@ -551,10 +632,71 @@ button.upd {
   padding: 7px 8px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .th .tn {
   display: flex;
+}
+.th .tn {
+  gap: 4px;
+  align-items: center;
+}
+.th .tn .rn {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-weight: 600;
+  background: var(--bg-0);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  padding: 0 5px;
+}
+.th .tx {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+}
+.th .tx:hover {
+  color: var(--text);
+}
+.tcl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ms {
+  width: 18px;
+  height: 16px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--bg-4);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+.ms.m.on {
+  background: #cfcfcf;
+  color: #111;
+}
+.ms.s.on {
+  background: #47a6f2;
+  color: #08121d;
+}
+.dv {
+  font: 10.5px var(--mono);
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: ns-resize;
+  white-space: nowrap;
+}
+.dv:hover {
+  background: var(--bg-4);
 }
 .th .tn span {
   flex: 1;
@@ -606,7 +748,35 @@ button.upd {
   border-radius: 4px;
   cursor: grab;
 }
+.clip .clipcv {
+  position: absolute;
+  left: 0;
+  top: 14px;
+  pointer-events: none;
+}
+.ghostcv {
+  position: absolute;
+  pointer-events: none;
+}
+.clip .ep {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  border: 1.3px solid #121212;
+  background: rgba(255, 255, 255, 0.6);
+  cursor: move;
+  z-index: 2;
+}
+.clip.sel .ep {
+  background: #fff;
+}
+.clip .ep:hover {
+  transform: scale(1.3);
+}
 .clip.sel {
+  z-index: 2;
   box-shadow: inset 0 0 0 1px #fff, 0 0 0 1px #fff;
 }
 .clip .ct {

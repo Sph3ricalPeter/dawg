@@ -39,7 +39,7 @@ function Transport() {
   const playhead = useSession((s) => s.playhead);
   const canUndo = useSession((s) => !!s.session?.canUndo);
   const canRedo = useSession((s) => !!s.session?.canRedo);
-  const rate = session?.format.sampleRate ?? 48_000;
+  const rate = session?.rate ?? 48_000;
   const store = useSession.getState;
   return (
     <div className="transport">

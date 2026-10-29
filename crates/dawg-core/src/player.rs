@@ -245,13 +245,13 @@ mod tests {
 
     fn project(rate: u32, frames: usize) -> Arc<Project> {
         let samples: Vec<f32> = (0..frames).map(|i| (i % 50) as f32 / 100.0).collect();
-        Arc::new(Project {
-            sample_rate: rate,
-            tracks: vec![Track {
+        Arc::new(Project::with_tracks(
+            rate,
+            vec![Track {
                 clips: vec![Clip::new(Arc::new(Source::new(1, samples)), 0)],
                 ..Track::default()
             }],
-        })
+        ))
     }
 
     #[test]
