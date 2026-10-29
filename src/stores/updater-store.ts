@@ -4,7 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { errorMessage } from "@/lib/app-info";
 
 /** How often a running app looks for a new release. */
-export const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+export const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 export type UpdateStatus =
   | "disabled"
@@ -19,6 +19,8 @@ interface UpdaterState {
   status: UpdateStatus;
   /** Version that is downloading or ready to apply. */
   pendingVersion: string | null;
+  /** Release notes for the pending version, when the feed has any. */
+  releaseNotes: string | null;
   downloadProgress: number;
   error: string | null;
   lastChecked: number | null;
@@ -32,12 +34,12 @@ interface UpdaterState {
   checkNow: () => Promise<void>;
   /** Install the downloaded update and relaunch. Only ever called from a user click. */
   restart: () => Promise<void>;
-  dismissError: () => void;
 }
 
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
   status: "disabled",
   pendingVersion: null,
+  releaseNotes: null,
   downloadProgress: 0,
   error: null,
   lastChecked: null,
@@ -76,6 +78,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     set({
       status: "downloading",
       pendingVersion: update.version,
+      releaseNotes: update.body?.trim() || null,
       downloadProgress: 0,
       _update: update,
     });
@@ -112,8 +115,26 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       set({ status: "error", error: errorMessage(err) });
     }
   },
-
-  dismissError: () => {
-    set({ status: "idle", error: null });
-  },
 }));
+
+/** One line on where the updater stands, for the menu and the title-bar button. */
+export function updateLine(status: UpdateStatus, lastChecked: number | null): string {
+  switch (status) {
+    case "disabled":
+      return "Updates are off in dev builds";
+    case "checking":
+      return "Checking for updates…";
+    case "downloading":
+      return "Downloading an update…";
+    case "ready":
+      return "An update is ready";
+    case "restarting":
+      return "Restarting…";
+    case "error":
+      return "The last update check failed";
+    default:
+      return lastChecked
+        ? `Up to date, checked ${new Date(lastChecked).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+        : "Not checked yet";
+  }
+}

@@ -2,27 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { AppInfo } from "@/lib/app-info";
 import { exportDialog, openFileDialog, restoreLastReplace } from "@/lib/actions";
 import { useSession } from "@/stores/session-store";
-import { useUpdaterStore } from "@/stores/updater-store";
+import { updateLine, useUpdaterStore } from "@/stores/updater-store";
 import { DawgMark } from "./DawgMark";
-
-function updateLine(status: string, lastChecked: number | null): string {
-  switch (status) {
-    case "disabled":
-      return "Updates are off in dev builds";
-    case "checking":
-      return "Checking for updates…";
-    case "downloading":
-      return "Downloading an update…";
-    case "ready":
-      return "An update is ready";
-    case "error":
-      return "The last update check failed";
-    default:
-      return lastChecked
-        ? `Up to date, checked ${new Date(lastChecked).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-        : "Not checked yet";
-  }
-}
 
 /** The logo button and its menu. */
 export function AppMenu({ info }: { info: AppInfo | null }) {

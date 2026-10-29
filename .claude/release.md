@@ -97,5 +97,6 @@ The release workflow takes about 10 to 15 minutes. A failed release: fix,
 delete the tag locally and on origin, re-tag.
 
 ## After release
-- Running copies find the update within 4 hours (or via menu → Check for
-  updates), download it quietly and show "Restart to update".
+- Running copies find the update within an hour (or right away from the
+  title-bar update button or menu → Check for updates), download it quietly
+  and show "Restart to update".

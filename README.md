@@ -11,7 +11,8 @@ Download `dawg_<version>_x64-setup.exe` from the
 [latest release](https://github.com/Sph3ricalPeter/dawg/releases/latest) and run
 it. The installer is unsigned, so SmartScreen warns the first time: More info,
 then Run anyway. After that dawg updates itself: it checks GitHub Releases on
-launch and every few hours, downloads quietly and shows "Restart to update".
+launch and every hour (or when you click the update button in the title bar),
+downloads quietly and shows "Restart to update".
 
 ## Develop
 
