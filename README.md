@@ -14,6 +14,21 @@ then Run anyway. After that dawg updates itself: it checks GitHub Releases on
 launch and every hour (or when you click the update button in the title bar),
 downloads quietly and shows "Restart to update".
 
+dawg installs per user to `%LOCALAPPDATA%\dawg\dawg.exe` ("dawg dev" to
+`%LOCALAPPDATA%\dawg dev\dawg.exe`). Launching it with a file path opens that
+file in the scratch session; if dawg is already running, the file opens in
+the existing window. Export then defaults to the same file.
+
+### Unity
+
+Unity has no audio setting under External Tools, so double-clicking a clip
+opens whatever Windows associates with `.wav`. To open clips in dawg instead,
+copy [`integrations/unity/Editor/DawgAudioEditor.cs`](integrations/unity/Editor/DawgAudioEditor.cs)
+into an `Editor` folder of the project (e.g. `Assets/Editor/`). It finds the
+installed dawg (or pick `dawg.exe` under Edit > Preferences > dawg), and
+double-clicking a WAV or MP3 then opens it in dawg. Export over the original
+and switch back to Unity; it reimports the clip.
+
 ## Develop
 
 Needs Node 22, a stable Rust toolchain and, on Windows, the

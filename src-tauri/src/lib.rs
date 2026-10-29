@@ -2,7 +2,7 @@ mod audio;
 mod commands;
 
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Bundle identifier of the released app.
 const RELEASE_IDENTIFIER: &str = "com.sph3ricalpeter.dawg";
@@ -47,11 +47,31 @@ fn app_info(app: tauri::AppHandle) -> AppInfo {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let cwd = std::env::current_dir().unwrap_or_default();
     tauri::Builder::default()
+        // First, so a second launch exits before building anything. It hands
+        // its file (Explorer's "Edit in dawg", Unity's external editor) to
+        // the running window instead of opening another one.
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            let file = commands::file_from_args(
+                args.into_iter().skip(1).map(Into::into),
+                std::path::Path::new(&cwd),
+            );
+            if let Some(path) = file {
+                app.state::<commands::AppState>().request_open(path);
+                let _ = app.emit(commands::OPEN_REQUESTED, ());
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::AppState::new(commands::file_from_args(
             std::env::args_os().skip(1),
+            &cwd,
         )))
         .setup(|app| {
             if updates_enabled(app.handle()) {

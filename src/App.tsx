@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Dialogs } from "@/components/Dialogs";
@@ -254,10 +255,15 @@ export function App() {
 
   useEffect(() => {
     if (!isTauri()) return;
-    // "Edit in dawg" passes the file on the command line.
-    void api.startupFile().then((path) => {
-      if (path) void useSession.getState().open(path);
-    });
+    // "Edit in dawg" and Unity's external editor pass the file on the
+    // command line. A later launch hands it to this window and says so.
+    const take = () =>
+      void api.startupFile().then((path) => {
+        if (path) openPath(path);
+      });
+    take();
+    const unlisten = listen("open-requested", take);
+    return () => void unlisten.then((f) => f());
   }, []);
 
   useShortcuts();

@@ -21,9 +21,9 @@ pub struct AppState {
 struct Inner {
     session: Option<Session>,
     audio: Audio,
-    /// The file named on the command line ("Edit in dawg"), until the UI
-    /// takes it.
-    startup_file: Option<PathBuf>,
+    /// A file named on the command line ("Edit in dawg", Unity's external
+    /// editor), or handed over by a second launch, until the UI takes it.
+    pending_file: Option<PathBuf>,
 }
 
 impl AppState {
@@ -32,9 +32,14 @@ impl AppState {
             inner: Mutex::new(Inner {
                 session: None,
                 audio: Audio::default(),
-                startup_file,
+                pending_file: startup_file,
             }),
         }
+    }
+
+    /// Queues a file for the UI to open (see [`startup_file`]).
+    pub fn request_open(&self, path: PathBuf) {
+        self.lock().pending_file = Some(path);
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -64,9 +69,11 @@ impl Inner {
 }
 
 /// The first argument that isn't a flag: Explorer runs `dawg.exe "<file>"`.
-pub fn file_from_args(args: impl Iterator<Item = OsString>) -> Option<PathBuf> {
+/// A relative path is taken from `cwd`, the launching process's folder.
+pub fn file_from_args(args: impl Iterator<Item = OsString>, cwd: &Path) -> Option<PathBuf> {
     args.map(PathBuf::from)
         .find(|a| !a.to_string_lossy().starts_with('-'))
+        .map(|p| cwd.join(p))
 }
 
 fn backup_dir(app: &AppHandle) -> Result<PathBuf, Error> {
@@ -100,10 +107,15 @@ impl Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// The file waiting to be opened, if any. The UI asks once on load and again
+/// whenever the backend emits [`OPEN_REQUESTED`].
 #[tauri::command]
 pub fn startup_file(state: State<AppState>) -> Option<PathBuf> {
-    state.lock().startup_file.take()
+    state.lock().pending_file.take()
 }
+
+/// Emitted when a second launch handed this window a file.
+pub const OPEN_REQUESTED: &str = "open-requested";
 
 #[tauri::command]
 pub fn open_file(state: State<AppState>, path: PathBuf) -> Result<SessionState> {
@@ -323,11 +335,21 @@ mod tests {
 
     #[test]
     fn takes_the_file_argument() {
-        let args = ["--flag", r"C:\Samples\kick 03.wav"].map(OsString::from);
+        let cwd = std::env::temp_dir();
+        let abs = cwd.join("Samples").join("kick 03.wav");
+        let args = [OsString::from("--flag"), abs.clone().into()];
+        assert_eq!(file_from_args(args.into_iter(), Path::new("x")), Some(abs));
+        assert_eq!(file_from_args(std::iter::empty(), &cwd), None);
+    }
+
+    #[test]
+    fn resolves_a_relative_file_against_the_launch_folder() {
+        // Unity and shells can pass a path relative to their own folder.
+        let cwd = std::env::temp_dir().join("Project");
+        let args = ["Assets/Audio/hit.wav"].map(OsString::from);
         assert_eq!(
-            file_from_args(args.into_iter()),
-            Some(PathBuf::from(r"C:\Samples\kick 03.wav"))
+            file_from_args(args.into_iter(), &cwd),
+            Some(cwd.join("Assets/Audio/hit.wav"))
         );
-        assert_eq!(file_from_args(std::iter::empty()), None);
     }
 }
