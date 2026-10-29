@@ -4,7 +4,7 @@ import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtMs, fmtSeconds, fmtTime, MIN_GAIN_DB } from "@/lib/format";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
-import { timelineEnd, useSession, useTracks } from "@/stores/session-store";
+import { scrollSpan, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { trackColor, useWheel } from "@/lib/timeline";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
@@ -43,9 +43,15 @@ function Ruler() {
     }
   }
 
-  const toFrame = (clientX: number) => {
+  // Reads the live view, so it stays right while a drag scrolls it. Past
+  // either edge of the ruler the view scrolls along with the mouse.
+  const toFrame = (clientX: number, follow = false) => {
     const r = ref.current!.getBoundingClientRect();
-    return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session) * 1.5);
+    const st = useSession.getState();
+    const over = clientX < r.left ? clientX - r.left : clientX > r.right ? clientX - r.right : 0;
+    if (follow && over) st.scrollTo(st.view.start + over * st.view.fpp * 0.5);
+    const v = useSession.getState().view;
+    return clamp(v.start + (clamp(clientX, r.left, r.right) - r.left) * v.fpp, 0, timelineLimit(session));
   };
   // As in the mockup: a plain drag scrubs the playhead, Ctrl+drag makes the
   // range (loop, crop, export), and a click places the playhead and clears
@@ -56,7 +62,7 @@ function Ruler() {
     if (e.ctrlKey || e.metaKey) {
       startDrag(e, {
         move: (_dx, _dy, ev) => {
-          const b = toFrame(ev.clientX);
+          const b = toFrame(ev.clientX, true);
           store.setRange({ a: Math.min(a, b), b: Math.max(a, b) });
         },
         end: (moved) => {
@@ -72,7 +78,7 @@ function Ruler() {
     startDrag(e, {
       slop: 0,
       move: (_dx, _dy, ev) => {
-        at = toFrame(ev.clientX);
+        at = toFrame(ev.clientX, true);
         store.scrub(at);
       },
       end: (moved) => {
@@ -416,7 +422,7 @@ function Scrollbar() {
   const view = useSession((s) => s.view);
   const width = useSession((s) => s.width);
   if (!session) return <div className="hscroll" />;
-  const total = timelineEnd(session) * 1.5;
+  const total = scrollSpan(session, view, width);
   const shown = width * view.fpp;
   if (shown >= total) return <div className="hscroll" />;
   const thumbW = Math.max(24, (shown / total) * width);

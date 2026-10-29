@@ -174,6 +174,21 @@ export function songEnd(s: SessionState): number {
   return end;
 }
 
+/** How far right the timeline goes, in seconds: far enough to feel endless. */
+export const TIMELINE_SECONDS = 24 * 3600;
+
+/** Last frame the view, playhead and range can reach. */
+export function timelineLimit(s: SessionState): number {
+  return Math.max(timelineEnd(s) * 1.5, TIMELINE_SECONDS * s.rate);
+}
+
+/** How much the scrollbar spans: the clips with room after them, and always
+ * more past what's shown, so scrolling right never runs out. */
+export function scrollSpan(s: SessionState, view: View, width: number): number {
+  const shown = width * view.fpp;
+  return Math.min(timelineLimit(s), Math.max(timelineEnd(s) * 1.5, view.start + shown * 2));
+}
+
 /** End of the last clip, muted or not, or of the original file. */
 export function timelineEnd(s: SessionState): number {
   let end = s.frames;
@@ -280,7 +295,8 @@ export const useSession = create<SessionStore>((set, get) => ({
   zoomAt: (px, factor) => {
     const { view, session, width } = get();
     if (!session) return;
-    const maxFpp = (timelineEnd(session) * 2) / width;
+    // Zoom out to the whole song, or ten minutes when that's longer.
+    const maxFpp = Math.max(timelineEnd(session) * 2, session.rate * 600) / width;
     const fpp = clamp(view.fpp * factor, 1 / 16, Math.max(maxFpp, 1));
     const anchor = view.start + px * view.fpp;
     set({ view: { fpp, start: 0 } });
@@ -290,8 +306,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   scrollTo: (start) => {
     const { view, session, width } = get();
     if (!session) return;
-    // Room past the end to move clips into.
-    const max = Math.max(0, timelineEnd(session) * 1.5 - width * view.fpp);
+    const max = Math.max(0, timelineLimit(session) - width * view.fpp);
     set({ view: { ...view, start: clamp(start, 0, max) } });
   },
 
@@ -424,7 +439,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   setPlayhead: (frame) => {
     const { session, playing } = get();
     if (!session) return;
-    const f = Math.round(clamp(frame, 0, timelineEnd(session)));
+    const f = Math.round(clamp(frame, 0, timelineLimit(session)));
     set({ playhead: f, startPoint: f, scrubbing: false });
     if (playing) void get().replay();
   },
@@ -435,7 +450,7 @@ export const useSession = create<SessionStore>((set, get) => ({
       set({ scrubbing: false });
       return;
     }
-    set({ scrubbing: true, playhead: Math.round(clamp(frame, 0, timelineEnd(session))) });
+    set({ scrubbing: true, playhead: Math.round(clamp(frame, 0, timelineLimit(session))) });
   },
 
   setRange: (r) => {
