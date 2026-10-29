@@ -5,12 +5,10 @@ import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtMs, fmtSeconds, fmtTime, MIN_GAIN_DB } from "@/lib/format";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
 import { scrollSpan, timelineLimit, useSession, useTracks } from "@/stores/session-store";
-import { trackColor, useWheel } from "@/lib/timeline";
+import { rulerStep, snapToGrid, trackColor, useWheel } from "@/lib/timeline";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
 
-/** Seconds between ruler labels, picked so labels sit at least ~70 px apart. */
-const STEPS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 
 function Ruler() {
   const session = useSession((s) => s.session);
@@ -23,7 +21,7 @@ function Ruler() {
 
   const rate = session.rate;
   const pxPerSec = rate / view.fpp;
-  const step = STEPS.find((s) => s * pxPerSec >= 70) ?? 600;
+  const step = rulerStep(pxPerSec);
   const digits = step >= 1 ? 0 : step >= 0.1 ? (step === 0.25 ? 2 : 1) : step >= 0.01 ? 2 : 3;
   const t0 = view.start / rate;
   const t1 = (view.start + width * view.fpp) / rate;
@@ -53,20 +51,26 @@ function Ruler() {
     const v = useSession.getState().view;
     return clamp(v.start + (clamp(clientX, r.left, r.right) - r.left) * v.fpp, 0, timelineLimit(session));
   };
+  // Snaps to the ruler's small ticks; Alt is smooth (mockup snapT).
+  const snapped = (clientX: number, alt: boolean, follow = false) => {
+    const f = toFrame(clientX, follow);
+    return alt ? f : snapToGrid(f, rate, useSession.getState().view.fpp);
+  };
   // As in the mockup: a plain drag scrubs the playhead, Ctrl+drag makes the
   // range (loop, crop, export), and a click places the playhead and clears
   // the range.
   const onDown = (e: React.PointerEvent) => {
-    const a = toFrame(e.clientX);
+    const a = snapped(e.clientX, e.altKey);
     const store = useSession.getState();
     if (e.ctrlKey || e.metaKey) {
       startDrag(e, {
         move: (_dx, _dy, ev) => {
-          const b = toFrame(ev.clientX, true);
-          store.setRange({ a: Math.min(a, b), b: Math.max(a, b) });
+          const b = snapped(ev.clientX, ev.altKey, true);
+          // Snapped to the same tick, there's no range yet.
+          store.setRange(a === b ? null : { a: Math.min(a, b), b: Math.max(a, b) });
         },
         end: (moved) => {
-          if (moved) store.rangeLoop();
+          if (moved && useSession.getState().range) store.rangeLoop();
           else store.setRange(null);
         },
       });
@@ -78,7 +82,7 @@ function Ruler() {
     startDrag(e, {
       slop: 0,
       move: (_dx, _dy, ev) => {
-        at = toFrame(ev.clientX, true);
+        at = snapped(ev.clientX, ev.altKey, true);
         store.scrub(at);
       },
       end: (moved) => {
@@ -103,7 +107,7 @@ function Ruler() {
       ref={ref}
       onPointerDown={onDown}
       onDoubleClick={onDouble}
-      data-hint="Click or drag to move the playhead · Ctrl+drag sets the range (loop, crop, export) · double-click ranges over every clip"
+      data-hint="Click or drag to move the playhead · Ctrl+drag sets the range (loop, crop, export) · both snap to the ticks, hold Alt for smooth · double-click ranges over every clip"
     >
       {ticks}
       {range && (

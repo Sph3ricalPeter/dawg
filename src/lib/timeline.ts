@@ -11,6 +11,20 @@ export function trackColor(index: number): string {
   return COLORS[index % COLORS.length];
 }
 
+/** Seconds between ruler labels, picked so labels sit at least ~70 px apart. */
+const STEPS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+
+export function rulerStep(pxPerSec: number): number {
+  return STEPS.find((s) => s * pxPerSec >= 70) ?? 600;
+}
+
+/** `frame` rounded to the ruler's small ticks (a fifth of a label step) at
+ * zoom `fpp`. */
+export function snapToGrid(frame: number, rate: number, fpp: number): number {
+  const tick = (rulerStep(rate / fpp) / 5) * rate;
+  return Math.round(frame / tick) * tick;
+}
+
 /** y of envelope gain `g` in a wave area `h` px tall. */
 export function envY(g: number, h: number): number {
   return (1 - g / ENV_MAX) * (h - 2) + 1;
