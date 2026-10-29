@@ -84,18 +84,45 @@ async function replaceOriginal(): Promise<boolean> {
  * backup. A mixdown of several clips starts on "<name> mix" instead. The file
  * type picks WAV or MP3; the original's format comes first.
  */
+/** The last export from this window, and the file it was made from. */
+let lastExport: { from: string; to: string } | null = null;
+const EXPORT_DIR_KEY = "dawg.lastExportDir";
+
+/** Folder of the last export, kept across restarts. */
+function lastExportDir(): string | null {
+  try {
+    return localStorage.getItem(EXPORT_DIR_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function exportDialog(): Promise<boolean> {
   const s = useSession.getState();
   if (!s.session || !isTauri()) return false;
   await s.stop();
   const filters = s.session.codec === "mp3" ? [MP3, WAV] : [WAV, MP3];
-  // Just the original file's clip saves over it by default; a mix starts as
-  // a new file next to it, so the original isn't replaced by accident.
+  // After an export from this file, the next one starts where that went.
+  // Before that, just the original file's clip saves over it (the "Edit in
+  // dawg" round trip); a mix starts as a new file in the last export folder,
+  // or next to the original, so the original isn't replaced by accident.
   const original = s.session.path;
   const ext = s.session.codec === "mp3" ? "mp3" : "wav";
-  const defaultPath = s.session.simple ? original : `${dirOf(original)}${stem(s.session.name)} mix.${ext}`;
+  const mixDir = lastExportDir() ?? dirOf(original);
+  const defaultPath =
+    lastExport?.from === original
+      ? lastExport.to
+      : s.session.simple
+        ? original
+        : `${mixDir}${stem(s.session.name)} mix.${ext}`;
   const path = await save({ filters, defaultPath });
   if (!path) return false;
+  lastExport = { from: original, to: path };
+  try {
+    localStorage.setItem(EXPORT_DIR_KEY, dirOf(path));
+  } catch {
+    // Only a convenience.
+  }
   useSession.setState({ busy: "Saving…" });
   try {
     await api.saveAs(path);
