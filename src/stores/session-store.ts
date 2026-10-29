@@ -115,6 +115,9 @@ interface SessionStore {
   stop: () => Promise<void>;
   /** Called while playing to follow the engine. */
   poll: () => Promise<void>;
+  /** Each track's meter level (linear peak, left and right, with fall-off),
+   * in track order; empty while stopped. */
+  levels: [number, number][];
   showToast: (text: string, opts?: { error?: boolean; action?: Toast["action"] }) => void;
   hideToast: () => void;
   setDialog: (d: Dialog) => void;
@@ -135,6 +138,8 @@ function enqueue<T>(job: () => Promise<T>): Promise<T> {
 let pending: Command | null = null;
 let lastDrag: Command | null = null;
 let toastSeq = 0;
+/** Meter fall-off per transport poll (about 30 ms). */
+const METER_FALL = 0.75;
 
 /** Shortest clip a trim can leave, in frames (`dawg_core::command::MIN_CLIP`). */
 export const MIN_LEN = 16;
@@ -200,6 +205,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   playhead: 0,
   startPoint: 0,
   playing: false,
+  levels: [],
   range: null,
   loop: true,
   scrubbing: false,
@@ -530,15 +536,24 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (!get().playing) return;
     await api.stop().catch(() => undefined);
     // Stop returns to where playback started (UX spec, Space).
-    set({ playing: false, playhead: get().startPoint });
+    set({ playing: false, playhead: get().startPoint, levels: [] });
   },
 
   poll: async () => {
     if (!get().playing) return;
     const t = await api.transport();
     if (!get().playing) return;
-    if (!t.playing) set({ playing: false, playhead: get().startPoint });
-    else if (!get().scrubbing) set({ playhead: t.position });
+    if (!t.playing) {
+      set({ playing: false, playhead: get().startPoint, levels: [] });
+      return;
+    }
+    // Peaks since the last poll, falling back gently between them.
+    const old = get().levels;
+    const levels = t.levels.map(([l, r], i): [number, number] => [
+      Math.max(l, (old[i]?.[0] ?? 0) * METER_FALL),
+      Math.max(r, (old[i]?.[1] ?? 0) * METER_FALL),
+    ]);
+    set(get().scrubbing ? { levels } : { playhead: t.position, levels });
   },
 
   showToast: (text, opts) => {

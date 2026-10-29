@@ -9,13 +9,13 @@
 //! a 4-point Hermite interpolator converts on the fly. That is for listening
 //! only: export never resamples.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::model::Project;
-use crate::render::{Renderer, OUT_CHANNELS};
+use crate::render::{Renderer, METER_TRACKS, OUT_CHANNELS};
 
 /// Frames rendered per block.
 const BLOCK: usize = 256;
@@ -34,10 +34,22 @@ pub enum PlayerMsg {
     Stop,
 }
 
-#[derive(Default)]
 pub struct PlayerShared {
     playing: AtomicBool,
     position: AtomicU64,
+    /// Peak level per track and side since the last read, as `f32` bits.
+    /// Non-negative floats order like their bits, so `fetch_max` works.
+    peaks: [[AtomicU32; 2]; METER_TRACKS],
+}
+
+impl Default for PlayerShared {
+    fn default() -> Self {
+        Self {
+            playing: AtomicBool::new(false),
+            position: AtomicU64::new(0),
+            peaks: std::array::from_fn(|_| [AtomicU32::new(0), AtomicU32::new(0)]),
+        }
+    }
 }
 
 /// The control side. Not real-time; lives with the app state.
@@ -75,6 +87,18 @@ impl PlayerHandle {
     /// Timeline frame being heard (give or take the device buffer).
     pub fn position(&self) -> u64 {
         self.shared.position.load(Ordering::Relaxed)
+    }
+
+    /// Peak level (linear, left and right) of each of the first `tracks`
+    /// tracks since the last call, which resets them.
+    pub fn take_peaks(&self, tracks: usize) -> Vec<[f32; 2]> {
+        self.shared.peaks[..tracks.min(METER_TRACKS)]
+            .iter()
+            .map(|p| {
+                p.each_ref()
+                    .map(|a| f32::from_bits(a.swap(0, Ordering::Relaxed)))
+            })
+            .collect()
     }
 }
 
@@ -220,6 +244,10 @@ impl Player {
         }
         if self.block_pos == self.block_len {
             self.renderer.process(&mut self.block);
+            for (shared, peak) in self.shared.peaks.iter().zip(self.renderer.take_peaks()) {
+                shared[0].fetch_max(peak[0].to_bits(), Ordering::Relaxed);
+                shared[1].fetch_max(peak[1].to_bits(), Ordering::Relaxed);
+            }
             self.block_pos = 0;
             self.block_len = BLOCK;
         }
@@ -314,6 +342,40 @@ mod tests {
         handle.send(PlayerMsg::Stop);
         player.fill(&mut out[..8]);
         assert!(!handle.playing());
+    }
+
+    #[test]
+    fn meters_each_track_after_its_volume_and_pan() {
+        // Peak sample 0.49; one track at half volume panned hard left, one muted.
+        let samples: Vec<f32> = (0..3000).map(|i| (i % 50) as f32 / 100.0).collect();
+        let src = Arc::new(Source::new(1, samples));
+        let p = Arc::new(Project::with_tracks(
+            48_000,
+            vec![
+                Track {
+                    clips: vec![Clip::new(src.clone(), 0)],
+                    gain: 0.5,
+                    pan: -1.0,
+                    ..Track::default()
+                },
+                Track {
+                    clips: vec![Clip::new(src, 0)],
+                    muted: true,
+                    ..Track::default()
+                },
+            ],
+        ));
+        let (mut player, mut handle) = player(p, 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 0,
+            to: 3000,
+            looping: None,
+        });
+        let mut out = vec![0.0; 2 * 480];
+        player.fill(&mut out);
+        assert_eq!(handle.take_peaks(2), vec![[0.245, 0.0], [0.0, 0.0]]);
+        // Reading resets them.
+        assert_eq!(handle.take_peaks(1), vec![[0.0, 0.0]]);
     }
 
     #[test]

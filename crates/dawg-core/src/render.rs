@@ -5,6 +5,9 @@ use crate::model::Project;
 /// The mixer always renders interleaved stereo.
 pub const OUT_CHANNELS: usize = 2;
 
+/// Tracks with a level meter; later ones play but aren't metered.
+pub const METER_TRACKS: usize = 64;
+
 /// Plays a project from a position, one buffer at a time.
 ///
 /// [`Renderer::process`] runs on the audio thread: it must never allocate,
@@ -12,11 +15,25 @@ pub const OUT_CHANNELS: usize = 2;
 pub struct Renderer {
     project: Arc<Project>,
     pos: u64,
+    /// Peak level per track (by index) and side since the last
+    /// [`Renderer::take_peaks`], after the track's volume and pan.
+    peaks: [[f32; 2]; METER_TRACKS],
 }
 
 impl Renderer {
     pub fn new(project: Arc<Project>, pos: u64) -> Self {
-        Self { project, pos }
+        Self {
+            project,
+            pos,
+            peaks: [[0.0; 2]; METER_TRACKS],
+        }
+    }
+
+    /// Peak levels per track since the last call, which resets them. A
+    /// track's clips are metered one at a time, so where they overlap the
+    /// meter shows the louder one, not the sum.
+    pub fn take_peaks(&mut self) -> [[f32; 2]; METER_TRACKS] {
+        std::mem::replace(&mut self.peaks, [[0.0; 2]; METER_TRACKS])
     }
 
     /// Current timeline frame.
@@ -46,11 +63,12 @@ impl Renderer {
         let (from, to) = (self.pos, self.pos + frames);
 
         let any_solo = self.project.tracks.iter().any(|t| t.solo);
-        for track in &self.project.tracks {
+        for (n, track) in self.project.tracks.iter().enumerate() {
             if track.muted || (any_solo && !track.solo) {
                 continue;
             }
             let (gl, gr) = track.side_gains();
+            let (mut pl, mut pr) = (0.0f32, 0.0f32);
             for clip in &track.clips {
                 let start = clip.start.max(from);
                 let end = clip.end().min(to);
@@ -63,9 +81,16 @@ impl Renderer {
                     let (l, r) = clip.source.frame(clip.offset + rel);
                     let g = if unity { 1.0 } else { clip.gain_at(rel) as f32 };
                     let i = (t - from) as usize * OUT_CHANNELS;
-                    out[i] += l * (g * gl);
-                    out[i + 1] += r * (g * gr);
+                    let (l, r) = (l * (g * gl), r * (g * gr));
+                    out[i] += l;
+                    out[i + 1] += r;
+                    pl = pl.max(l.abs());
+                    pr = pr.max(r.abs());
                 }
+            }
+            if let Some(p) = self.peaks.get_mut(n) {
+                p[0] = p[0].max(pl);
+                p[1] = p[1].max(pr);
             }
         }
         self.pos = to;

@@ -233,12 +233,18 @@ pub fn stop(state: State<AppState>) {
 pub struct Transport {
     playing: bool,
     position: u64,
+    /// Peak level (linear, left and right) per track, in track order.
+    levels: Vec<[f32; 2]>,
 }
 
 #[tauri::command]
 pub fn transport(state: State<AppState>) -> Transport {
-    let (playing, position) = state.lock().audio.status();
-    Transport { playing, position }
+    let (playing, position, levels) = state.lock().audio.status();
+    Transport {
+        playing,
+        position,
+        levels,
+    }
 }
 
 #[tauri::command]

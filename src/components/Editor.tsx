@@ -140,6 +140,29 @@ function TypeIn({ value, onDone }: { value: string; onDone: (text: string | null
   );
 }
 
+/** Meter height for a linear peak: -60 dBFS at the bottom, 0 dBFS where the
+ * red starts (15 of 16 px), anything over fills it. */
+function meterPct(peak: number): number {
+  if (peak <= 0) return 0;
+  const db = 20 * Math.log10(peak);
+  return db >= 0 ? 100 : Math.max(0, ((db + 60) / 60) * (15 / 16) * 100);
+}
+
+/** The track's stereo level meter, live while playing. */
+function Meter({ index }: { index: number }) {
+  const level = useSession((s) => (s.playing ? s.levels[index] : undefined));
+  return (
+    <span className="tm">
+      <i>
+        <b style={{ height: `${meterPct(level?.[0] ?? 0)}%` }} />
+      </i>
+      <i>
+        <b style={{ height: `${meterPct(level?.[1] ?? 0)}%` }} />
+      </i>
+    </span>
+  );
+}
+
 interface MenuAt {
   x: number;
   y: number;
@@ -320,14 +343,7 @@ function TrackHeader({
               if (!(e.target as HTMLElement).closest(".vv, .ktype")) setMix({ gain_db: 0 });
             }}
           >
-            <span className="tm">
-              <i>
-                <b />
-              </i>
-              <i>
-                <b />
-              </i>
-            </span>
+            <Meter index={index} />
             <Knob f={volKnobFrac(track.gainDb)} />
             {typing ? (
               <TypeIn

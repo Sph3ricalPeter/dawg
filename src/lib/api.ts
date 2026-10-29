@@ -168,7 +168,7 @@ export const api = {
   /** Plays `from..to`; with `looping`, jumps back there at `to` until stopped. */
   play: (from: number, to: number, looping: number | null) => invoke<void>("play", { from, to, looping }),
   stop: () => invoke<void>("stop"),
-  transport: () => invoke<{ playing: boolean; position: number }>("transport"),
+  transport: () => invoke<{ playing: boolean; position: number; levels: [number, number][] }>("transport"),
   savePreview: () => invoke<SavePreview>("save_preview"),
   replaceOriginal: () =>
     invoke<{ state: SessionState; backup: string }>("replace_original"),
