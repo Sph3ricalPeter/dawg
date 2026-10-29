@@ -125,6 +125,12 @@ function diff(from: ClipState, to: ClipState): Command[] {
   return out;
 }
 
+/** Where the timeline ends: the end of the file, or of the clip if it was
+ * moved past that. */
+export function timelineEnd(s: SessionState): number {
+  return Math.max(s.frames, s.clip.start + s.clip.len);
+}
+
 /** Shortest clip a trim can leave, in frames. */
 export const MIN_LEN = 16;
 
@@ -178,14 +184,14 @@ export const useSession = create<SessionStore>((set, get) => ({
     const { session, width } = get();
     if (!session) return;
     // A little room after the end so the right trim edge is easy to grab.
-    const fpp = Math.max(1 / 16, (session.frames * 1.03) / width);
+    const fpp = Math.max(1 / 16, (timelineEnd(session) * 1.03) / width);
     set({ view: { start: 0, fpp } });
   },
 
   zoomAt: (px, factor) => {
     const { view, session, width } = get();
     if (!session) return;
-    const maxFpp = (session.frames * 1.5) / width;
+    const maxFpp = (timelineEnd(session) * 1.5) / width;
     const fpp = clamp(view.fpp * factor, 1 / 16, Math.max(maxFpp, 1));
     const anchor = view.start + px * view.fpp;
     set({ view: { fpp, start: 0 } });
@@ -195,7 +201,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   scrollTo: (start) => {
     const { view, session, width } = get();
     if (!session) return;
-    const max = Math.max(0, session.frames * 1.03 - width * view.fpp);
+    const max = Math.max(0, timelineEnd(session) * 1.03 - width * view.fpp);
     set({ view: { ...view, start: clamp(start, 0, max) } });
   },
 
@@ -259,7 +265,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   setPlayhead: (frame) => {
     const { session, playing } = get();
     if (!session) return;
-    const f = Math.round(clamp(frame, 0, session.frames));
+    const f = Math.round(clamp(frame, 0, timelineEnd(session)));
     set({ playhead: f, startPoint: f });
     if (playing) void get().togglePlay().then(() => get().togglePlay());
   },

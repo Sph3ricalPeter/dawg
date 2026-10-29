@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtFormat, fmtMs, fmtSeconds, fmtTime, stem } from "@/lib/format";
-import { useClip, useSession } from "@/stores/session-store";
+import { timelineEnd, useClip, useSession } from "@/stores/session-store";
 import { Lane } from "./Lane";
 
 /** Seconds between ruler labels, picked so labels sit at least ~70 px apart. */
@@ -40,7 +40,7 @@ function Ruler() {
 
   const toFrame = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
-    return clamp(view.start + (clientX - r.left) * view.fpp, 0, session.frames);
+    return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session));
   };
   const onDown = (e: React.PointerEvent) => {
     const a = toFrame(e.clientX);
@@ -130,7 +130,7 @@ function Scrollbar() {
   const view = useSession((s) => s.view);
   const width = useSession((s) => s.width);
   if (!session) return <div className="hscroll" />;
-  const total = session.frames * 1.03;
+  const total = timelineEnd(session) * 1.03;
   const shown = width * view.fpp;
   if (shown >= total) return <div className="hscroll" />;
   const thumbW = Math.max(24, (shown / total) * width);

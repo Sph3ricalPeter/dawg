@@ -42,7 +42,7 @@ function StatusBar({ hint }: { hint: string }) {
   const session = useSession((s) => s.session);
   const busy = useSession((s) => s.busy);
   const fallback = session
-    ? "Drag the clip edges to trim · drag across it and press Ctrl+T to crop · Ctrl+S exports"
+    ? "Drag the clip to move it · drag its edges to trim · drag across the ruler and press Ctrl+T to crop · Ctrl+S exports"
     : "Drop a WAV or MP3 file anywhere, or press Ctrl+O";
   return (
     <footer className="status">

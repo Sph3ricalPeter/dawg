@@ -2,11 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type ClipState, type SessionState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { clamp, dbToGain, fadeAt, fmtDb, fmtMs, stem } from "@/lib/format";
-import { MIN_LEN, useClip, useSession, type View } from "@/stores/session-store";
+import { MIN_LEN, timelineEnd, useClip, useSession, type View } from "@/stores/session-store";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
 const EDGE = 6;
+/** A moved clip snaps to the start of the timeline within this many pixels. */
+const SNAP_PX = 8;
 const CLIP_COLOR = "#ee9f98";
 
 interface Peaks {
@@ -16,25 +18,28 @@ interface Peaks {
   data: Float32Array;
 }
 
-/** Peaks for what's on screen, refetched when the view or the file changes. */
-function usePeaks(session: SessionState | null, view: View, width: number): Peaks | null {
+/** Peaks for what's on screen, refetched when the view or the file changes.
+ * `shift` is the timeline frame of the source's first frame; the peaks keep
+ * source frames in `view`, so a clip being dragged still lines up. */
+function usePeaks(session: SessionState | null, view: View, width: number, shift: number): Peaks | null {
   const [peaks, setPeaks] = useState<Peaks | null>(null);
   const fileRev = useSession((s) => s.fileRev);
   const key = session ? `${session.path}:${fileRev}` : "";
   useEffect(() => {
     if (!key) return;
     let live = true;
-    const to = view.start + width * view.fpp;
+    const src = { ...view, start: view.start - shift };
+    const to = src.start + width * view.fpp;
     const raf = requestAnimationFrame(() => {
-      void api.peaks(view.start, to, Math.ceil(width)).then((data) => {
-        if (live) setPeaks({ view, width, key, data });
+      void api.peaks(Math.max(0, src.start), Math.max(0, to), Math.ceil(width)).then((data) => {
+        if (live) setPeaks({ view: { ...src, start: Math.max(0, src.start) }, width, key, data });
       });
     });
     return () => {
       live = false;
       cancelAnimationFrame(raf);
     };
-  }, [key, view, width]);
+  }, [key, view, width, shift]);
   return peaks && peaks.key === key ? peaks : null;
 }
 
@@ -63,7 +68,10 @@ function draw(
   const waveTop = top + TITLE_H;
   const mid = (waveTop + bottom) / 2;
   const half = (bottom - waveTop) / 2 - 2;
-  const fileEnd = px(frames);
+  // Timeline frame of the source's first frame.
+  const shift = clip.start - clip.offset;
+  const fileStart = px(shift);
+  const fileEnd = px(shift + frames);
 
   // The clip body.
   x.fillStyle = "#a9706b";
@@ -88,8 +96,9 @@ function draw(
   for (let i = 0; i < width; i++) {
     const f0 = view.start + i * view.fpp;
     const f1 = f0 + view.fpp;
-    if (f0 >= frames) break;
-    const b = Math.floor((f0 - pv.start) / pv.fpp);
+    if (f0 - shift >= frames) break;
+    if (f1 - shift <= 0) continue;
+    const b = Math.floor((f0 - shift - pv.start) / pv.fpp);
     if (b < 0 || b >= peaks.width) continue;
     lo[i] = peaks.data[2 * b];
     hi[i] = peaks.data[2 * b + 1];
@@ -180,11 +189,10 @@ function draw(
     x.stroke();
   }
 
-  // End of the file.
-  if (fileEnd < width) {
-    x.fillStyle = "rgba(255,255,255,.06)";
-    x.fillRect(fileEnd, 0, 1, height);
-  }
+  // Start and end of the file.
+  x.fillStyle = "rgba(255,255,255,.06)";
+  if (fileStart > 0 && fileStart < width) x.fillRect(fileStart, 0, 1, height);
+  if (fileEnd < width) x.fillRect(fileEnd, 0, 1, height);
 }
 
 /** The one track of a scratch session: the clip and everything on it. */
@@ -199,7 +207,7 @@ export function Lane() {
   const ref = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [height, setHeight] = useState(300);
-  const peaks = usePeaks(session, view, width);
+  const peaks = usePeaks(session, view, width, clip ? clip.start - clip.offset : 0);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -226,7 +234,7 @@ export function Lane() {
   const px = (f: number) => (f - view.start) / view.fpp;
   const toFrame = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
-    return clamp(view.start + (clientX - r.left) * view.fpp, 0, session.frames);
+    return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session));
   };
   const x0 = px(clip.start);
   const x1 = px(clip.start + clip.len);
@@ -252,6 +260,32 @@ export function Lane() {
     });
   };
 
+  /** Drag the clip along the timeline; it snaps to 0 (Alt skips the snap).
+   * Ctrl+drag picks a range instead, and a plain click places the playhead. */
+  const onBody = (e: React.PointerEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      onBackground(e);
+      return;
+    }
+    const c0 = clip;
+    const a = toFrame(e.clientX);
+    const store = useSession.getState();
+    startDrag(e, {
+      move: (dx, _dy, ev) => {
+        let start = Math.max(0, c0.start + Math.round(dx * view.fpp));
+        if (!ev.altKey && start / view.fpp < SNAP_PX) start = 0;
+        store.drag({ ...c0, start });
+      },
+      end: (moved) => {
+        if (moved) void store.commit();
+        else {
+          store.setRange(null);
+          store.setPlayhead(a);
+        }
+      },
+    });
+  };
+
   const onEdge = (side: "l" | "r") => (e: React.PointerEvent) => {
     const c0 = clip;
     const store = useSession.getState();
@@ -259,7 +293,8 @@ export function Lane() {
       move: (dx) => {
         const d = Math.round(dx * view.fpp);
         if (side === "l") {
-          const start = clamp(c0.start + d, c0.start - c0.offset, c0.start + c0.len - MIN_LEN);
+          const first = Math.max(0, c0.start - c0.offset);
+          const start = clamp(c0.start + d, first, c0.start + c0.len - MIN_LEN);
           const shift = start - c0.start;
           store.drag({ ...c0, start, offset: c0.offset + shift, len: c0.len - shift });
         } else {
@@ -298,8 +333,10 @@ export function Lane() {
         <div
           className="clip sel"
           style={{ left, width: w, ["--c" as string]: CLIP_COLOR }}
+          onPointerDown={onBody}
+          data-hint="Drag to move the clip (it snaps to 0, Alt skips the snap) · Ctrl+drag picks a range · drag its edges to trim"
         >
-          <div className="ct" data-hint="Drag across the clip to pick a range · drag its edges to trim">
+          <div className="ct">
             <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
               {stem(session.name)}
             </span>

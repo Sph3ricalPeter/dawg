@@ -604,7 +604,7 @@ button.upd {
   top: 2px;
   bottom: 3px;
   border-radius: 4px;
-  pointer-events: none;
+  cursor: grab;
 }
 .clip.sel {
   box-shadow: inset 0 0 0 1px #fff, 0 0 0 1px #fff;

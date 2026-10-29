@@ -473,6 +473,27 @@ mod tests {
     }
 
     #[test]
+    fn where_the_clip_sits_does_not_change_the_saved_file() {
+        let mut s = session(1000);
+        s.apply(&trim(250, 500), false).unwrap();
+        let in_place = s.render_file(Codec::Wav).unwrap();
+        // Slide the trimmed clip back to the start of the timeline.
+        s.apply(
+            &Command::TrimClip {
+                at: CLIP,
+                start: 0,
+                offset: 250,
+                len: 500,
+            },
+            false,
+        )
+        .unwrap();
+        assert_eq!(s.clip().start, 0);
+        assert_eq!(s.render_file(Codec::Wav).unwrap(), in_place);
+        assert_eq!(s.preview().frames_after, 500);
+    }
+
+    #[test]
     fn replace_writes_reopens_and_backs_up() {
         let dir = std::env::temp_dir().join(format!("dawg-session-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
