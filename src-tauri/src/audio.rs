@@ -35,7 +35,7 @@ impl Audio {
         }
     }
 
-    pub fn play(&mut self, from: u64, to: u64) -> Result<(), String> {
+    pub fn play(&mut self, from: u64, to: u64, looping: Option<u64>) -> Result<(), String> {
         let project = self.project.clone().ok_or("nothing to play")?;
         let dead = self
             .output
@@ -46,7 +46,7 @@ impl Audio {
             self.output = Some(open(project)?);
         }
         let out = self.output.as_mut().expect("output just opened");
-        if !out.handle.send(PlayerMsg::Play { from, to }) {
+        if !out.handle.send(PlayerMsg::Play { from, to, looping }) {
             return Err("the audio device stopped responding".into());
         }
         Ok(())

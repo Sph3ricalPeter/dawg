@@ -218,17 +218,52 @@ function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; wid
   return <canvas ref={ref} className="ghostcv" style={{ left: x0, top: 2 + TITLE_H }} />;
 }
 
-/** Timeline frames worth snapping to: 0, the playhead and every other clip's
- * edges. */
-function snapPoints(exclude: number): number[] {
+/** Timeline frames worth snapping to: 0, the playhead and the edges of every
+ * clip not being moved. */
+function snapPoints(exclude: number[]): number[] {
   const s = useSession.getState();
   const out = [0, s.playhead];
   if (s.session) {
     for (const { clip } of allClips(s.session)) {
-      if (clip.id !== exclude) out.push(clip.start, clip.start + clip.len);
+      if (!exclude.includes(clip.id)) out.push(clip.start, clip.start + clip.len);
     }
   }
   return out;
+}
+
+/** A selection rectangle from a press until release, as in the mockup: it
+ * selects every clip it touches. With `add`, on top of the selection there
+ * was. A plain click runs `onClick`. */
+function startMarquee(e: React.PointerEvent, add: boolean, onClick: () => void) {
+  const store = useSession.getState();
+  const base = add ? store.selected : [];
+  const x0 = e.clientX;
+  const y0 = e.clientY;
+  let box: HTMLDivElement | null = null;
+  startDrag(e, {
+    move: (_dx, _dy, ev) => {
+      if (!box) {
+        box = document.createElement("div");
+        box.className = "marquee";
+        document.body.appendChild(box);
+      }
+      const l = Math.min(x0, ev.clientX);
+      const t = Math.min(y0, ev.clientY);
+      const r = Math.max(x0, ev.clientX);
+      const b = Math.max(y0, ev.clientY);
+      Object.assign(box.style, { left: `${l}px`, top: `${t}px`, width: `${r - l}px`, height: `${b - t}px` });
+      const hit: number[] = [];
+      document.querySelectorAll<HTMLElement>(".clip[data-clip]").forEach((el) => {
+        const c = el.getBoundingClientRect();
+        if (c.left < r && c.right > l && c.top < b && c.bottom > t) hit.push(Number(el.dataset.clip));
+      });
+      useSession.getState().setSelected([...new Set([...base, ...hit])]);
+    },
+    end: (moved) => {
+      box?.remove();
+      if (!moved) onClick();
+    },
+  });
 }
 
 /** The track a pointer is over, by the lane under it. */
@@ -274,9 +309,6 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
 
   if (w <= 0) return null;
   const store = useSession.getState;
-
-  const sendMove = (c0: ClipState, start: number, trackId: number) =>
-    store().drag({ type: "move_clip", clip: c0.id, track: trackId, start }, { kind: "clip", track: trackId, clip: { ...c0, start } });
 
   /** y of the envelope at a pointer x, in px from the top of the wave area. */
   const envYAt = (clientX: number) => {
@@ -331,54 +363,72 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
       return;
     }
     const c0 = clip;
-    const a = toFrame(e.clientX);
     if (ctrl) {
-      // Ctrl+drag picks a range; Ctrl+click toggles the selection.
-      startDrag(e, {
-        move: (_dx, _dy, ev) => {
-          const b = toFrame(ev.clientX);
-          store().setRange({ a: Math.min(a, b), b: Math.max(a, b) });
-        },
-        end: (moved) => {
-          if (!moved) store().select(c0.id, true);
-        },
-      });
+      // Ctrl+drag draws a marquee that adds to the selection; Ctrl+click
+      // toggles this clip.
+      startMarquee(e, true, () => store().select(c0.id, true));
       return;
     }
-    store().select(c0.id);
-    const snaps = snapPoints(c0.id);
+    if (!selected) store().select(c0.id);
+    // The selection moves together, the dragged clip leading.
+    const st = store();
+    const tracks = st.session!.tracks;
+    const ids = st.selected.includes(c0.id) ? st.selected : [c0.id];
+    const moving = tracks.flatMap((t, ti) => t.clips.filter((c) => ids.includes(c.id)).map((c) => ({ c, ti })));
+    const myTi = tracks.findIndex((t) => t.id === track.id);
+    const minStart = Math.min(...moving.map((m) => m.c.start));
+    const minTi = Math.min(...moving.map((m) => m.ti));
+    const maxTi = Math.max(...moving.map((m) => m.ti));
+    const snaps = snapPoints(ids);
     let target = track.id;
     startDrag(e, {
       move: (dx, _dy, ev) => {
-        let start = Math.max(0, c0.start + Math.round(dx * view.fpp));
+        let d = Math.round(dx * view.fpp);
         if (!ev.altKey) {
+          // Snap the dragged clip's edges to other clips, 0 and the playhead.
           const tol = SNAP_PX * view.fpp;
           let best = tol;
-          let snapped = start;
+          let snapped = d;
+          const s0 = c0.start + d;
           for (const p of snaps) {
-            for (const [d, s] of [
-              [Math.abs(p - start), p],
-              [Math.abs(p - (start + c0.len)), p - c0.len],
+            for (const [dist, nd] of [
+              [Math.abs(p - s0), p - c0.start],
+              [Math.abs(p - (s0 + c0.len)), p - c0.len - c0.start],
             ]) {
-              if (d < best && s >= 0) {
-                best = d;
-                snapped = s;
+              if (dist < best) {
+                best = dist;
+                snapped = nd;
               }
             }
           }
-          start = snapped;
+          d = snapped;
         }
+        d = Math.max(d, -minStart);
         target = trackAt(ev.clientX, ev.clientY) ?? target;
-        sendMove(c0, start, target);
+        const dt = clamp(tracks.findIndex((t) => t.id === target) - myTi, -minTi, tracks.length - 1 - maxTi);
+        const items = moving.map(({ c, ti }) => ({ track: tracks[ti + dt].id, clip: { ...c, start: c.start + d } }));
+        store().drag(
+          {
+            type: "batch",
+            commands: items.map((it) => ({ type: "move_clip" as const, clip: it.clip.id, track: it.track, start: it.clip.start })),
+          },
+          { kind: "clips", items },
+        );
       },
       end: (moved) => {
         if (moved) void store().commit();
-        else {
-          store().setRange(null);
-          store().setPlayhead(a);
-        }
+        else store().select(c0.id);
       },
     });
+  };
+
+  /** The cursor names what a press would do, as in the mockup. */
+  const onHover = (e: React.PointerEvent) => {
+    const el = body.current;
+    if (!el || e.buttons || e.target !== el) return;
+    const y = e.clientY - el.getBoundingClientRect().top - TITLE_H;
+    const onLine = envEdit && y >= 0 && Math.abs(y - envYAt(e.clientX)) <= ENV_BAND;
+    el.style.cursor = onLine ? "crosshair" : "";
   };
 
   const onEdge = (side: "l" | "r") => (e: React.PointerEvent) => {
@@ -420,8 +470,8 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
     });
   };
 
-  const fadeInX = clamp(px(clip.start + clip.fadeIn) - left, 0, w - EDGE);
-  const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left - EDGE, 0, w - EDGE);
+  const fadeInX = clamp(px(clip.start + clip.fadeIn) - left, 0, w - 7);
+  const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left - 7, 0, w - 7);
   const points = envEdit
     ? clip.envelope
         .map((p, i) => ({ p, i, x: px(clip.start + p.at - clip.offset) - left }))
@@ -433,12 +483,14 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
       ref={body}
       className={`clip${selected ? " sel" : ""}${track.muted ? " muted" : ""}`}
       style={{ left, width: w, ["--c" as string]: color, background: shade(color, 0.71) }}
+      data-clip={clip.id}
       onPointerDown={onBody}
+      onPointerMove={onHover}
       onContextMenu={(e) => {
         e.preventDefault();
         void store().deleteClips([clip.id]);
       }}
-      data-hint="Drag to move the clip, onto other tracks too (it snaps to clip edges, 0 and the playhead; Alt skips the snap) · click the envelope line to add a point · right-click deletes"
+      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click deletes · Ctrl+B duplicates"
     >
       <div className="ct">
         <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
@@ -549,21 +601,12 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
     return Math.max(0, view.start + (clientX - r.left) * view.fpp);
   };
 
+  // As in the mockup: dragging an empty lane selects the clips it touches;
+  // a click only deselects. The playhead moves from the ruler alone.
   const onBackground = (e: React.PointerEvent) => {
-    const a = toFrame(e.clientX);
-    const store = useSession.getState();
-    startDrag(e, {
-      move: (_dx, _dy, ev) => {
-        const b = toFrame(ev.clientX);
-        store.setRange({ a: Math.min(a, b), b: Math.max(a, b) });
-      },
-      end: (moved) => {
-        if (!moved) {
-          store.select(null);
-          store.setRange(null);
-          store.setPlayhead(a);
-        }
-      },
+    const add = e.ctrlKey || e.metaKey;
+    startMarquee(e, add, () => {
+      if (!add) useSession.getState().select(null);
     });
   };
 
@@ -578,7 +621,7 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
       ref={ref}
       data-track={track.id}
       onPointerDown={onBackground}
-      data-hint="Click to place the playhead · drag to pick a range, then Ctrl+T crops to it"
+      data-hint="Drag to select clips · click to deselect · drop files to add clips · the playhead moves from the ruler"
     >
       {ghost && <Ghost clip={ghost} view={view} width={width} height={height} />}
       {track.clips.map((c) => (

@@ -165,7 +165,8 @@ export const api = {
   /** `buckets` (min, max) pairs over frames `from..to` of a source. */
   peaks: async (source: number, from: number, to: number, buckets: number) =>
     new Float32Array(await invoke<ArrayBuffer>("peaks", { source, from, to, buckets })),
-  play: (from: number, to: number) => invoke<void>("play", { from, to }),
+  /** Plays `from..to`; with `looping`, jumps back there at `to` until stopped. */
+  play: (from: number, to: number, looping: number | null) => invoke<void>("play", { from, to, looping }),
   stop: () => invoke<void>("stop"),
   transport: () => invoke<{ playing: boolean; position: number }>("transport"),
   savePreview: () => invoke<SavePreview>("save_preview"),

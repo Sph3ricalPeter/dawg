@@ -37,6 +37,8 @@ function Transport() {
   const session = useSession((s) => s.session);
   const playing = useSession((s) => s.playing);
   const playhead = useSession((s) => s.playhead);
+  const loop = useSession((s) => s.loop);
+  const hasRange = useSession((s) => !!s.range);
   const canUndo = useSession((s) => !!s.session?.canUndo);
   const canRedo = useSession((s) => !!s.session?.canRedo);
   const rate = session?.rate ?? 48_000;
@@ -57,7 +59,7 @@ function Transport() {
         </button>
         <button
           className="tb"
-          title="Stop and return (Home)"
+          title="Stop and return to where playback started"
           disabled={!session}
           onClick={() => {
             void store().stop();
@@ -65,6 +67,16 @@ function Transport() {
         >
           <svg viewBox="0 0 16 16">
             <path d="M3.5 3.5h9v9h-9z" />
+          </svg>
+        </button>
+        <button
+          className={`tb${loop ? " on" : ""}`}
+          title={`Loop (L) · ${hasRange ? "the range" : "from 0 to the end of the last clip"}`}
+          disabled={!session}
+          onClick={() => store().toggleLoop()}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <path d="M4 5.5h7.5a2 2 0 0 1 2 2v.5M12 10.5H4.5a2 2 0 0 1-2-2V8M9.5 3.5l2 2-2 2M6.5 12.5l-2-2 2-2" />
           </svg>
         </button>
       </div>

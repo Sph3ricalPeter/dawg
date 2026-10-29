@@ -24,10 +24,12 @@ const RING: usize = 64;
 
 pub enum PlayerMsg {
     Project(Arc<Project>),
-    /// Play timeline frames `from..to`, then stop.
+    /// Play timeline frames `from..to`, then stop, or with `looping` jump
+    /// back to `loop_from` and carry on until stopped.
     Play {
         from: u64,
         to: u64,
+        looping: Option<u64>,
     },
     Stop,
 }
@@ -86,6 +88,8 @@ pub struct Player {
     device_rate: f64,
     playing: bool,
     stop_at: u64,
+    /// Where playback jumps back to at `stop_at`; `None` stops there.
+    loop_from: Option<u64>,
     block: Box<[f32]>,
     block_pos: usize,
     block_len: usize,
@@ -116,6 +120,7 @@ pub fn player(project: Arc<Project>, device_rate: u32, channels: usize) -> (Play
         device_rate: device_rate as f64,
         playing: false,
         stop_at: 0,
+        loop_from: None,
         block: vec![0.0; BLOCK * OUT_CHANNELS].into_boxed_slice(),
         block_pos: 0,
         block_len: 0,
@@ -178,11 +183,12 @@ impl Player {
                         std::mem::forget(old);
                     }
                 }
-                PlayerMsg::Play { from, to } => {
+                PlayerMsg::Play { from, to, looping } => {
                     self.renderer.seek(from);
                     self.block_pos = 0;
                     self.block_len = 0;
                     self.stop_at = to;
+                    self.loop_from = looping.filter(|&l| l < to);
                     self.playing = true;
                     self.heard = from;
                     self.frac = 0.0;
@@ -201,10 +207,16 @@ impl Player {
         self.renderer.position() - (self.block_len - self.block_pos) as u64
     }
 
-    /// The next rendered frame; silence past the stop point.
+    /// The next rendered frame; silence past the stop point, or the loop's
+    /// start again when looping.
     fn next_src(&mut self) -> [f32; 2] {
         if self.src_pos() >= self.stop_at {
-            return [0.0; 2];
+            let Some(back) = self.loop_from else {
+                return [0.0; 2];
+            };
+            self.renderer.seek(back);
+            self.block_pos = 0;
+            self.block_len = 0;
         }
         if self.block_pos == self.block_len {
             self.renderer.process(&mut self.block);
@@ -233,6 +245,11 @@ impl Player {
             let next = self.next_src();
             self.hist = [self.hist[1], self.hist[2], self.hist[3], next];
             self.heard += 1;
+            if let Some(back) = self.loop_from {
+                if self.heard >= self.stop_at {
+                    self.heard = back + (self.heard - self.stop_at);
+                }
+            }
         }
         y
     }
@@ -261,6 +278,7 @@ mod tests {
         handle.send(PlayerMsg::Play {
             from: 100,
             to: 2000,
+            looping: None,
         });
         let mut out = vec![0.0; 2 * 4000];
         for chunk in out.chunks_mut(2 * 480) {
@@ -274,11 +292,37 @@ mod tests {
     }
 
     #[test]
+    fn loops_back_until_stopped() {
+        let p = project(48_000, 3000);
+        let (mut player, mut handle) = player(p.clone(), 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 1500,
+            to: 2000,
+            looping: Some(0),
+        });
+        let mut out = vec![0.0; 2 * 2500];
+        for chunk in out.chunks_mut(2 * 480) {
+            player.fill(chunk);
+        }
+        // 500 frames to the loop end, then 0..2000 from the top.
+        let mut want = crate::render(p.clone(), 1500, 500);
+        want.extend(crate::render(p, 0, 2000));
+        assert_eq!(out, want);
+        assert!(handle.playing());
+        // Exactly at the loop end again, so back at its start.
+        assert_eq!(handle.position(), 0);
+        handle.send(PlayerMsg::Stop);
+        player.fill(&mut out[..8]);
+        assert!(!handle.playing());
+    }
+
+    #[test]
     fn resamples_to_the_device_rate() {
         let (mut player, mut handle) = player(project(44_100, 44_100), 48_000, 2);
         handle.send(PlayerMsg::Play {
             from: 0,
             to: 44_100,
+            looping: None,
         });
         let mut out = vec![0.0; 2 * 1024];
         for _ in 0..46 {

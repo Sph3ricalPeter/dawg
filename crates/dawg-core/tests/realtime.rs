@@ -100,9 +100,11 @@ fn player_fill_does_not_allocate_or_free() {
             // freeing it in the callback.
             let next = std::sync::Arc::new((*scene.project).clone());
             handle.send(PlayerMsg::Project(next));
+            // Long enough to loop back twice.
             handle.send(PlayerMsg::Play {
                 from: 0,
                 to: scene.frames as u64,
+                looping: Some(0),
             });
             assert_no_alloc(scene.name, || {
                 for _ in 0..20 {

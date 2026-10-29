@@ -45,6 +45,8 @@ export type Draft =
   /** A clip as it is being moved, trimmed or reshaped; `track` is where it
    * sits now. `ghost` shows the source audio the clip leaves out. */
   | { kind: "clip"; track: number; clip: ClipState; ghost?: boolean }
+  /** Several clips being moved together. */
+  | { kind: "clips"; items: { track: number; clip: ClipState }[] }
   | { kind: "track"; track: TrackState };
 
 interface SessionStore {
@@ -60,6 +62,11 @@ interface SessionStore {
   startPoint: number;
   playing: boolean;
   range: Range | null;
+  /** Playback loops: the range if there is one, else 0 to the last clip's
+   * end (L toggles). */
+  loop: boolean;
+  /** The playhead is being dragged on the ruler. */
+  scrubbing: boolean;
   /** Envelope lines take clicks (E toggles). */
   envEdit: boolean;
   toast: Toast | null;
@@ -87,12 +94,21 @@ interface SessionStore {
   redo: () => Promise<void>;
   select: (clip: number | null, toggle?: boolean) => void;
   selectAll: () => void;
+  setSelected: (ids: number[]) => void;
   deleteClips: (ids: number[]) => Promise<void>;
   duplicateSelected: () => Promise<void>;
   splitAtPlayhead: () => Promise<void>;
   addTrack: () => Promise<void>;
   setPlayhead: (frame: number) => void;
+  /** Moves the playhead while scrubbing, without touching playback. */
+  scrub: (frame: number | null) => void;
   setRange: (r: Range | null) => void;
+  /** A range made on the ruler: looping turns on and the playhead moves
+   * into it, as in the mockup. */
+  rangeLoop: () => void;
+  toggleLoop: () => void;
+  /** Restarts playback from the playhead when what it plays changed. */
+  replay: () => Promise<void>;
   cropToRange: () => Promise<void>;
   toggleEnvEdit: () => void;
   togglePlay: () => Promise<void>;
@@ -123,6 +139,20 @@ let toastSeq = 0;
 /** Shortest clip a trim can leave, in frames (`dawg_core::command::MIN_CLIP`). */
 export const MIN_LEN = 16;
 
+/** What playback covers: up to `to`, then back to `loopFrom` (or stop when
+ * that's null). Null when there is nothing to play. */
+function bounds(st: { session: SessionState | null; range: Range | null; loop: boolean }): {
+  to: number;
+  loopFrom: number | null;
+} | null {
+  const s = st.session;
+  if (!s) return null;
+  if (st.range && st.loop) return { to: Math.round(st.range.b), loopFrom: Math.round(st.range.a) };
+  const end = songEnd(s);
+  if (end <= 0) return null;
+  return { to: end, loopFrom: st.loop ? 0 : null };
+}
+
 /** Every clip of the session, with its track. */
 export function allClips(s: SessionState): { track: TrackState; clip: ClipState }[] {
   return s.tracks.flatMap((track) => track.clips.map((clip) => ({ track, clip })));
@@ -130,6 +160,13 @@ export function allClips(s: SessionState): { track: TrackState; clip: ClipState 
 
 export function findClip(s: SessionState, id: number): { track: TrackState; clip: ClipState } | null {
   return allClips(s).find((c) => c.clip.id === id) ?? null;
+}
+
+/** End of the last clip, muted or not: where playback loops back. */
+export function songEnd(s: SessionState): number {
+  let end = 0;
+  for (const { clip } of allClips(s)) end = Math.max(end, clip.start + clip.len);
+  return end;
 }
 
 /** End of the last clip, muted or not, or of the original file. */
@@ -145,11 +182,12 @@ export function shownTracks(s: SessionState, draft: Draft | null): TrackState[] 
   if (draft.kind === "track") {
     return s.tracks.map((t) => (t.id === draft.track.id ? { ...draft.track, clips: t.clips } : t));
   }
-  const id = draft.clip.id;
+  const items = draft.kind === "clip" ? [{ track: draft.track, clip: draft.clip }] : draft.items;
+  const ids = new Set(items.map((it) => it.clip.id));
   return s.tracks.map((t) => {
-    const clips = t.clips.filter((c) => c.id !== id);
-    if (t.id === draft.track) clips.push(draft.clip);
-    return clips.length === t.clips.length && t.id !== draft.track ? t : { ...t, clips };
+    const mine = items.filter((it) => it.track === t.id).map((it) => it.clip);
+    if (!mine.length && !t.clips.some((c) => ids.has(c.id))) return t;
+    return { ...t, clips: [...t.clips.filter((c) => !ids.has(c.id)), ...mine] };
   });
 }
 
@@ -163,6 +201,8 @@ export const useSession = create<SessionStore>((set, get) => ({
   startPoint: 0,
   playing: false,
   range: null,
+  loop: true,
+  scrubbing: false,
   envEdit: true,
   toast: null,
   dialog: null,
@@ -273,7 +313,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     }
     try {
       const s = await enqueue(() => api.apply(cmd, false));
-      set({ session: s, draft: null });
+      get().adopt(s);
     } catch (e) {
       set({ draft: null });
       get().showToast(apiMessage(e), { error: true });
@@ -314,6 +354,8 @@ export const useSession = create<SessionStore>((set, get) => ({
       set({ selected: [clip] });
     }
   },
+
+  setSelected: (ids) => set({ selected: ids }),
 
   selectAll: () => {
     const s = get().session;
@@ -377,17 +419,59 @@ export const useSession = create<SessionStore>((set, get) => ({
     const { session, playing } = get();
     if (!session) return;
     const f = Math.round(clamp(frame, 0, timelineEnd(session)));
-    set({ playhead: f, startPoint: f });
-    if (playing) void get().togglePlay().then(() => get().togglePlay());
+    set({ playhead: f, startPoint: f, scrubbing: false });
+    if (playing) void get().replay();
   },
 
-  setRange: (r) => set({ range: r && r.b - r.a >= 1 ? r : null }),
+  scrub: (frame) => {
+    const { session } = get();
+    if (!session || frame === null) {
+      set({ scrubbing: false });
+      return;
+    }
+    set({ scrubbing: true, playhead: Math.round(clamp(frame, 0, timelineEnd(session))) });
+  },
+
+  setRange: (r) => {
+    const had = get().range;
+    set({ range: r && r.b - r.a >= 1 ? r : null });
+    if (get().playing && (had !== null || get().range !== null)) void get().replay();
+  },
+
+  rangeLoop: () => {
+    const { range, playhead } = get();
+    if (!range) return;
+    set({ loop: true });
+    if (playhead < range.a || playhead >= range.b) {
+      const a = Math.round(range.a);
+      set({ playhead: a, startPoint: a });
+    }
+    if (get().playing) void get().replay();
+  },
+
+  toggleLoop: () => {
+    set({ loop: !get().loop });
+    if (get().playing) void get().replay();
+  },
+
+  replay: async () => {
+    if (!get().playing) return;
+    const b = bounds(get());
+    if (!b) {
+      await get().stop();
+      return;
+    }
+    let from = get().playhead;
+    if (from >= b.to || (b.loopFrom !== null && from < b.loopFrom)) from = b.loopFrom ?? 0;
+    await api.play(from, b.to, b.loopFrom).catch(() => undefined);
+    set({ playhead: from });
+  },
 
   cropToRange: async () => {
     const { session, range, selected } = get();
     if (!session) return;
     if (!range) {
-      get().showToast("Drag across the ruler to pick what to keep, then crop");
+      get().showToast("Ctrl+drag on the ruler to make a range first, then crop");
       return;
     }
     const a = Math.round(range.a);
@@ -419,24 +503,24 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
 
   togglePlay: async () => {
-    const { session, playing, range, startPoint } = get();
+    const { session, playing, startPoint } = get();
     if (!session) return;
     if (playing) {
       await get().stop();
       return;
     }
-    const end = timelineEnd(session);
-    let from = startPoint;
-    let to = end;
-    if (range) {
-      from = Math.round(range.a);
-      to = Math.round(range.b);
-    } else if (from >= end) {
-      from = session.start;
+    const b = bounds(get());
+    if (!b) {
+      get().showToast("There's nothing to play yet");
+      return;
     }
+    // From where the playhead was put, or the loop's start if that's
+    // outside what plays.
+    let from = startPoint;
+    if (from >= b.to || (b.loopFrom !== null && from < b.loopFrom)) from = b.loopFrom ?? 0;
     try {
-      await api.play(from, to);
-      set({ playing: true, playhead: from });
+      await api.play(from, b.to, b.loopFrom);
+      set({ playing: true, playhead: from, startPoint: from });
     } catch (e) {
       get().showToast(`Can't play: ${apiMessage(e)}`, { error: true });
     }
@@ -445,15 +529,16 @@ export const useSession = create<SessionStore>((set, get) => ({
   stop: async () => {
     if (!get().playing) return;
     await api.stop().catch(() => undefined);
-    set({ playing: false, playhead: get().range ? Math.round(get().range!.a) : get().startPoint });
+    // Stop returns to where playback started (UX spec, Space).
+    set({ playing: false, playhead: get().startPoint });
   },
 
   poll: async () => {
     if (!get().playing) return;
     const t = await api.transport();
     if (!get().playing) return;
-    if (t.playing) set({ playhead: t.position });
-    else set({ playing: false, playhead: get().range ? Math.round(get().range!.a) : get().startPoint });
+    if (!t.playing) set({ playing: false, playhead: get().startPoint });
+    else if (!get().scrubbing) set({ playhead: t.position });
   },
 
   showToast: (text, opts) => {
@@ -470,7 +555,10 @@ export const useSession = create<SessionStore>((set, get) => ({
 
   adopt: (s) => {
     const ids = new Set(s ? allClips(s).map((c) => c.clip.id) : []);
+    const before = get().session;
     set({ session: s, draft: null, selected: get().selected.filter((id) => ids.has(id)) });
+    // The loop follows the last clip's end.
+    if (s && before && songEnd(s) !== songEnd(before)) void get().replay();
   },
 
   reloaded: (s) => {

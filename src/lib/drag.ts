@@ -6,6 +6,8 @@ export interface DragHandlers {
   move: (dx: number, dy: number, e: PointerEvent) => void;
   /** `moved` is false for a plain click. */
   end: (moved: boolean, e: PointerEvent) => void;
+  /** Pixels before it counts as a drag; `DRAG_SLOP` by default. */
+  slop?: number;
 }
 
 /** Follows the pointer from a press until release, anywhere in the window. */
@@ -19,7 +21,8 @@ export function startDrag(e: React.PointerEvent | PointerEvent, h: DragHandlers)
   const onMove = (ev: PointerEvent) => {
     const dx = ev.clientX - x0;
     const dy = ev.clientY - y0;
-    if (!moved && Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) return;
+    const slop = h.slop ?? DRAG_SLOP;
+    if (!moved && Math.abs(dx) < slop && Math.abs(dy) < slop) return;
     moved = true;
     h.move(dx, dy, ev);
   };

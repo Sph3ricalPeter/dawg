@@ -45,25 +45,47 @@ function Ruler() {
     const r = ref.current!.getBoundingClientRect();
     return clamp(view.start + (clientX - r.left) * view.fpp, 0, timelineEnd(session) * 1.5);
   };
+  // As in the mockup: a plain drag scrubs the playhead, Ctrl+drag makes the
+  // range (loop, crop, export), and a click places the playhead and clears
+  // the range.
   const onDown = (e: React.PointerEvent) => {
     const a = toFrame(e.clientX);
     const store = useSession.getState();
+    if (e.ctrlKey || e.metaKey) {
+      startDrag(e, {
+        move: (_dx, _dy, ev) => {
+          const b = toFrame(ev.clientX);
+          store.setRange({ a: Math.min(a, b), b: Math.max(a, b) });
+        },
+        end: (moved) => {
+          if (moved) store.rangeLoop();
+          else store.setRange(null);
+        },
+      });
+      return;
+    }
+    if (e.button !== 0) return;
+    store.scrub(a);
+    let at = a;
     startDrag(e, {
+      slop: 0,
       move: (_dx, _dy, ev) => {
-        const b = toFrame(ev.clientX);
-        store.setRange({ a: Math.min(a, b), b: Math.max(a, b) });
+        at = toFrame(ev.clientX);
+        store.scrub(at);
       },
       end: (moved) => {
-        if (!moved) {
-          store.setRange(null);
-          store.setPlayhead(a);
-        }
+        if (!moved) store.setRange(null);
+        store.setPlayhead(at);
       },
     });
   };
   const onDouble = () => {
-    const s = useSession.getState().session;
-    if (s && s.end > s.start) useSession.getState().setRange({ a: s.start, b: s.end });
+    const st = useSession.getState();
+    const s = st.session;
+    if (s && s.end > s.start) {
+      st.setRange({ a: s.start, b: s.end });
+      st.rangeLoop();
+    }
   };
 
   const px = (f: number) => (f - view.start) / view.fpp;
@@ -73,7 +95,7 @@ function Ruler() {
       ref={ref}
       onPointerDown={onDown}
       onDoubleClick={onDouble}
-      data-hint="Click to place the playhead · drag for a range · double-click selects everything"
+      data-hint="Click or drag to move the playhead · Ctrl+drag sets the range (loop, crop, export) · double-click ranges over every clip"
     >
       {ticks}
       {range && (
@@ -313,6 +335,30 @@ function Scrollbar() {
   );
 }
 
+/** Middle-drag grabs the arrangement and moves it, as in the mockup. */
+function panWithMiddle(e: React.PointerEvent, el: HTMLElement | null) {
+  if (e.button !== 1 || !el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const x0 = e.clientX;
+  const y0 = e.clientY;
+  const s0 = useSession.getState().view.start;
+  const top0 = el.scrollTop;
+  document.body.classList.add("panning");
+  const move = (ev: PointerEvent) => {
+    const s = useSession.getState();
+    s.scrollTo(s0 - (ev.clientX - x0) * s.view.fpp);
+    el.scrollTop = top0 - (ev.clientY - y0);
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    document.body.classList.remove("panning");
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
 /** The playlist: a ruler over the tracks, each a header and a lane. */
 export function Editor() {
   const session = useSession((s) => s.session);
@@ -328,7 +374,9 @@ export function Editor() {
         <span className="r">{fmtRate(session.rate)}</span>
       </div>
       <Ruler />
-      <div className={`tracks${tall ? " one" : ""}`} ref={ref}>
+      <div className={`tracks${tall ? " one" : ""}`} ref={ref} onPointerDownCapture={(e) => panWithMiddle(e, ref.current)}
+        onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+      >
         {tracks.map((t, i) => (
           <div className={`trow${t.muted ? " muted" : ""}`} key={t.id}>
             <TrackHeader track={t} index={i} tall={tall} />

@@ -43,7 +43,7 @@ function StatusBar({ hint }: { hint: string }) {
   const session = useSession((s) => s.session);
   const busy = useSession((s) => s.busy);
   const fallback = session
-    ? "Drag clips to move them · drag edges to trim · click a clip's line for envelope points · drop more files to add tracks · Ctrl+S exports"
+    ? "Drag the ruler to move the playhead, Ctrl+drag it for a range · drag clips to move them · click a clip's line for envelope points · drop files to add tracks · Ctrl+S exports"
     : "Drop WAV or MP3 files anywhere, or press Ctrl+O";
   return (
     <footer className="status">
@@ -115,12 +115,14 @@ function useShortcuts() {
       else if (!ctrl && e.key === " ") void s.togglePlay();
       else if (!ctrl && (e.key === "Delete" || e.key === "Backspace")) void s.deleteClips(s.selected);
       else if (!ctrl && k === "e" && s.session) s.toggleEnvEdit();
+      else if (!ctrl && k === "l" && s.session) s.toggleLoop();
       else if (!ctrl && e.key === "Home") {
         void s.stop();
         s.setPlayhead(0);
       } else if (!ctrl && e.key === "Escape") {
-        if (s.range) s.setRange(null);
-        else s.select(null);
+        // As in the mockup: clears the range and the selection.
+        s.setRange(null);
+        s.select(null);
       } else handled = false;
       if (handled) e.preventDefault();
     };

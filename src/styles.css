@@ -76,6 +76,10 @@ body.dragging,
 body.dragging * {
   cursor: inherit;
 }
+body.panning,
+body.panning * {
+  cursor: grabbing !important;
+}
 
 /* title bar: file on the left, transport centred, output on the right */
 .titlebar {
@@ -577,7 +581,7 @@ button.upd {
   overflow: hidden;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line-strong);
-  cursor: text;
+  cursor: pointer;
 }
 .ruler .tk {
   position: absolute;
@@ -732,7 +736,14 @@ button.upd {
   position: relative;
   overflow: hidden;
   background: var(--bg-2b);
-  cursor: text;
+  cursor: default;
+}
+.marquee {
+  position: fixed;
+  z-index: 30;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
 }
 .lanecv {
   position: absolute;
@@ -778,6 +789,10 @@ button.upd {
 .clip.sel {
   z-index: 2;
   box-shadow: inset 0 0 0 1px #fff, 0 0 0 1px #fff;
+}
+.clip .ct,
+.clip .clipcv {
+  cursor: grab;
 }
 .clip .ct {
   height: 14px;
@@ -859,20 +874,35 @@ button.upd {
 .clip .edge:hover {
   background: rgba(255, 255, 255, 0.18);
 }
+/* Fade handles: a 7 px square at the top corner with an 18 px hit area
+   around it, above the trim zones, so a handle at the clip's edge wins
+   (the mockup's order: point > fade handle > gain > trim). */
 .clip .fh {
   position: absolute;
   top: 14px;
-  width: 6px;
-  height: 6px;
-  background: #121212;
-  opacity: 0.35;
+  width: 18px;
+  height: 18px;
+  margin-left: -6px;
   pointer-events: auto;
   cursor: ew-resize;
-  z-index: 1;
+  z-index: 3;
 }
-.clip .fh.on,
-.clip .fh:hover {
+.clip .fh::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  background: #121212;
+  opacity: 0.35;
+}
+.clip .fh.on::before {
   opacity: 0.85;
+}
+.clip .fh:hover::before {
+  opacity: 1;
+  outline: 1px solid rgba(255, 255, 255, 0.7);
 }
 .playhead {
   position: absolute;

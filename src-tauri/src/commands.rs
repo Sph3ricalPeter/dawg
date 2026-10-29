@@ -204,10 +204,12 @@ pub fn peaks(
 }
 
 #[tauri::command]
-pub fn play(state: State<AppState>, from: u64, to: u64) -> Result<()> {
+pub fn play(state: State<AppState>, from: u64, to: u64, looping: Option<u64>) -> Result<()> {
     let mut s = state.lock();
     s.session()?;
-    s.audio.play(from, to).map_err(|e| Error::new("audio", e))
+    s.audio
+        .play(from, to, looping)
+        .map_err(|e| Error::new("audio", e))
 }
 
 #[tauri::command]
