@@ -27,7 +27,6 @@ export interface Toast {
 }
 
 export type Dialog =
-  | { type: "replace" }
   | {
       type: "discard";
       /** What happens after the user agrees to lose their edits. */

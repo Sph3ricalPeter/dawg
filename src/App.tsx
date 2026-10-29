@@ -7,12 +7,11 @@ import { Editor } from "@/components/Editor";
 import { TitleBar } from "@/components/TitleBar";
 import { api } from "@/lib/api";
 import {
+  exportDialog,
   isWav,
   openFileDialog,
   openPath,
   requestClose,
-  saveAsDialog,
-  showReplaceDialog,
 } from "@/lib/actions";
 import { getAppInfo, type AppInfo } from "@/lib/app-info";
 import { fmtFormat } from "@/lib/format";
@@ -26,7 +25,7 @@ function EmptyState({ dropping }: { dropping: boolean }) {
         <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3" />
       </svg>
       <h3>Drop a WAV file here</h3>
-      <p>It opens on one track so you can trim it, change its gain or fade it, then write it back over the original.</p>
+      <p>It opens on one track so you can trim it, change its gain or fade it, then export it, over the original or as a new file.</p>
       <div className="row">
         <button className="btn" onClick={() => void openFileDialog()}>
           Open file… <kbd>Ctrl+O</kbd>
@@ -43,7 +42,7 @@ function StatusBar({ hint }: { hint: string }) {
   const session = useSession((s) => s.session);
   const busy = useSession((s) => s.busy);
   const fallback = session
-    ? "Drag the clip edges to trim · drag across it and press Ctrl+T to crop · Ctrl+S replaces the original"
+    ? "Drag the clip edges to trim · drag across it and press Ctrl+T to crop · Ctrl+S exports"
     : "Drop a WAV file anywhere, or press Ctrl+O";
   return (
     <footer className="status">
@@ -97,9 +96,7 @@ function useShortcuts() {
       const k = e.key.toLowerCase();
       let handled = true;
       if (ctrl && k === "o") void openFileDialog();
-      else if (ctrl && e.shiftKey && k === "s") void saveAsDialog();
-      else if (ctrl && k === "s") showReplaceDialog();
-      else if (ctrl && k === "r") showReplaceDialog();
+      else if (ctrl && (k === "s" || k === "r")) void exportDialog();
       else if (ctrl && (k === "y" || (e.shiftKey && k === "z"))) void s.redo();
       else if (ctrl && k === "z") void s.undo();
       else if (ctrl && k === "t") void s.cropToRange();

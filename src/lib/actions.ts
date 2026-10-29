@@ -2,27 +2,10 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, apiMessage, isApiError } from "./api";
-import { dirOf, stem } from "./format";
+import { dirOf } from "./format";
 import { useSession } from "@/stores/session-store";
 
 const WAV_FILTER = [{ name: "WAV audio", extensions: ["wav", "wave"] }];
-const CLOSE_AFTER_KEY = "dawg.closeAfterReplace";
-
-export function closeAfterReplace(): boolean {
-  try {
-    return localStorage.getItem(CLOSE_AFTER_KEY) !== "0";
-  } catch {
-    return true;
-  }
-}
-
-export function setCloseAfterReplace(on: boolean) {
-  try {
-    localStorage.setItem(CLOSE_AFTER_KEY, on ? "1" : "0");
-  } catch {
-    // Only a remembered preference.
-  }
-}
 
 export function isWav(path: string): boolean {
   return /\.wave?$/i.test(path);
@@ -46,15 +29,8 @@ export async function openFileDialog() {
   if (typeof picked === "string") openPath(picked);
 }
 
-export function showReplaceDialog() {
-  const s = useSession.getState();
-  if (!s.session) return;
-  void s.stop();
-  s.setDialog({ type: "replace" });
-}
-
 /** Writes the edit over the original. Returns true when it did. */
-export async function replaceOriginal(): Promise<boolean> {
+async function replaceOriginal(): Promise<boolean> {
   const s = useSession.getState();
   if (!s.session) return false;
   const name = s.session.name;
@@ -76,27 +52,28 @@ export async function replaceOriginal(): Promise<boolean> {
   }
 }
 
-/** Replace, then close the window if the user asked for that. */
-export async function replaceAndMaybeClose(close: boolean) {
-  const ok = await replaceOriginal();
-  if (ok && close && isTauri()) await getCurrentWindow().destroy();
-}
-
-export async function saveAsDialog(): Promise<boolean> {
+/**
+ * Export the edit through the system save dialog. It starts on the original
+ * file, so Save there asks (in the dialog itself) whether to replace it;
+ * that path goes through the safe replace with a backup.
+ */
+export async function exportDialog(): Promise<boolean> {
   const s = useSession.getState();
   if (!s.session || !isTauri()) return false;
-  const path = await save({
-    filters: WAV_FILTER,
-    defaultPath: `${dirOf(s.session.path)}${stem(s.session.name)}_edit.wav`,
-  });
+  await s.stop();
+  const path = await save({ filters: WAV_FILTER, defaultPath: s.session.path });
   if (!path) return false;
   useSession.setState({ busy: "Saving…" });
   try {
     await api.saveAs(path);
-    s.showToast(`Saved ${path}`);
+    s.showToast(`Exported ${path.split(/[\\/]/).pop()}`);
     return true;
   } catch (e) {
-    s.showToast(`Couldn't save: ${apiMessage(e)}`, { error: true });
+    if (isApiError(e) && e.kind === "same_file") {
+      useSession.setState({ busy: null });
+      return replaceOriginal();
+    }
+    s.showToast(`Couldn't export: ${apiMessage(e)}`, { error: true });
     return false;
   } finally {
     useSession.setState({ busy: null });

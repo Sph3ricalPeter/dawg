@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { AppInfo } from "@/lib/app-info";
-import { openFileDialog, restoreLastReplace, saveAsDialog, showReplaceDialog } from "@/lib/actions";
+import { exportDialog, openFileDialog, restoreLastReplace } from "@/lib/actions";
 import { useSession } from "@/stores/session-store";
 import { useUpdaterStore } from "@/stores/updater-store";
 import { DawgMark } from "./DawgMark";
@@ -79,8 +79,7 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
             <span className="faint">{updateLine(status, lastChecked)}</span>
           </div>
           {item("Open…", "Ctrl+O", () => void openFileDialog())}
-          {item("Replace original…", "Ctrl+S", showReplaceDialog, !hasFile)}
-          {item("Save as new file…", "Ctrl+Shift+S", () => void saveAsDialog(), !hasFile)}
+          {item("Export…", "Ctrl+S", () => void exportDialog(), !hasFile)}
           {item("Restore last replace", "", () => void restoreLastReplace())}
           <div className="menu-sep" />
           <button

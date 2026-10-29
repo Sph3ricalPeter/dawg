@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
 import type { AppInfo } from "@/lib/app-info";
-import { requestClose, showReplaceDialog } from "@/lib/actions";
+import { exportDialog, requestClose } from "@/lib/actions";
 import { fmtTime } from "@/lib/format";
 import { useSession } from "@/stores/session-store";
 import { AppMenu } from "./AppMenu";
@@ -106,13 +106,13 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
             className="btn primary"
             id="tExport"
             disabled={!session}
-            onClick={showReplaceDialog}
-            title="Write the edit over the original (Ctrl+S)"
+            onClick={() => void exportDialog()}
+            title="Export (Ctrl+S) · the dialog starts on the original file; saving there replaces it, with a backup"
           >
             <svg viewBox="0 0 16 16">
-              <path d="M8 2.5V10M5 7.2l3 2.9 3-2.9M2.5 9.5v3.5h11V9.5" />
+              <path d="M8 10V2.5M5 5.2 8 2.3l3 2.9M2.5 9.5v3.5h11V9.5" />
             </svg>
-            Replace original
+            Export
           </button>
         </div>
         <div className="winctl">
