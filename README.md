@@ -23,11 +23,16 @@ the existing window. Export then defaults to the same file.
 
 Unity has no audio setting under External Tools, so double-clicking a clip
 opens whatever Windows associates with `.wav`. To open clips in dawg instead,
-copy [`integrations/unity/Editor/DawgAudioEditor.cs`](integrations/unity/Editor/DawgAudioEditor.cs)
-into an `Editor` folder of the project (e.g. `Assets/Editor/`). It finds the
-installed dawg (or pick `dawg.exe` under Edit > Preferences > dawg), and
-double-clicking a WAV or MP3 then opens it in dawg. Export over the original
-and switch back to Unity; it reimports the clip.
+add the package in Window > Package Manager > + > Install package from git URL:
+
+```
+https://github.com/Sph3ricalPeter/dawg.git?path=/integrations/unity#dev
+```
+
+(Or copy `integrations/unity/Editor/DawgAudioEditor.cs` into an `Editor`
+folder of the project.) It finds the installed dawg, or pick `dawg.exe` under
+Edit > Preferences > dawg. Double-clicking a WAV or MP3 then opens it in dawg.
+Export over the original and switch back to Unity; it reimports the clip.
 
 ## Develop
 

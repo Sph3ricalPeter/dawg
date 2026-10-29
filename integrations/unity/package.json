@@ -1,0 +1,8 @@
+{
+  "name": "com.sph3ricalpeter.dawg",
+  "displayName": "dawg audio editor",
+  "version": "0.1.0",
+  "unity": "2021.3",
+  "description": "Double-click a WAV or MP3 clip to open it in dawg. Export over it and Unity reimports the clip.",
+  "author": { "name": "Sph3ricalPeter", "url": "https://github.com/Sph3ricalPeter/dawg" }
+}

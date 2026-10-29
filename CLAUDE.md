@@ -21,7 +21,7 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   (the audio callback minus the device), `peaks`.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output), plugins, installer config.
-- `integrations/unity`: editor script that opens audio clips in dawg on
+- `integrations/unity`: Unity package (git URL install) that opens audio clips in dawg on
   double-click.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
   `src/styles.css`; zustand stores in `src/stores`.

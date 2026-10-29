@@ -5,8 +5,9 @@
 // over the double-click for .wav and .mp3 instead, so the rest of Windows
 // keeps its own default player.
 //
-// Drop this file into any Editor folder of a project (for example
-// Assets/Editor/DawgAudioEditor.cs). Settings live under
+// Install with Package Manager > Install package from git URL:
+// https://github.com/Sph3ricalPeter/dawg.git?path=/integrations/unity#dev
+// or drop this file into any Editor folder of a project. Settings live under
 // Edit > Preferences > dawg. dawg opens the clip in its scratch session; Export
 // defaults to the same file, and Unity reimports it when you switch back.
 

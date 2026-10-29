@@ -1,0 +1,5 @@
+{
+  "name": "Dawg.Editor",
+  "rootNamespace": "Dawg.Editor",
+  "includePlatforms": ["Editor"]
+}
