@@ -1,8 +1,8 @@
 # dawg
 
-Windows DAW for quick sound design: drag WAVs onto tracks, shape clips with
-volume envelopes, export WAV. "Edit in dawg" in Explorer opens a file in a
-scratch session. AI works as a coproducer through MCP only (no in-app panel).
+Windows DAW for quick sound design: drag WAVs or MP3s onto tracks, shape
+clips with volume envelopes, export WAV or MP3. "Edit in dawg" in Explorer
+opens a file in a scratch session. AI works as a coproducer through MCP only (no in-app panel).
 
 Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 (`design/mockup.html` in the project files).
@@ -11,7 +11,9 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 
 - `crates/dawg-core`: headless project model and mixer. No UI, no device I/O.
   The app, the future `dawg-cli` and the MCP server all drive it.
-  `wav` (format-preserving RIFF codec), `save` (safe replace and backups),
+  `wav` (format-preserving RIFF codec), `mp3` (Symphonia decode, LAME
+  encode, gapless, tags kept), `file` (WAV or MP3 behind one type, and
+  converting between them), `save` (safe replace and backups),
   `command` (edits as serde data), `session` (one-file scratch session with
   undo), `player` (the audio callback minus the device), `peaks`.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
@@ -45,7 +47,11 @@ npm run build:dev   # local installable "dawg dev" build
 - **Never damage a user's file**: writes over an existing file go through
   `save::replace` (verified temp, backup, `ReplaceFileW`). An untouched
   file must save byte-identical and a crop must be a slice of the source
-  bytes; `wav.rs` tests enforce both.
+  bytes; `wav.rs` tests enforce both. MP3 can't avoid re-encoding an edit,
+  but an untouched MP3 saves byte-identical and saving over one keeps its
+  length, rate, bitrate and ID3 tags (`mp3.rs` and `session.rs` tests).
+- **Licenses**: LAME (MP3 encoder) is LGPL and Symphonia is MPL-2.0; see
+  `THIRD_PARTY.md`. Don't add GPL code.
 - **Golden renders**: `crates/dawg-core/tests/golden.rs` compares scenes with
   WAVs in `tests/golden/`. A mismatch means the sound changed. Re-bless with
   `DAWG_BLESS=1 cargo test -p dawg-core --test golden` only when that was the

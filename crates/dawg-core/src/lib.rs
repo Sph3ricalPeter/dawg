@@ -7,7 +7,9 @@
 //! the real-time path.
 
 pub mod command;
+pub mod file;
 mod model;
+pub mod mp3;
 pub mod peaks;
 pub mod player;
 mod render;

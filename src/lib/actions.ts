@@ -5,13 +5,15 @@ import { api, apiMessage, isApiError } from "./api";
 import { dirOf } from "./format";
 import { useSession } from "@/stores/session-store";
 
-const WAV_FILTER = [{ name: "WAV audio", extensions: ["wav", "wave"] }];
+const WAV = { name: "WAV audio", extensions: ["wav", "wave"] };
+const MP3 = { name: "MP3 audio", extensions: ["mp3"] };
+const OPEN_FILTERS = [{ name: "Audio files", extensions: ["wav", "wave", "mp3"] }, WAV, MP3];
 
-export function isWav(path: string): boolean {
-  return /\.wave?$/i.test(path);
+export function isAudio(path: string): boolean {
+  return /\.(wave?|mp3)$/i.test(path);
 }
 
-/** Open a WAV (asks before dropping unsaved edits). */
+/** Open a WAV or MP3 (asks before dropping unsaved edits). */
 export function openPath(path: string) {
   const s = useSession.getState();
   s.guard("open another file", () => void s.open(path));
@@ -23,7 +25,7 @@ export async function openFileDialog() {
   const picked = await open({
     multiple: false,
     directory: false,
-    filters: WAV_FILTER,
+    filters: OPEN_FILTERS,
     defaultPath: s.session ? dirOf(s.session.path) : undefined,
   });
   if (typeof picked === "string") openPath(picked);
@@ -55,13 +57,15 @@ async function replaceOriginal(): Promise<boolean> {
 /**
  * Export the edit through the system save dialog. It starts on the original
  * file, so Save there asks (in the dialog itself) whether to replace it;
- * that path goes through the safe replace with a backup.
+ * that path goes through the safe replace with a backup. The file type
+ * picks WAV or MP3; the file's own format comes first.
  */
 export async function exportDialog(): Promise<boolean> {
   const s = useSession.getState();
   if (!s.session || !isTauri()) return false;
   await s.stop();
-  const path = await save({ filters: WAV_FILTER, defaultPath: s.session.path });
+  const filters = s.session.codec === "mp3" ? [MP3, WAV] : [WAV, MP3];
+  const path = await save({ filters, defaultPath: s.session.path });
   if (!path) return false;
   useSession.setState({ busy: "Saving…" });
   try {

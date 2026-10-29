@@ -5,6 +5,7 @@
 ; builds ("dawg dev") without their Explorer entries clashing.
 
 !define DAWG_VERB_KEY "Software\Classes\SystemFileAssociations\.wav\shell\${BUNDLEID}"
+!define DAWG_MP3_VERB_KEY "Software\Classes\SystemFileAssociations\.mp3\shell\${BUNDLEID}"
 
 !macro NSIS_HOOK_PREINSTALL
   ; Claude Desktop and other MCP clients keep dawg-cli.exe running as the MCP
@@ -15,12 +16,17 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Per-user "Edit in dawg" entry on .wav files (classic menu on Windows 11).
+  ; Per-user "Edit in dawg" entry on .wav and .mp3 files (classic menu on
+  ; Windows 11).
   WriteRegStr HKCU "${DAWG_VERB_KEY}" "" "Edit in ${PRODUCTNAME}"
   WriteRegStr HKCU "${DAWG_VERB_KEY}" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe"
   WriteRegStr HKCU "${DAWG_VERB_KEY}\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  WriteRegStr HKCU "${DAWG_MP3_VERB_KEY}" "" "Edit in ${PRODUCTNAME}"
+  WriteRegStr HKCU "${DAWG_MP3_VERB_KEY}" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe"
+  WriteRegStr HKCU "${DAWG_MP3_VERB_KEY}\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   DeleteRegKey HKCU "${DAWG_VERB_KEY}"
+  DeleteRegKey HKCU "${DAWG_MP3_VERB_KEY}"
 !macroend

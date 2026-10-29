@@ -1,4 +1,4 @@
-//! An editing session on one WAV file: the "Edit in dawg" scratch session.
+//! An editing session on one WAV or MP3 file: the "Edit in dawg" scratch session.
 //!
 //! The file becomes one clip on one track at its own sample rate. Edits are
 //! [`Command`]s; every committed edit is one undo step, and a drag sends
@@ -13,10 +13,11 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::command::{gain_to_db, ClipRef, Command, CommandError};
+use crate::file::{AudioFile, Codec, FileError};
 use crate::model::{Clip, Project, Source, Track};
 use crate::peaks::Peaks;
 use crate::save::{self, FileStamp, Replaced, SaveError};
-use crate::wav::{WavError, WavFile, WavFormat};
+use crate::wav::WavFormat;
 
 /// The clip being edited.
 pub const CLIP: ClipRef = ClipRef { track: 0, clip: 0 };
@@ -27,7 +28,7 @@ const HISTORY: usize = 200;
 #[derive(Debug)]
 pub enum OpenError {
     Io(io::Error),
-    Wav(WavError),
+    Format(FileError),
     Empty,
 }
 
@@ -35,7 +36,7 @@ impl fmt::Display for OpenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             OpenError::Io(e) => write!(f, "{e}"),
-            OpenError::Wav(e) => write!(f, "{e}"),
+            OpenError::Format(e) => write!(f, "{e}"),
             OpenError::Empty => write!(f, "the file has no audio in it"),
         }
     }
@@ -45,7 +46,7 @@ impl std::error::Error for OpenError {}
 
 pub struct Session {
     path: PathBuf,
-    file: Arc<WavFile>,
+    file: Arc<AudioFile>,
     source: Arc<Source>,
     peaks: Peaks,
     stamp: FileStamp,
@@ -64,7 +65,11 @@ pub struct Session {
 pub struct SessionState {
     pub path: PathBuf,
     pub name: String,
+    pub codec: Codec,
+    /// Sample layout. For MP3, `bits` and `container_bytes` are 0.
     pub format: WavFormat,
+    /// MP3 average bitrate in kbps.
+    pub kbps: Option<u32>,
     /// Frames in the file.
     pub frames: u64,
     pub clip: ClipState,
@@ -108,18 +113,18 @@ impl Session {
         // Read once and keep no handle open, so other programs (and our own
         // replace) can write the file.
         let bytes = fs::read(path).map_err(OpenError::Io)?;
-        let file = WavFile::parse(bytes).map_err(OpenError::Wav)?;
+        let file = AudioFile::parse(bytes).map_err(OpenError::Format)?;
         if file.frames() == 0 {
             return Err(OpenError::Empty);
         }
         Ok(Self::from_file(path.to_path_buf(), file, stamp))
     }
 
-    fn from_file(path: PathBuf, file: WavFile, stamp: FileStamp) -> Session {
+    fn from_file(path: PathBuf, file: AudioFile, stamp: FileStamp) -> Session {
         let source = Arc::new(file.decode());
         let peaks = Peaks::new(&source);
         let project = Arc::new(Project {
-            sample_rate: file.format().sample_rate,
+            sample_rate: file.sample_rate(),
             tracks: vec![Track {
                 clips: vec![Clip::new(source.clone(), 0)],
                 ..Track::default()
@@ -173,7 +178,9 @@ impl Session {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned(),
-            format: self.file.format(),
+            codec: self.file.codec(),
+            format: self.format(),
+            kbps: self.file.kbps(),
             frames: self.file.frames(),
             clip: ClipState {
                 start: c.start,
@@ -247,14 +254,29 @@ impl Session {
         true
     }
 
-    /// The file as the current edit would save it.
-    pub fn render_file(&self) -> Result<Vec<u8>, WavError> {
-        self.file.render_clip(self.clip())
+    /// The format of the file being edited.
+    pub fn codec(&self) -> Codec {
+        self.file.codec()
+    }
+
+    fn format(&self) -> WavFormat {
+        self.file.wav_format().unwrap_or(WavFormat {
+            channels: self.file.channels(),
+            sample_rate: self.file.sample_rate(),
+            bits: 0,
+            container_bytes: 0,
+            float: false,
+        })
+    }
+
+    /// The file as the current edit would save it, as `codec`.
+    pub fn render_file(&self, codec: Codec) -> Result<Vec<u8>, FileError> {
+        self.file.render(self.clip(), codec)
     }
 
     pub fn preview(&self) -> SavePreview {
         let c = self.clip();
-        let fmt = self.file.format();
+        let fmt = self.format();
         let ch = fmt.channels as usize;
         let s = self.source.samples();
         let mut peak = 0f64;
@@ -279,7 +301,8 @@ impl Session {
             } else {
                 f32::NEG_INFINITY
             },
-            clipped: !fmt.float && peak > 1.0,
+            // Float WAV keeps overs; integer WAV and MP3 clip them.
+            clipped: !(self.codec() == Codec::Wav && fmt.float) && peak > 1.0,
             untouched: c.offset == 0 && c.len == self.file.frames() && c.is_unity(),
         }
     }
@@ -288,22 +311,23 @@ impl Session {
     /// The session then reopens the new file, so further edits start from
     /// what is on disk.
     pub fn replace_original(&mut self, backup_dir: &Path) -> Result<Replaced, SessionSaveError> {
-        let bytes = self.render_file()?;
+        let bytes = self.render_file(self.codec())?;
         let r = save::replace(&self.path, &bytes, backup_dir, Some(self.stamp))?;
         self.reload_saved(bytes)?;
         Ok(r)
     }
 
-    /// Writes the edit to a new file. The session stays on the original.
-    pub fn save_as_new(&self, path: &Path) -> Result<(), SessionSaveError> {
-        let bytes = self.render_file()?;
+    /// Writes the edit to a new file as `codec`. The session stays on the
+    /// original.
+    pub fn save_as_new(&self, path: &Path, codec: Codec) -> Result<(), SessionSaveError> {
+        let bytes = self.render_file(codec)?;
         save::write_new(path, &bytes)?;
         Ok(())
     }
 
     fn reload_saved(&mut self, bytes: Vec<u8>) -> Result<(), SessionSaveError> {
         let stamp = FileStamp::of(&self.path).map_err(SaveError::from)?;
-        let file = WavFile::parse(bytes)?;
+        let file = AudioFile::parse(bytes)?;
         *self = Self::from_file(self.path.clone(), file, stamp);
         Ok(())
     }
@@ -311,14 +335,14 @@ impl Session {
 
 #[derive(Debug)]
 pub enum SessionSaveError {
-    Wav(WavError),
+    Format(FileError),
     Save(SaveError),
 }
 
 impl SessionSaveError {
     pub fn kind(&self) -> &'static str {
         match self {
-            SessionSaveError::Wav(_) => "format",
+            SessionSaveError::Format(_) => "format",
             SessionSaveError::Save(e) => e.kind(),
         }
     }
@@ -327,7 +351,7 @@ impl SessionSaveError {
 impl fmt::Display for SessionSaveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SessionSaveError::Wav(e) => write!(f, "{e}"),
+            SessionSaveError::Format(e) => write!(f, "{e}"),
             SessionSaveError::Save(e) => write!(f, "{e}"),
         }
     }
@@ -335,9 +359,9 @@ impl fmt::Display for SessionSaveError {
 
 impl std::error::Error for SessionSaveError {}
 
-impl From<WavError> for SessionSaveError {
-    fn from(e: WavError) -> Self {
-        SessionSaveError::Wav(e)
+impl From<FileError> for SessionSaveError {
+    fn from(e: FileError) -> Self {
+        SessionSaveError::Format(e)
     }
 }
 
@@ -363,7 +387,7 @@ mod tests {
         let samples: Vec<f64> = (0..frames * 2)
             .map(|i| ((i % 100) as f64 - 50.0) / 100.0)
             .collect();
-        let file = WavFile::parse(encode_simple(fmt, &samples)).unwrap();
+        let file = AudioFile::parse(encode_simple(fmt, &samples)).unwrap();
         Session::from_file(
             PathBuf::from("mem.wav"),
             file,
@@ -467,8 +491,32 @@ mod tests {
 
         // Saving the reopened file untouched as a new file is bit-identical.
         let copy = dir.join("copy.wav");
-        s.save_as_new(&copy).unwrap();
+        s.save_as_new(&copy, Codec::Wav).unwrap();
         assert_eq!(fs::read(&copy).unwrap(), fs::read(&path).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mp3_saves_over_itself_and_exports_wav() {
+        let dir = std::env::temp_dir().join(format!("dawg-session-mp3-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("loop.mp3");
+        let wav = session(30_000);
+        fs::write(&path, wav.render_file(Codec::Mp3).unwrap()).unwrap();
+
+        let mut s = Session::open(&path).unwrap();
+        assert_eq!(s.state().codec, Codec::Mp3);
+        assert_eq!(s.state().frames, 30_000);
+        for len in [20_000, 15_000] {
+            s.apply(&trim(1000, len), false).unwrap();
+            s.replace_original(&dir.join("backups")).unwrap();
+            assert_eq!(s.state().frames, len, "no frames gained or lost");
+        }
+        let out = dir.join("loop.wav");
+        s.save_as_new(&out, Codec::Wav).unwrap();
+        let w = Session::open(&out).unwrap().state();
+        assert_eq!((w.codec, w.frames, w.format.bits), (Codec::Wav, 15_000, 24));
         let _ = fs::remove_dir_all(&dir);
     }
 }

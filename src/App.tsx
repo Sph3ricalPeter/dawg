@@ -8,7 +8,7 @@ import { TitleBar } from "@/components/TitleBar";
 import { api } from "@/lib/api";
 import {
   exportDialog,
-  isWav,
+  isAudio,
   openFileDialog,
   openPath,
   requestClose,
@@ -24,7 +24,7 @@ function EmptyState({ dropping }: { dropping: boolean }) {
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="1.4">
         <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3" />
       </svg>
-      <h3>Drop a WAV file here</h3>
+      <h3>Drop a WAV or MP3 file here</h3>
       <p>It opens on one track so you can trim it, change its gain or fade it, then export it, over the original or as a new file.</p>
       <div className="row">
         <button className="btn" onClick={() => void openFileDialog()}>
@@ -32,7 +32,7 @@ function EmptyState({ dropping }: { dropping: boolean }) {
         </button>
       </div>
       <p className="faint tip">
-        Tip: right-click any WAV in Explorer and choose <b>Edit in dawg</b> (under “Show more options” on Windows 11).
+        Tip: right-click any WAV or MP3 in Explorer and choose <b>Edit in dawg</b> (under “Show more options” on Windows 11).
       </p>
     </div>
   );
@@ -43,13 +43,13 @@ function StatusBar({ hint }: { hint: string }) {
   const busy = useSession((s) => s.busy);
   const fallback = session
     ? "Drag the clip edges to trim · drag across it and press Ctrl+T to crop · Ctrl+S exports"
-    : "Drop a WAV file anywhere, or press Ctrl+O";
+    : "Drop a WAV or MP3 file anywhere, or press Ctrl+O";
   return (
     <footer className="status">
       <span className="hint">{busy ?? (hint || fallback)}</span>
       {session && (
         <span className="r">
-          <span>{fmtFormat(session.format)} (from file)</span>
+          <span>{fmtFormat(session.format, session.kbps)} (from file)</span>
         </span>
       )}
     </footer>
@@ -149,10 +149,10 @@ function useWindowEvents(setDropping: (on: boolean) => void) {
         else if (p.type === "leave") setDropping(false);
         else if (p.type === "drop") {
           setDropping(false);
-          const wav = p.paths.find(isWav);
-          if (wav) openPath(wav);
+          const file = p.paths.find(isAudio);
+          if (file) openPath(file);
           else if (p.paths.length) {
-            useSession.getState().showToast("Only WAV files can be opened for now", { error: true });
+            useSession.getState().showToast("Only WAV and MP3 files can be opened for now", { error: true });
           }
         }
       })

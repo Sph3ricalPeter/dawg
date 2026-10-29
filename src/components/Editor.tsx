@@ -97,7 +97,7 @@ function TrackHeader() {
           </span>
         </div>
         <div className="tinfo">
-          <div className="dim">{fmtFormat(session.format)}</div>
+          <div className="dim">{fmtFormat(session.format, session.kbps)}</div>
           <div className="kv">
             <span>Length</span>
             <span className="mono">{fmtSeconds(clip.len / rate)}</span>

@@ -46,11 +46,12 @@ export function fmtMs(frames: number, rate: number): string {
   return `${Math.round((frames / rate) * 1000)} ms`;
 }
 
-/** "44.1 kHz · 24-bit · stereo" */
-export function fmtFormat(f: WavFormat): string {
+/** "44.1 kHz · 24-bit · stereo", or "44.1 kHz · MP3 192 kbps · stereo" */
+export function fmtFormat(f: WavFormat, kbps?: number | null): string {
   const khz = f.sampleRate / 1000;
   const rate = `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`;
-  const depth = f.float ? `${f.bits}-bit float` : `${f.bits}-bit`;
+  const depth =
+    kbps != null ? `MP3 ${kbps} kbps` : f.float ? `${f.bits}-bit float` : `${f.bits}-bit`;
   const ch =
     f.channels === 1 ? "mono" : f.channels === 2 ? "stereo" : `${f.channels} channels`;
   return `${rate} · ${depth} · ${ch}`;

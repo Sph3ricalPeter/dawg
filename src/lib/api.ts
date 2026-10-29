@@ -19,11 +19,18 @@ export interface ClipState {
   fadeOut: number;
 }
 
+/** Mirrors `dawg_core::file::Codec`. */
+export type Codec = "wav" | "mp3";
+
 /** Mirrors `dawg_core::session::SessionState`. */
 export interface SessionState {
   path: string;
   name: string;
+  codec: Codec;
+  /** For MP3, `bits` and `containerBytes` are 0. */
   format: WavFormat;
+  /** MP3 average bitrate. */
+  kbps: number | null;
   frames: number;
   clip: ClipState;
   dirty: boolean;

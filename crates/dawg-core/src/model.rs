@@ -4,7 +4,8 @@ use std::sync::Arc;
 ///
 /// Sources are shared between clips and never change once decoded, so the
 /// audio thread can read them without locks.
-#[derive(Debug)]
+/// Cloning shares the samples.
+#[derive(Debug, Clone)]
 pub struct Source {
     channels: u16,
     samples: Arc<[f32]>,

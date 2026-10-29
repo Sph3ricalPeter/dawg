@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
+use dawg_core::file::Codec;
 use dawg_core::save::{self, Replaced};
 use dawg_core::session::{SavePreview, Session, SessionState};
 use dawg_core::Command;
@@ -227,8 +228,9 @@ pub fn replace_original(app: AppHandle, state: State<AppState>) -> Result<Replac
     })
 }
 
-/// Saves the edit as another file. Overwriting an existing one (the save
-/// dialog has already asked) keeps a backup like Replace does.
+/// Saves the edit as another file, as WAV or MP3 by its extension (the
+/// session's own format when it has neither). Overwriting an existing one
+/// (the save dialog has already asked) keeps a backup like Replace does.
 #[tauri::command]
 pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<()> {
     let mut s = state.lock();
@@ -239,16 +241,17 @@ pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<
             "that is the file being edited; use Replace original",
         ));
     }
+    let codec = Codec::for_path(&path).unwrap_or(session.codec());
     let to_err = |e: dawg_core::session::SessionSaveError| Error::new(e.kind(), e.to_string());
     if path.exists() {
         let bytes = session
-            .render_file()
+            .render_file(codec)
             .map_err(|e| Error::new("format", e.to_string()))?;
         save::replace(&path, &bytes, &backup_dir(&app)?, None)
             .map_err(|e| Error::new(e.kind(), e.to_string()))?;
         Ok(())
     } else {
-        session.save_as_new(&path).map_err(to_err)
+        session.save_as_new(&path, codec).map_err(to_err)
     }
 }
 
