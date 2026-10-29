@@ -49,6 +49,8 @@ export interface SourceState {
   channels: number;
   /** The file's own rate. */
   rate: number;
+  /** A project's file that wasn't found; its clips play silence. */
+  missing: boolean;
 }
 
 /** Mirrors `dawg_core::file::Codec`. */
@@ -56,9 +58,15 @@ export type Codec = "wav" | "mp3";
 
 /** Mirrors `dawg_core::session::SessionState`. */
 export interface SessionState {
-  /** The file the session was opened from. */
-  path: string;
+  /** An audio file being edited ("Edit in dawg") rather than a project. */
+  scratch: boolean;
+  /** The audio file a scratch session edits. */
+  path: string | null;
+  /** The project's .dawg file, once saved. */
+  project: string | null;
+  /** The audio file's name, the project's, or "Untitled". */
   name: string;
+  /** For a project, what a mixdown defaults to. */
   codec: Codec;
   /** For MP3, `bits` and `containerBytes` are 0. */
   format: WavFormat;
@@ -151,9 +159,24 @@ export interface Replaced {
   backup: string;
 }
 
+/** Mirrors `recent::Recent` in the app crate. */
+export interface RecentProject {
+  path: string;
+  name: string;
+  exists: boolean;
+}
+
 export const api = {
   startupFile: () => invoke<string | null>("startup_file"),
+  /** A WAV or MP3 as a scratch session, or a .dawg project. */
   openFile: (path: string) => invoke<SessionState>("open_file", { path }),
+  newProject: () => invoke<SessionState>("new_project"),
+  /** Saves as a project at `path`, or where it was last saved. */
+  saveProject: (path: string | null) => invoke<SessionState>("save_project", { path }),
+  relinkSource: (source: number, path: string) =>
+    invoke<{ state: SessionState; relinked: number }>("relink_source", { source, path }),
+  recentProjects: () => invoke<RecentProject[]>("recent_projects"),
+  forgetRecentProject: (path: string) => invoke<void>("forget_recent_project", { path }),
   sessionState: () => invoke<SessionState | null>("session_state"),
   apply: (command: Command, transient: boolean) =>
     invoke<SessionState>("apply", { command, transient }),

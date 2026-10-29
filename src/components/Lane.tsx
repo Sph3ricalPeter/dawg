@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type ClipState, type EnvPoint, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
+import { locateSource } from "@/lib/actions";
 import { clamp, dbToGain, envelopeAt, fadeAt, fmtDb, fmtMs, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
 import { MIN_LEN, allClips, useSession, type View } from "@/stores/session-store";
@@ -291,6 +292,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const rate = useSession((s) => s.session?.rate ?? 48_000);
   const sourceFrames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? clip.len);
   const sourceName = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.name ?? "");
+  const missing = useSession((s) => !!s.session?.sources.find((x) => x.id === clip.source)?.missing);
 
   const px = (f: number) => (f - view.start) / view.fpp;
   const x0 = px(clip.start);
@@ -481,7 +483,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   return (
     <div
       ref={body}
-      className={`clip${selected ? " sel" : ""}${track.muted ? " muted" : ""}`}
+      className={`clip${selected ? " sel" : ""}${track.muted ? " muted" : ""}${missing ? " missing" : ""}`}
       style={{ left, width: w, ["--c" as string]: color, background: shade(color, 0.71) }}
       data-clip={clip.id}
       onPointerDown={onBody}
@@ -496,6 +498,16 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
           {stem(sourceName)}
         </span>
+        {missing && (
+          <button
+            className="locate"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => void locateSource(clip.source)}
+            data-hint={`${sourceName} wasn't found, so this clip plays silence · click to find the file`}
+          >
+            Locate…
+          </button>
+        )}
         <GainReadout clip={clip} track={track.id} className="gain" />
       </div>
       <canvas ref={canvas} className="clipcv" />

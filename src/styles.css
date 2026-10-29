@@ -339,6 +339,13 @@ body.panning * {
   border-top: 1px solid var(--line-strong);
   margin: 4px 0;
 }
+.menu-h {
+  padding: 6px 8px 2px;
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 /* update indicator */
 .upd {
@@ -466,6 +473,27 @@ button.upd {
 }
 .empty .tip {
   margin-top: 8px;
+}
+.empty .recent {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px 12px;
+  max-width: 460px;
+}
+.link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.link:hover {
+  color: var(--text);
 }
 .dropov {
   position: absolute;
@@ -916,6 +944,27 @@ body.rsizing * {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 600;
+}
+/* A project's file that wasn't found, as in the UX spec: hatched red, with
+   Locate in the title. */
+.clip.missing::after {
+  content: "";
+  position: absolute;
+  inset: 14px 0 0;
+  border-radius: 0 0 4px 4px;
+  background: repeating-linear-gradient(135deg, rgba(229, 83, 75, 0.28) 0 4px, transparent 4px 8px);
+  pointer-events: none;
+}
+.clip .ct .locate {
+  pointer-events: auto;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--danger);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 .clip .gain,
 .clip .gh {

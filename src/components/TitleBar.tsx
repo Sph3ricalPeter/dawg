@@ -22,13 +22,19 @@ function Doc() {
       </div>
     );
   }
+  // As in the mockup: a scratch file is tagged, a project shows its file
+  // name, and an untitled one says it isn't saved.
   return (
-    <div className="doc" title={session.path}>
+    <div className="doc" title={session.path ?? session.project ?? "Not saved yet"}>
       <b>
         {session.name}
         {session.dirty && <span className="dirty"> •</span>}
       </b>
-      <span className="pill">Scratch</span>
+      {session.scratch ? (
+        <span className="pill">Scratch</span>
+      ) : (
+        !session.project && <span className="faint">not saved</span>
+      )}
     </div>
   );
 }
@@ -119,7 +125,11 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
             id="tExport"
             disabled={!session}
             onClick={() => void exportDialog()}
-            title="Export (Ctrl+S) · the dialog starts on the original file; saving there replaces it, with a backup"
+            title={
+              session?.scratch
+                ? "Export (Ctrl+S) · the dialog starts on the original file; saving there replaces it, with a backup"
+                : "Export a mixdown (Ctrl+R)"
+            }
           >
             <svg viewBox="0 0 16 16">
               <path d="M8 10V2.5M5 5.2 8 2.3l3 2.9M2.5 9.5v3.5h11V9.5" />

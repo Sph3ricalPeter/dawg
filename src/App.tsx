@@ -6,14 +6,20 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Dialogs } from "@/components/Dialogs";
 import { Editor } from "@/components/Editor";
 import { TitleBar } from "@/components/TitleBar";
-import { api } from "@/lib/api";
+import { api, type RecentProject } from "@/lib/api";
 import {
   addFilesDialog,
   exportDialog,
   isAudio,
+  isProject,
+  newProject,
   openFileDialog,
   openPath,
+  openProjectDialog,
+  openRecent,
   requestClose,
+  saveOrExport,
+  saveProjectAs,
 } from "@/lib/actions";
 import { getAppInfo, type AppInfo } from "@/lib/app-info";
 import { fmtFormat } from "@/lib/format";
@@ -21,18 +27,46 @@ import { useSession } from "@/stores/session-store";
 import { CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
 
 function EmptyState({ dropping }: { dropping: boolean }) {
+  // An empty project takes the files it is given; with nothing open, one
+  // file opens as a scratch session.
+  const project = useSession((s) => !!s.session && !s.session.scratch);
+  const [recent, setRecent] = useState<RecentProject[]>([]);
+  useEffect(() => {
+    if (!isTauri() || project) return;
+    void api
+      .recentProjects()
+      .then((r) => setRecent(r.filter((p) => p.exists).slice(0, 5)))
+      .catch(() => undefined);
+  }, [project]);
   return (
     <div className={`empty${dropping ? " dropping" : ""}`}>
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="1.4">
         <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3" />
       </svg>
       <h3>Drop WAV or MP3 files here</h3>
-      <p>One file opens on its own track so you can trim it, shape its volume and export it over the original. Drop several and each gets a track; Export mixes them down to one file.</p>
+      {project ? (
+        <p>Each file gets its own track, all starting at the same point so they layer.</p>
+      ) : (
+        <p>One file opens on its own track so you can trim it, shape its volume and export it over the original. Drop several and each gets a track; Export mixes them down to one file.</p>
+      )}
       <div className="row">
-        <button className="btn" onClick={() => void openFileDialog()}>
-          Open file… <kbd>Ctrl+O</kbd>
+        <button className="btn" onClick={() => void (project ? addFilesDialog() : openFileDialog())}>
+          Open files… <kbd>{project ? "Ctrl+Shift+O" : "Ctrl+O"}</kbd>
+        </button>
+        <button className="btn ghost" onClick={() => void openProjectDialog()}>
+          Open project…
         </button>
       </div>
+      {recent.length > 0 && (
+        <div className="recent">
+          <span className="faint">Recent projects</span>
+          {recent.map((r) => (
+            <button key={r.path} className="link" title={r.path} onClick={() => void openRecent(r.path)}>
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="faint tip">
         Tip: right-click any WAV or MP3 in Explorer and choose <b>Edit in dawg</b> (under “Show more options” on Windows 11).
       </p>
@@ -44,7 +78,7 @@ function StatusBar({ hint }: { hint: string }) {
   const session = useSession((s) => s.session);
   const busy = useSession((s) => s.busy);
   const fallback = session
-    ? "Drag the ruler to move the playhead, Ctrl+drag it for a range · drag clips to move them · click a clip's line for envelope points · drop files to add tracks · Ctrl+S exports"
+    ? `Drag the ruler to move the playhead, Ctrl+drag it for a range · drag clips to move them · click a clip's line for envelope points · drop files to add tracks · ${session.scratch ? "Ctrl+S exports, Ctrl+Shift+S saves a project" : "Ctrl+S saves, Ctrl+R exports"}`
     : "Drop WAV or MP3 files anywhere, or press Ctrl+O";
   return (
     <footer className="status">
@@ -101,8 +135,11 @@ function useShortcuts() {
       let handled = true;
       if (ctrl && e.shiftKey && k === "o") void addFilesDialog();
       else if (ctrl && e.shiftKey && k === "t") void s.addTrack();
+      else if (ctrl && e.shiftKey && k === "s") void saveProjectAs();
       else if (ctrl && k === "o") void openFileDialog();
-      else if (ctrl && (k === "s" || k === "r")) void exportDialog();
+      else if (ctrl && k === "n") newProject();
+      else if (ctrl && k === "s") saveOrExport();
+      else if (ctrl && k === "r") void exportDialog();
       else if (ctrl && (k === "y" || (e.shiftKey && k === "z"))) void s.redo();
       else if (ctrl && k === "z") void s.undo();
       else if (ctrl && k === "t") void s.cropToRange();
@@ -193,10 +230,15 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
         } else if (p.type === "leave") setDrop(null);
         else if (p.type === "drop") {
           setDrop(null);
+          const project = p.paths.find(isProject);
+          if (project) {
+            openPath(project);
+            return;
+          }
           const audio = p.paths.filter(isAudio);
           const s = useSession.getState();
           if (!audio.length) {
-            if (p.paths.length) s.showToast("Only WAV and MP3 files can be added for now", { error: true });
+            if (p.paths.length) s.showToast("Only WAV and MP3 files and dawg projects open here for now", { error: true });
             return;
           }
           if (!s.session) {
@@ -280,7 +322,7 @@ export function App() {
     <div className="app" onMouseOver={onOver} onContextMenu={(e) => e.preventDefault()}>
       <TitleBar info={info} />
       <main className="arrangement">
-        {session ? <Editor /> : <EmptyState dropping={dropping} />}
+        {session && (session.scratch || session.tracks.length > 0) ? <Editor /> : <EmptyState dropping={dropping} />}
         {session && drop && (
           <div className="dropbar">
             {drop.track

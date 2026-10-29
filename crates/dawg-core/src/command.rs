@@ -351,7 +351,7 @@ fn clip_mut(p: &mut Project, id: u64) -> Result<&mut Clip, CommandError> {
 }
 
 /// Shortens fades that no longer fit, the fade-out first.
-fn fit_fades(clip: &mut Clip) {
+pub(crate) fn fit_fades(clip: &mut Clip) {
     clip.fade_in = clip.fade_in.min(clip.len);
     clip.fade_out = clip.fade_out.min(clip.len - clip.fade_in);
 }

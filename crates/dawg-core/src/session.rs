@@ -1,14 +1,16 @@
 //! An editing session: the "Edit in dawg" scratch session, widened to many
-//! tracks.
+//! tracks, or a project.
 //!
-//! The file it was opened from becomes one clip on one track at its own
-//! sample rate. More files can be added onto other tracks; they are converted
-//! to the session's rate. Edits are [`Command`]s; every committed edit is one
+//! A scratch session is opened from an audio file, which becomes one clip on
+//! one track at its own sample rate. A project is opened from a `.dawg` file
+//! (see [`crate::project_file`]) or starts empty; saving a scratch session
+//! as a project turns it into one. More files can be added onto other
+//! tracks; they are converted to the session's rate. Edits are [`Command`]s; every committed edit is one
 //! undo step, and a drag sends transient commands that collapse into one step
 //! when it ends.
 //!
-//! Export has two paths. While the session is still just the original file's
-//! clip, saving keeps that file's own format and untouched bytes
+//! Export has two paths. While a scratch session is still just the original
+//! file's clip, saving keeps that file's own format and untouched bytes
 //! ([`AudioFile::render`]). Anything more is a mixdown through the renderer,
 //! from the first clip's start to the last clip's end.
 
@@ -21,11 +23,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::command::{gain_to_db, Command, CommandError};
+use crate::command::{fit_fades, gain_to_db, Command, CommandError};
 use crate::file::{AudioFile, Codec, FileError};
 use crate::model::{Clip, EnvPoint, Project, Source, Track};
 use crate::mp3::{self, Tags};
 use crate::peaks::Peaks;
+use crate::project_file::{ProjectError, ProjectFile, EXTENSION};
 use crate::render::{render, OUT_CHANNELS};
 use crate::resample::resample;
 use crate::save::{self, FileStamp, Replaced, SaveError};
@@ -69,10 +72,31 @@ struct SourceInfo {
     peaks: Peaks,
     /// The file's own rate, before conversion to the session's.
     rate: u32,
+    /// A project's file that wasn't found: the source is silence of the
+    /// length it had.
+    missing: bool,
 }
 
+impl SourceInfo {
+    fn new(path: PathBuf, source: Arc<Source>, rate: u32) -> Self {
+        SourceInfo {
+            path,
+            peaks: Peaks::new(&source),
+            source,
+            rate,
+            missing: false,
+        }
+    }
+}
+
+/// Default rate of a new project; the first file added sets the real one.
+pub const PROJECT_RATE: u32 = 48_000;
+
 pub struct Session {
-    origin: Origin,
+    /// The audio file a scratch session edits; `None` for a project.
+    origin: Option<Origin>,
+    /// Where the project is saved; `None` until it is, and for scratch.
+    project_path: Option<PathBuf>,
     sources: BTreeMap<u64, SourceInfo>,
     project: Arc<Project>,
     /// The state that matches the file on disk.
@@ -87,16 +111,23 @@ pub struct Session {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionState {
-    /// The file the session was opened from.
-    pub path: PathBuf,
+    /// A scratch session (an audio file being edited) rather than a project.
+    pub scratch: bool,
+    /// The audio file a scratch session edits.
+    pub path: Option<PathBuf>,
+    /// The project's `.dawg` file, once saved.
+    pub project: Option<PathBuf>,
+    /// The file name to show: the audio file's, the project's, or
+    /// "Untitled".
     pub name: String,
+    /// The audio file's format; for a project, what a mixdown defaults to.
     pub codec: Codec,
     /// Sample layout of that file. For MP3, `bits` and `container_bytes` are
     /// 0.
     pub format: WavFormat,
     /// MP3 average bitrate in kbps.
     pub kbps: Option<u32>,
-    /// Frames in that file.
+    /// Frames in that file; 0 for a project.
     pub frames: u64,
     /// The session's sample rate; every source plays at it.
     pub rate: u32,
@@ -154,6 +185,8 @@ pub struct SourceState {
     pub channels: u16,
     /// The file's own rate.
     pub rate: u32,
+    /// The project's file wasn't found; its clips play silence.
+    pub missing: bool,
 }
 
 /// What saving would produce.
@@ -217,6 +250,37 @@ fn file_stem(path: &Path) -> String {
         .into_owned()
 }
 
+/// Whether `path` names a project file rather than audio.
+pub fn is_project(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION))
+}
+
+/// Keeps a clip inside its source, for a file that changed length.
+fn fit_to_source(clip: &mut Clip) {
+    let frames = clip.source.frames();
+    clip.offset = clip.offset.min(frames.saturating_sub(1));
+    clip.len = clip.len.clamp(1, frames - clip.offset);
+    fit_fades(clip);
+}
+
+/// `p` with `source` in place of the source of the same id, in the pool and
+/// under every clip that plays it.
+fn with_source(p: &Project, source: &Arc<Source>) -> Project {
+    let mut p = p.clone();
+    let id = source.id();
+    for s in p.sources.iter_mut().filter(|s| s.id() == id) {
+        *s = source.clone();
+    }
+    for t in &mut p.tracks {
+        for c in t.clips.iter_mut().filter(|c| c.source.id() == id) {
+            c.source = source.clone();
+            fit_to_source(c);
+        }
+    }
+    p
+}
+
 impl Session {
     pub fn open(path: &Path) -> Result<Session, OpenError> {
         let (file, stamp) = read_file(path)?;
@@ -241,23 +305,16 @@ impl Session {
             ..Track::default()
         });
         let mut sources = BTreeMap::new();
-        sources.insert(
-            source_id,
-            SourceInfo {
-                path: path.clone(),
-                peaks: Peaks::new(&source),
-                source,
-                rate,
-            },
-        );
+        sources.insert(source_id, SourceInfo::new(path.clone(), source, rate));
         let project = Arc::new(project);
         Session {
-            origin: Origin {
+            origin: Some(Origin {
                 path,
                 file: Arc::new(file),
                 stamp,
                 source: source_id,
-            },
+            }),
+            project_path: None,
             sources,
             saved: project.clone(),
             project,
@@ -267,9 +324,182 @@ impl Session {
         }
     }
 
-    /// The file the session was opened from.
-    pub fn path(&self) -> &Path {
-        &self.origin.path
+    /// An empty, unsaved project.
+    pub fn new_project() -> Session {
+        Self::from_project(Project::new(PROJECT_RATE), BTreeMap::new(), None)
+    }
+
+    fn from_project(
+        project: Project,
+        sources: BTreeMap<u64, SourceInfo>,
+        path: Option<PathBuf>,
+    ) -> Session {
+        let project = Arc::new(project);
+        Session {
+            origin: None,
+            project_path: path,
+            sources,
+            saved: project.clone(),
+            project,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            in_gesture: false,
+        }
+    }
+
+    /// Opens a `.dawg` project. Audio files that can't be found or read
+    /// open as silence of their old length, marked missing (see
+    /// [`Session::relink`]).
+    pub fn open_project(path: &Path) -> Result<Session, ProjectError> {
+        let file = ProjectFile::parse(&fs::read(path)?)?;
+        let rate = file.sample_rate;
+        let mut project = Project::new(rate);
+        let mut sources = BTreeMap::new();
+        for entry in &file.sources {
+            let candidates = file.candidates(entry, path);
+            let found = candidates
+                .iter()
+                .find_map(|p| read_file(p).ok().map(|(f, _)| (p.clone(), f)));
+            let info = match found {
+                Some((p, f)) => {
+                    let own = f.sample_rate();
+                    let source = resample(&f.decode(), own, rate).with_id(entry.id);
+                    SourceInfo::new(p, Arc::new(source), own)
+                }
+                None => {
+                    let channels = entry.channels.max(1);
+                    let silence = vec![0.0; entry.frames.max(1) as usize * channels as usize];
+                    let source = Source::new(channels, silence).with_id(entry.id);
+                    SourceInfo {
+                        missing: true,
+                        ..SourceInfo::new(candidates[0].clone(), Arc::new(source), entry.rate)
+                    }
+                }
+            };
+            project.sources.push(info.source.clone());
+            sources.insert(entry.id, info);
+        }
+        let mut top = file.next_id;
+        for t in &file.tracks {
+            top = top.max(t.id + 1);
+            let mut clips = Vec::with_capacity(t.clips.len());
+            for c in &t.clips {
+                top = top.max(c.id + 1);
+                let source = sources
+                    .get(&c.source)
+                    .map(|s| s.source.clone())
+                    .ok_or_else(|| {
+                        ProjectError::Invalid(format!(
+                            "clip {} uses unknown source {}",
+                            c.id, c.source
+                        ))
+                    })?;
+                let mut envelope = c.envelope.clone();
+                envelope.sort_by_key(|p| p.at);
+                let mut clip = Clip {
+                    id: c.id,
+                    source,
+                    start: c.start,
+                    offset: c.offset,
+                    len: c.len,
+                    gain: c.gain,
+                    fade_in: c.fade_in,
+                    fade_out: c.fade_out,
+                    envelope: envelope.into(),
+                };
+                fit_to_source(&mut clip);
+                clips.push(clip);
+            }
+            project.tracks.push(Track {
+                id: t.id,
+                name: t.name.clone(),
+                clips,
+                gain: t.gain,
+                pan: t.pan,
+                muted: t.muted,
+                solo: t.solo,
+            });
+        }
+        for s in &file.sources {
+            top = top.max(s.id + 1);
+        }
+        project.next_id = top;
+        Ok(Self::from_project(
+            project,
+            sources,
+            Some(path.to_path_buf()),
+        ))
+    }
+
+    /// Saves the session as a project at `path`, new or over the last save.
+    /// A scratch session becomes a project: from here on its export is a
+    /// mixdown and its original file is just one of its sources.
+    pub fn save_project(&mut self, path: &Path) -> Result<(), SaveError> {
+        self.end_gesture();
+        let file = ProjectFile::from_project(&self.project, path, |id| {
+            self.sources.get(&id).map(|s| (s.path.clone(), s.rate))
+        });
+        save::overwrite(path, &file.to_json())?;
+        self.origin = None;
+        self.project_path = Some(path.to_path_buf());
+        self.saved = self.project.clone();
+        Ok(())
+    }
+
+    /// Points a source at another file (a missing one, found). Any other
+    /// missing files with the same name in that folder are found too. Not an
+    /// undo step; the project needs saving afterwards. Returns how many
+    /// sources were relinked.
+    pub fn relink(&mut self, source: u64, path: &Path) -> Result<usize, OpenError> {
+        self.end_gesture();
+        if !self.sources.contains_key(&source) {
+            return Err(OpenError::Io(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no source {source}"),
+            )));
+        }
+        let mut found = vec![(source, path.to_path_buf())];
+        let dir = path.parent().unwrap_or(Path::new(""));
+        for (&id, s) in &self.sources {
+            if id != source && s.missing {
+                if let Some(name) = s.path.file_name() {
+                    let there = dir.join(name);
+                    if there.is_file() {
+                        found.push((id, there));
+                    }
+                }
+            }
+        }
+        let mut n = 0;
+        for (id, p) in found {
+            let (file, _) = match read_file(&p) {
+                Ok(f) => f,
+                // The one asked for must work; the others are a bonus.
+                Err(e) if id == source => return Err(e),
+                Err(_) => continue,
+            };
+            let rate = file.sample_rate();
+            let audio =
+                Arc::new(resample(&file.decode(), rate, self.project.sample_rate).with_id(id));
+            let swap = |p: &Arc<Project>| Arc::new(with_source(p, &audio));
+            self.project = swap(&self.project);
+            for p in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+                *p = swap(p);
+            }
+            self.sources.insert(id, SourceInfo::new(p, audio, rate));
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    /// The audio file a scratch session edits.
+    pub fn path(&self) -> Option<&Path> {
+        self.origin.as_ref().map(|o| o.path.as_path())
+    }
+
+    /// Where the project is saved.
+    pub fn project_path(&self) -> Option<&Path> {
+        self.project_path.as_deref()
     }
 
     pub fn project(&self) -> &Arc<Project> {
@@ -293,12 +523,13 @@ impl Session {
     /// The one clip export saves in the original file's own format: the
     /// session's only clip, from that file, on a track that plays it as is.
     fn simple_clip(&self) -> Option<&Clip> {
+        let origin = self.origin.as_ref()?;
         let p = &self.project;
         let mut clips = p.clips();
         let (track, clip) = clips.next()?;
         let alone = clips.next().is_none();
         (alone
-            && clip.source.id() == self.origin.source
+            && clip.source.id() == origin.source
             && track.gain == 1.0
             && track.pan == 0.0
             && p.audible(track))
@@ -307,13 +538,21 @@ impl Session {
 
     pub fn state(&self) -> SessionState {
         let p = &self.project;
+        let o = self.origin.as_ref();
+        let name = match (o, &self.project_path) {
+            (Some(o), _) => file_name(&o.path),
+            (None, Some(path)) => file_name(path),
+            (None, None) => "Untitled".into(),
+        };
         SessionState {
-            path: self.origin.path.clone(),
-            name: file_name(&self.origin.path),
-            codec: self.origin.file.codec(),
+            scratch: o.is_some(),
+            path: o.map(|o| o.path.clone()),
+            project: self.project_path.clone(),
+            name,
+            codec: self.codec(),
             format: self.format(),
-            kbps: self.origin.file.kbps(),
-            frames: self.origin.file.frames(),
+            kbps: o.and_then(|o| o.file.kbps()),
+            frames: o.map_or(0, |o| o.file.frames()),
             rate: p.sample_rate,
             tracks: p
                 .tracks
@@ -352,6 +591,7 @@ impl Session {
                     frames: s.source.frames(),
                     channels: s.source.channels(),
                     rate: s.rate,
+                    missing: s.missing,
                 })
                 .collect(),
             start: p.audible_span().map_or(0, |s| s.0),
@@ -360,8 +600,8 @@ impl Session {
             dirty: self.dirty(),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
-            extra_chunks: self.origin.file.extra_chunks(),
-            truncated: self.origin.file.truncated(),
+            extra_chunks: o.map_or_else(Vec::new, |o| o.file.extra_chunks()),
+            truncated: o.is_some_and(|o| o.file.truncated()),
         }
     }
 
@@ -450,6 +690,10 @@ impl Session {
             };
             let id = p.new_id();
             let rate = file.sample_rate();
+            // A new project takes the rate of the first file put in it.
+            if self.origin.is_none() && p.sources.is_empty() && p.clips().next().is_none() {
+                p.sample_rate = rate;
+            }
             let source = Arc::new(resample(&file.decode(), rate, p.sample_rate).with_id(id));
             p.sources.push(source.clone());
             let track = match at.track {
@@ -473,15 +717,8 @@ impl Session {
             if at.track.is_some() {
                 cursor += source.frames();
             }
-            self.sources.insert(
-                id,
-                SourceInfo {
-                    path: path.clone(),
-                    peaks: Peaks::new(&source),
-                    source,
-                    rate,
-                },
-            );
+            self.sources
+                .insert(id, SourceInfo::new(path.clone(), source, rate));
         }
         if !out.clips.is_empty() {
             self.commit(p, false);
@@ -489,13 +726,22 @@ impl Session {
         Ok(out)
     }
 
-    /// The format of the file being edited.
+    /// The format of the file being edited; WAV for a project.
     pub fn codec(&self) -> Codec {
-        self.origin.file.codec()
+        self.origin.as_ref().map_or(Codec::Wav, |o| o.file.codec())
     }
 
     fn format(&self) -> WavFormat {
-        let f = &self.origin.file;
+        let Some(o) = &self.origin else {
+            return WavFormat {
+                channels: OUT_CHANNELS as u16,
+                sample_rate: self.project.sample_rate,
+                bits: 24,
+                container_bytes: 3,
+                float: false,
+            };
+        };
+        let f = &o.file;
         f.wav_format().unwrap_or(WavFormat {
             channels: f.channels(),
             sample_rate: f.sample_rate(),
@@ -525,15 +771,16 @@ impl Session {
 
     /// The file the current edit would save, as `codec`.
     pub fn render_file(&self, codec: Codec) -> Result<Vec<u8>, SessionSaveError> {
-        if let Some(clip) = self.simple_clip() {
-            return Ok(self.origin.file.render(clip, codec)?);
+        if let (Some(clip), Some(o)) = (self.simple_clip(), &self.origin) {
+            return Ok(o.file.render(clip, codec)?);
         }
+        let original = self.origin.as_ref().map(|o| &*o.file);
         let (channels, samples) = self.mixdown()?;
         let rate = self.project.sample_rate;
         match codec {
             Codec::Wav => {
                 // The original's sample format when it is a WAV, else 24-bit.
-                let like = self.origin.file.wav_format().unwrap_or(WavFormat {
+                let like = original.and_then(|f| f.wav_format()).unwrap_or(WavFormat {
                     channels,
                     sample_rate: rate,
                     bits: 24,
@@ -549,9 +796,9 @@ impl Session {
                 Ok(encode_simple(format, &samples))
             }
             Codec::Mp3 => {
-                let (kbps, tags) = match &*self.origin.file {
-                    AudioFile::Mp3(f) => (f.kbps(), f.tags()),
-                    AudioFile::Wav(_) => (mp3::DEFAULT_KBPS, Tags::default()),
+                let (kbps, tags) = match original {
+                    Some(AudioFile::Mp3(f)) => (f.kbps(), f.tags()),
+                    _ => (mp3::DEFAULT_KBPS, Tags::default()),
                 };
                 let source = Source::new(channels, samples);
                 let clip = Clip::new(Arc::new(source.clone()), 0);
@@ -562,7 +809,7 @@ impl Session {
 
     pub fn preview(&self) -> SavePreview {
         let fmt = self.format();
-        let frames_before = self.origin.file.frames();
+        let frames_before = self.origin.as_ref().map_or(0, |o| o.file.frames());
         let float = self.codec() == Codec::Wav && fmt.float;
         let peak_db = |peak: f64| {
             if peak > 0.0 {
@@ -614,17 +861,15 @@ impl Session {
     /// A simple edit then reopens the new file, so further edits start from
     /// what is on disk; a mixdown keeps the arrangement as it is.
     pub fn replace_original(&mut self, backup_dir: &Path) -> Result<Replaced, SessionSaveError> {
+        let Some(o) = &self.origin else {
+            return Err(SessionSaveError::NoOriginal);
+        };
         let bytes = self.render_file(self.codec())?;
-        let r = save::replace(
-            &self.origin.path,
-            &bytes,
-            backup_dir,
-            Some(self.origin.stamp),
-        )?;
+        let r = save::replace(&o.path, &bytes, backup_dir, Some(o.stamp))?;
         if self.simple_clip().is_some() {
             self.reload_saved(bytes)?;
-        } else {
-            self.origin.stamp = FileStamp::of(&self.origin.path).map_err(SaveError::from)?;
+        } else if let Some(o) = &mut self.origin {
+            o.stamp = FileStamp::of(&o.path).map_err(SaveError::from)?;
             self.end_gesture();
             self.saved = self.project.clone();
         }
@@ -640,9 +885,13 @@ impl Session {
     }
 
     fn reload_saved(&mut self, bytes: Vec<u8>) -> Result<(), SessionSaveError> {
-        let stamp = FileStamp::of(&self.origin.path).map_err(SaveError::from)?;
+        let path = self
+            .path()
+            .ok_or(SessionSaveError::NoOriginal)?
+            .to_path_buf();
+        let stamp = FileStamp::of(&path).map_err(SaveError::from)?;
         let file = AudioFile::parse(bytes)?;
-        *self = Self::from_file(self.origin.path.clone(), file, stamp);
+        *self = Self::from_file(path, file, stamp);
         Ok(())
     }
 }
@@ -653,6 +902,8 @@ pub enum SessionSaveError {
     Save(SaveError),
     /// There are no clips to mix.
     Nothing,
+    /// A project has no original file to replace.
+    NoOriginal,
 }
 
 impl SessionSaveError {
@@ -661,6 +912,7 @@ impl SessionSaveError {
             SessionSaveError::Format(_) => "format",
             SessionSaveError::Save(e) => e.kind(),
             SessionSaveError::Nothing => "nothing",
+            SessionSaveError::NoOriginal => "no_original",
         }
     }
 }
@@ -672,6 +924,12 @@ impl fmt::Display for SessionSaveError {
             SessionSaveError::Save(e) => write!(f, "{e}"),
             SessionSaveError::Nothing => {
                 write!(f, "there's nothing to hear: every clip is gone or muted")
+            }
+            SessionSaveError::NoOriginal => {
+                write!(
+                    f,
+                    "a project has no original file to replace; export it instead"
+                )
             }
         }
     }
@@ -822,7 +1080,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("kick.wav");
-        let original = session(1000).origin.file.bytes().to_vec();
+        let original = session(1000).origin.unwrap().file.bytes().to_vec();
         fs::write(&path, &original).unwrap();
 
         let mut s = Session::open(&path).unwrap();
@@ -991,7 +1249,7 @@ mod tests {
         let dir = temp_dir("replace-mix");
         let path = dir.join("kick.wav");
         let a = dir.join("a.wav");
-        fs::write(&path, session(1000).origin.file.bytes()).unwrap();
+        fs::write(&path, session(1000).origin.unwrap().file.bytes()).unwrap();
         write_wav(&a, 2, 44_100, 2000, 0.1);
         let mut s = Session::open(&path).unwrap();
         s.import(&[a], Placement::default()).unwrap();
@@ -1017,5 +1275,139 @@ mod tests {
             s.render_file(Codec::Wav),
             Err(SessionSaveError::Nothing)
         ));
+    }
+
+    #[test]
+    fn a_project_saves_and_reopens_as_it_was() {
+        let dir = temp_dir("project");
+        let path = dir.join("kick.wav");
+        let a = dir.join("Samples").join("a.wav");
+        fs::create_dir_all(a.parent().unwrap()).unwrap();
+        fs::write(&path, session(1000).origin.unwrap().file.bytes()).unwrap();
+        write_wav(&a, 1, 48_000, 960, 0.25);
+
+        let mut s = Session::open(&path).unwrap();
+        s.apply(&trim(100, 600), false).unwrap();
+        s.import(&[a], Placement::default()).unwrap();
+        let t = s.project().tracks[1].id;
+        s.apply(
+            &Command::Batch {
+                commands: vec![
+                    Command::SetTrackMix {
+                        track: t,
+                        gain_db: Some(-3.0),
+                        pan: Some(-0.25),
+                        muted: Some(true),
+                        solo: None,
+                    },
+                    Command::SetClipFades {
+                        clip: CLIP,
+                        fade_in: 10,
+                        fade_out: 20,
+                    },
+                    Command::SetClipGain {
+                        clip: CLIP,
+                        gain_db: -1.5,
+                    },
+                    Command::SetEnvelope {
+                        clip: CLIP,
+                        points: vec![
+                            EnvPoint { at: 150, gain: 1.0 },
+                            EnvPoint { at: 500, gain: 0.3 },
+                        ],
+                    },
+                ],
+            },
+            false,
+        )
+        .unwrap();
+        let mix = s.render_file(Codec::Wav).unwrap();
+        assert!(s.state().scratch);
+
+        let song = dir.join("song.dawg");
+        s.save_project(&song).unwrap();
+        let st = s.state();
+        assert!(!st.scratch && !st.dirty);
+        assert_eq!(
+            (st.name.as_str(), st.path, st.project),
+            ("song.dawg", None, Some(song.clone()))
+        );
+        // The original is now just a source: no Replace, and export mixes.
+        assert!(matches!(
+            s.replace_original(&dir.join("backups")),
+            Err(SessionSaveError::NoOriginal)
+        ));
+
+        let json = String::from_utf8(fs::read(&song).unwrap()).unwrap();
+        assert!(json.contains("\"file\": \"Samples/a.wav\""), "{json}");
+
+        let mut r = Session::open_project(&song).unwrap();
+        let tracks = |s: &Session| serde_json::to_value(s.state().tracks).unwrap();
+        assert_eq!(tracks(&r), tracks(&s));
+        assert!(!r.dirty());
+        assert_eq!(r.render_file(Codec::Wav).unwrap(), mix);
+        // New ids don't collide with saved ones.
+        r.apply(&Command::AddTrack { name: "new".into() }, false)
+            .unwrap();
+        let ids: Vec<u64> = r.project().tracks.iter().map(|t| t.id).collect();
+        assert!(ids[..ids.len() - 1]
+            .iter()
+            .all(|&id| id < ids[ids.len() - 1]));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_moved_project_folder_still_finds_its_files() {
+        let dir = temp_dir("project-move");
+        let a = dir.join("Old").join("Samples").join("a.wav");
+        fs::create_dir_all(a.parent().unwrap()).unwrap();
+        write_wav(&a, 2, 44_100, 441, 0.5);
+        let mut s = Session::new_project();
+        s.import(&[a], Placement::default()).unwrap();
+        // The first file sets a new project's rate.
+        assert_eq!(s.state().rate, 44_100);
+        s.save_project(&dir.join("Old").join("song.dawg")).unwrap();
+        fs::rename(dir.join("Old"), dir.join("New")).unwrap();
+
+        let r = Session::open_project(&dir.join("New").join("song.dawg")).unwrap();
+        let src = &r.state().sources[0];
+        assert!(!src.missing);
+        assert_eq!(src.path, dir.join("New").join("Samples").join("a.wav"));
+        assert_eq!(r.project().clips().next().unwrap().1.len, 441);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_files_open_silent_and_can_be_located() {
+        let dir = temp_dir("project-missing");
+        let a = dir.join("a.wav");
+        let b = dir.join("b.wav");
+        write_wav(&a, 1, 44_100, 500, 0.25);
+        write_wav(&b, 1, 44_100, 300, 0.5);
+        let mut s = Session::new_project();
+        s.import(&[a.clone(), b.clone()], Placement::default())
+            .unwrap();
+        let song = dir.join("song.dawg");
+        s.save_project(&song).unwrap();
+        let moved = dir.join("Moved");
+        fs::create_dir_all(&moved).unwrap();
+        fs::rename(&a, moved.join("a.wav")).unwrap();
+        fs::rename(&b, moved.join("b.wav")).unwrap();
+
+        let mut r = Session::open_project(&song).unwrap();
+        let st = r.state();
+        assert!(st.sources.iter().all(|s| s.missing));
+        // Clips keep their shape and play silence.
+        assert_eq!(st.tracks[0].clips[0].len, 500);
+        assert!(r.project().sources[0].samples().iter().all(|&x| x == 0.0));
+
+        // Finding one finds its neighbour by name.
+        let id = st.sources[0].id;
+        assert_eq!(r.relink(id, &moved.join("a.wav")).unwrap(), 2);
+        let st = r.state();
+        assert!(st.sources.iter().all(|s| !s.missing));
+        assert!(st.dirty, "the new paths need saving");
+        assert!((r.project().sources[1].samples()[0] - 0.5).abs() < 1e-5);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

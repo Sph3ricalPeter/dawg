@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { AppInfo } from "@/lib/app-info";
-import { exportDialog, openFileDialog, restoreLastReplace } from "@/lib/actions";
+import { api, type RecentProject } from "@/lib/api";
+import {
+  exportDialog,
+  newProject,
+  openFileDialog,
+  openRecent,
+  restoreLastReplace,
+  saveProject,
+  saveProjectAs,
+} from "@/lib/actions";
 import { useSession } from "@/stores/session-store";
 import { updateLine, useUpdaterStore } from "@/stores/updater-store";
 import { DawgMark } from "./DawgMark";
@@ -8,6 +17,7 @@ import { DawgMark } from "./DawgMark";
 /** The logo button and its menu. */
 export function AppMenu({ info }: { info: AppInfo | null }) {
   const [open, setOpen] = useState(false);
+  const [recent, setRecent] = useState<RecentProject[]>([]);
   const ref = useRef<HTMLDivElement>(null);
   const status = useUpdaterStore((s) => s.status);
   const lastChecked = useUpdaterStore((s) => s.lastChecked);
@@ -15,6 +25,10 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
 
   useEffect(() => {
     if (!open) return;
+    void api
+      .recentProjects()
+      .then((r) => setRecent(r.filter((p) => p.exists).slice(0, 5)))
+      .catch(() => setRecent([]));
     const close = (e: MouseEvent | KeyboardEvent) => {
       if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) {
         setOpen(false);
@@ -30,6 +44,7 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
 
   const canCheck = status === "idle" || status === "error";
   const hasFile = useSession((s) => !!s.session);
+  const scratch = useSession((s) => !!s.session?.scratch);
   const item = (label: string, keys: string, run: () => void, disabled = false) => (
     <button
       className="menu-item"
@@ -59,9 +74,33 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
             <b>dawg {info?.version}</b>
             <span className="faint">{updateLine(status, lastChecked)}</span>
           </div>
+          <div className="menu-h">File</div>
+          {item("New project", "Ctrl+N", newProject)}
           {item("Open…", "Ctrl+O", () => void openFileDialog())}
-          {item("Export…", "Ctrl+S", () => void exportDialog(), !hasFile)}
+          {!scratch && item("Save", "Ctrl+S", () => void saveProject(), !hasFile)}
+          {item("Save as project…", "Ctrl+Shift+S", () => void saveProjectAs(), !hasFile)}
+          {item("Export…", scratch ? "Ctrl+S" : "Ctrl+R", () => void exportDialog(), !hasFile)}
           {item("Restore last replace", "", () => void restoreLastReplace())}
+          {recent.length > 0 && (
+            <>
+              <div className="menu-sep" />
+              <div className="menu-h">Recent projects</div>
+              {recent.map((r) => (
+                <button
+                  key={r.path}
+                  className="menu-item"
+                  role="menuitem"
+                  title={r.path}
+                  onClick={() => {
+                    setOpen(false);
+                    void openRecent(r.path);
+                  }}
+                >
+                  {r.name}
+                </button>
+              ))}
+            </>
+          )}
           <div className="menu-sep" />
           <button
             className="menu-item"

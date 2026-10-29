@@ -7,12 +7,13 @@ use std::sync::{Mutex, MutexGuard};
 
 use dawg_core::file::Codec;
 use dawg_core::save::{self, Replaced};
-use dawg_core::session::{Imported, Placement, SavePreview, Session, SessionState};
+use dawg_core::session::{self, Imported, Placement, SavePreview, Session, SessionState};
 use dawg_core::Command;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use crate::audio::Audio;
+use crate::recent::{self, Recent};
 
 pub struct AppState {
     inner: Mutex<Inner>,
@@ -66,6 +67,13 @@ impl Inner {
     fn state(&self) -> Option<SessionState> {
         self.session.as_ref().map(Session::state)
     }
+
+    fn replace_session(&mut self, session: Session) -> SessionState {
+        self.audio.stop();
+        self.session = Some(session);
+        self.publish();
+        self.state().expect("session just set")
+    }
 }
 
 /// The first argument that isn't a flag: Explorer runs `dawg.exe "<file>"`.
@@ -76,11 +84,20 @@ pub fn file_from_args(args: impl Iterator<Item = OsString>, cwd: &Path) -> Optio
         .map(|p| cwd.join(p))
 }
 
-fn backup_dir(app: &AppHandle) -> Result<PathBuf, Error> {
+fn data_dir(app: &AppHandle) -> Result<PathBuf, Error> {
     app.path()
         .app_local_data_dir()
-        .map(|d| d.join("backups"))
         .map_err(|e| Error::new("io", e.to_string()))
+}
+
+fn backup_dir(app: &AppHandle) -> Result<PathBuf, Error> {
+    data_dir(app).map(|d| d.join("backups"))
+}
+
+fn remember(app: &AppHandle, project: &Path) {
+    if let Ok(dir) = data_dir(app) {
+        recent::add(&dir, project);
+    }
 }
 
 pub fn prune_backups(app: &AppHandle) {
@@ -117,14 +134,75 @@ pub fn startup_file(state: State<AppState>) -> Option<PathBuf> {
 /// Emitted when a second launch handed this window a file.
 pub const OPEN_REQUESTED: &str = "open-requested";
 
+/// Opens a WAV or MP3 as a scratch session, or a `.dawg` project.
 #[tauri::command]
-pub fn open_file(state: State<AppState>, path: PathBuf) -> Result<SessionState> {
-    let session = Session::open(&path).map_err(|e| Error::new("open", e.to_string()))?;
+pub fn open_file(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<SessionState> {
+    let session = if session::is_project(&path) {
+        let s = Session::open_project(&path).map_err(|e| Error::new(e.kind(), e.to_string()))?;
+        remember(&app, &path);
+        s
+    } else {
+        Session::open(&path).map_err(|e| Error::new("open", e.to_string()))?
+    };
+    Ok(state.lock().replace_session(session))
+}
+
+#[tauri::command]
+pub fn new_project(state: State<AppState>) -> SessionState {
+    state.lock().replace_session(Session::new_project())
+}
+
+/// Saves the session as a project: at `path`, or where it was last saved.
+#[tauri::command]
+pub fn save_project(
+    app: AppHandle,
+    state: State<AppState>,
+    path: Option<PathBuf>,
+) -> Result<SessionState> {
     let mut s = state.lock();
-    s.audio.stop();
-    s.session = Some(session);
+    let session = s.session()?;
+    let path = path
+        .or_else(|| session.project_path().map(Path::to_path_buf))
+        .ok_or_else(|| Error::new("no_path", "the project hasn't been saved yet"))?;
+    session
+        .save_project(&path)
+        .map_err(|e| Error::new(e.kind(), e.to_string()))?;
+    remember(&app, &path);
+    Ok(s.state().expect("session is open"))
+}
+
+#[derive(Serialize)]
+pub struct RelinkResult {
+    state: SessionState,
+    /// Sources now playing a file, the one asked for included.
+    relinked: usize,
+}
+
+/// Points a missing source at a file the user found.
+#[tauri::command]
+pub fn relink_source(state: State<AppState>, source: u64, path: PathBuf) -> Result<RelinkResult> {
+    let mut s = state.lock();
+    let relinked = s
+        .session()?
+        .relink(source, &path)
+        .map_err(|e| Error::new("open", e.to_string()))?;
     s.publish();
-    Ok(s.state().expect("session just opened"))
+    Ok(RelinkResult {
+        state: s.state().expect("session is open"),
+        relinked,
+    })
+}
+
+#[tauri::command]
+pub fn recent_projects(app: AppHandle) -> Vec<Recent> {
+    data_dir(&app).map(|d| recent::list(&d)).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn forget_recent_project(app: AppHandle, path: PathBuf) {
+    if let Ok(dir) = data_dir(&app) {
+        recent::remove(&dir, &path);
+    }
 }
 
 #[tauri::command]
@@ -282,7 +360,13 @@ pub fn replace_original(app: AppHandle, state: State<AppState>) -> Result<Replac
 pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<()> {
     let mut s = state.lock();
     let session = s.session()?;
-    if same_file(&path, session.path()) {
+    if session::is_project(&path) {
+        return Err(Error::new(
+            "project_path",
+            "that's a project file; export to a .wav or .mp3",
+        ));
+    }
+    if session.path().is_some_and(|p| same_file(&path, p)) {
         return Err(Error::new(
             "same_file",
             "that is the file being edited; use Replace original",
@@ -326,7 +410,8 @@ pub fn restore_last_replace(
     let reopen = s
         .session
         .as_ref()
-        .is_some_and(|x| same_file(x.path(), &r.original));
+        .and_then(Session::path)
+        .is_some_and(|p| same_file(p, &r.original));
     if reopen {
         let session = Session::open(&r.original).map_err(|e| Error::new("open", e.to_string()))?;
         s.session = Some(session);

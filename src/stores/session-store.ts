@@ -76,7 +76,11 @@ interface SessionStore {
   /** Bumped whenever the session's audio is (re)loaded from disk. */
   fileRev: number;
 
-  open: (path: string) => Promise<void>;
+  /** Opens a WAV or MP3 as a scratch session, or a .dawg project. True
+   * when it did. */
+  open: (path: string) => Promise<boolean>;
+  /** Starts an empty, untitled project. */
+  newProject: () => Promise<void>;
   /** Adds files to the open session. */
   importFiles: (paths: string[], at: Placement) => Promise<void>;
   /** Ask first if there are unsaved edits. */
@@ -129,7 +133,7 @@ interface SessionStore {
 /** Edits go to Rust one at a time and in order; a drag only sends its
  * latest step. */
 let chain: Promise<unknown> = Promise.resolve();
-function enqueue<T>(job: () => Promise<T>): Promise<T> {
+export function enqueue<T>(job: () => Promise<T>): Promise<T> {
   const p = chain.then(job);
   chain = p.catch(() => undefined);
   return p;
@@ -234,21 +238,22 @@ export const useSession = create<SessionStore>((set, get) => ({
     await get().stop();
     set({ busy: "Opening…" });
     try {
-      const s = await enqueue(() => api.openFile(path));
-      set({
-        session: s,
-        draft: null,
-        range: null,
-        selected: allClips(s).map((c) => c.clip.id),
-        playhead: 0,
-        startPoint: 0,
-        fileRev: get().fileRev + 1,
-      });
-      get().fit();
+      start(await enqueue(() => api.openFile(path)));
+      return true;
     } catch (e) {
       get().showToast(`Couldn't open ${path}: ${apiMessage(e)}`, { error: true });
+      return false;
     } finally {
       set({ busy: null });
+    }
+  },
+
+  newProject: async () => {
+    await get().stop();
+    try {
+      start(await enqueue(() => api.newProject()));
+    } catch (e) {
+      get().showToast(`Couldn't start a project: ${apiMessage(e)}`, { error: true });
     }
   },
 
@@ -606,6 +611,21 @@ export const useSession = create<SessionStore>((set, get) => ({
     get().adopt(s);
   },
 }));
+
+/** A session just opened or started: a scratch file comes up selected, a
+ * project as it was left. */
+function start(s: SessionState) {
+  useSession.setState({
+    session: s,
+    draft: null,
+    range: null,
+    selected: s.scratch ? allClips(s).map((c) => c.clip.id) : [],
+    playhead: 0,
+    startPoint: 0,
+    fileRev: useSession.getState().fileRev + 1,
+  });
+  useSession.getState().fit();
+}
 
 /** The tracks as they should be drawn right now. */
 export function useTracks(): TrackState[] {

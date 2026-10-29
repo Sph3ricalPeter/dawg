@@ -204,6 +204,27 @@ pub fn replace(
     result
 }
 
+/// Writes dawg's own file (a project) at `path`, new or over the last
+/// version, through the same verified temp file and swap as [`replace`] but
+/// with no backup: the previous version is ours, and keeping it would make
+/// it the target of `Restore last replace`.
+pub fn overwrite(path: &Path, bytes: &[u8]) -> Result<(), SaveError> {
+    if !path.exists() {
+        return write_new(path, bytes);
+    }
+    let tmp = write_verified_temp(path, bytes)?;
+    let result = swap(path, &tmp).and_then(|()| {
+        if fs::read(path)? != bytes {
+            return Err(SaveError::VerifyFailed);
+        }
+        Ok(())
+    });
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
 /// The most recent [`replace`] whose backup still exists.
 pub fn last_replace(backup_dir: &Path) -> Option<Replaced> {
     let json = fs::read(backup_dir.join(LAST_REPLACE)).ok()?;

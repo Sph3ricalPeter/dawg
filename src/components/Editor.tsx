@@ -410,7 +410,7 @@ function TrackHeader({
                 </>
               )}
             </div>
-            {session.truncated && src.path === session.path && (
+            {session.truncated && session.path && src.path === session.path && (
               <div className="warn-note">The file ended early; saving writes a repaired header.</div>
             )}
           </div>

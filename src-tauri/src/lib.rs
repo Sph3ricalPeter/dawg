@@ -1,5 +1,6 @@
 mod audio;
 mod commands;
+mod recent;
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
@@ -90,6 +91,11 @@ pub fn run() {
             app_info,
             commands::startup_file,
             commands::open_file,
+            commands::new_project,
+            commands::save_project,
+            commands::relink_source,
+            commands::recent_projects,
+            commands::forget_recent_project,
             commands::session_state,
             commands::apply,
             commands::end_gesture,

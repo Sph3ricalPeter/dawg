@@ -15,12 +15,16 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   encode, gapless, tags kept), `file` (WAV or MP3 behind one type, and
   converting between them), `save` (safe replace and backups),
   `command` (edits as serde data; tracks and clips by stable id), `session`
-  (the session opened from a file, plus files added onto other tracks, with
-  undo; exports the original's format while it is one clip, else a
-  mixdown), `resample` (offline rate conversion for added files), `player`
+  (a scratch session opened from a file, or a project, plus files added onto
+  other tracks, with undo; a scratch session exports the original's format
+  while it is one clip, else a mixdown), `project_file` (the versioned
+  `.dawg` JSON format: relative and absolute source paths, missing files open
+  as silence and can be relinked), `resample` (offline rate conversion for added files), `player`
   (the audio callback minus the device), `peaks`.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
-  `audio.rs` (cpal output), plugins, installer config.
+  `audio.rs` (cpal output), `recent.rs` (recent projects), plugins,
+  installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`
+  file association).
 - `integrations/unity`: Unity package (git URL install) that opens audio clips in dawg on
   double-click.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in

@@ -12,6 +12,7 @@ mod model;
 pub mod mp3;
 pub mod peaks;
 pub mod player;
+pub mod project_file;
 mod render;
 pub mod resample;
 pub mod save;

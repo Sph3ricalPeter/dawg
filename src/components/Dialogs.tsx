@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { exportDialog } from "@/lib/actions";
+import { exportDialog, saveProject } from "@/lib/actions";
 import { useSession } from "@/stores/session-store";
 
 function useEscape(onEscape: () => void) {
@@ -62,8 +62,54 @@ function DiscardDialog({ verb, then }: { verb: string; then: () => void }) {
   );
 }
 
+/** A project asks to save, like any document app. */
+function SaveDialog({ then }: { then: () => void }) {
+  const session = useSession((s) => s.session);
+  const setDialog = useSession((s) => s.setDialog);
+  const primary = useRef<HTMLButtonElement>(null);
+  const cancel = () => setDialog(null);
+  useEscape(cancel);
+  useEffect(() => primary.current?.focus(), []);
+  return (
+    <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
+      <div className="dlg small" role="dialog" aria-label="Unsaved changes">
+        <header>Save changes to {session?.name}?</header>
+        <div className="bd">
+          <span className="dim">Your changes will be lost if you don't save them.</span>
+        </div>
+        <footer>
+          <button className="btn ghost" onClick={cancel}>
+            Cancel
+          </button>
+          <span className="spacer" />
+          <button
+            className="btn"
+            onClick={() => {
+              setDialog(null);
+              then();
+            }}
+          >
+            Don't save
+          </button>
+          <button
+            ref={primary}
+            className="btn primary"
+            onClick={() => {
+              setDialog(null);
+              void saveProject().then((saved) => saved && then());
+            }}
+          >
+            Save <kbd>Enter</kbd>
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 export function Dialogs() {
   const dialog = useSession((s) => s.dialog);
+  const scratch = useSession((s) => s.session?.scratch ?? true);
   if (!dialog) return null;
-  return <DiscardDialog verb={dialog.verb} then={dialog.then} />;
+  return scratch ? <DiscardDialog verb={dialog.verb} then={dialog.then} /> : <SaveDialog then={dialog.then} />;
 }
