@@ -2,6 +2,13 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "dawg dev",
   "identifier": "com.sph3ricalpeter.dawg.dev",
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Sph3ricalPeter/dawg/releases/download/dev-build/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "createUpdaterArtifacts": false
   }

@@ -68,6 +68,9 @@ npm run build:dev   # local installable "dawg dev" build
 - **Updates reach every install**, so `.dawg` format changes stay additive and
   versioned, and the updater never restarts the app on its own. See
   `.claude/release.md` for the full breaker list.
-- The release app id is `com.sph3ricalpeter.dawg`; dev builds
-  (`tauri.dev.conf.json`, debug builds) report channel "dev" and never
-  self-update.
+- The release app id is `com.sph3ricalpeter.dawg`. "dawg dev"
+  (`tauri.dev.conf.json`, `com.sph3ricalpeter.dawg.dev`) reports channel
+  "dev". CI publishes every push to `dev` as a signed `x.y.z-dev.<run>` build
+  to the rolling `dev-build` prerelease, and installed "dawg dev" copies
+  update from it, so a push to `dev` reaches Peter's test install within the
+  hour: keep `dev` working. Local and debug builds never self-update.

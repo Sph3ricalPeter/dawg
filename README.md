@@ -29,8 +29,15 @@ npm run build:dev      # installable "dawg dev" build, see below
 
 `npm run build:dev` builds `target/release/bundle/nsis/dawg dev_<version>_x64-setup.exe`.
 It installs as a separate app ("dawg dev", its own app id, its own Explorer
-entry, updater off), so you can test a build without touching the released
-install. CI also uploads this installer as an artifact on every push.
+entry), so you can test a build without touching the released install. A
+local build never updates itself.
+
+Every push to `dev` also publishes a signed "dawg dev" build to the rolling
+[`dev-build`](https://github.com/Sph3ricalPeter/dawg/releases/tag/dev-build)
+prerelease, versioned `x.y.z-dev.<CI run>`. Install `dawg-dev-setup.exe` from
+there once and it updates itself from every later push, the same way dawg
+updates from releases. This needs the signing key secrets below; without them
+CI still uploads an unsigned installer as an artifact.
 
 ## Release
 

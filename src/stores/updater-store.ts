@@ -121,7 +121,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
 export function updateLine(status: UpdateStatus, lastChecked: number | null): string {
   switch (status) {
     case "disabled":
-      return "Updates are off in dev builds";
+      return "Updates are off in local builds";
     case "checking":
       return "Checking for updates…";
     case "downloading":

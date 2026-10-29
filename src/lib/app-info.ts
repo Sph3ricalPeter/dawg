@@ -3,7 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 export interface AppInfo {
   version: string;
   coreVersion: string;
-  /** "release" for the installed app, "dev" for `tauri dev` and local test builds. */
+  /** "release" for the installed app, "dev" for "dawg dev" and `tauri dev`. */
   channel: "release" | "dev";
   updatesEnabled: boolean;
 }
