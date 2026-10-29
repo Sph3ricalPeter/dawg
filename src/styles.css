@@ -7,6 +7,9 @@
   --bg-3: #191919;
   --bg-4: #242424;
   --bg-2b: #0d0d0d;
+  --bg-3b: #1c1c1c;
+  --knob: #2cc3ee;
+  --knob-track: #333333;
   --line: #1e1e1e;
   --line-strong: #262626;
   --range: rgba(255, 255, 255, 0.05);
@@ -507,15 +510,20 @@ button.upd {
   border-radius: 5px;
   border: 2px solid var(--bg-1);
 }
+/* 76 px tracks as in the mockup; a lone track fills the editor. */
 .trow {
-  flex: 1 0 96px;
-  max-height: 260px;
+  flex: 0 0 76px;
   display: grid;
   grid-template-columns: var(--hdr-w) minmax(0, 1fr);
   border-bottom: 1px solid var(--line);
 }
 .tracks.one .trow:not(.add) {
   flex: 1 0 140px;
+  max-height: none;
+}
+.trow.sized,
+.tracks.one .trow.sized:not(.add) {
+  flex: none;
   max-height: none;
 }
 .trow.add {
@@ -625,25 +633,45 @@ button.upd {
   pointer-events: none;
 }
 
-/* track header */
+/* track header (mockup .th) */
 .th {
+  position: relative;
+  display: flex;
   background: var(--bg-3);
   border-right: 1px solid var(--line-strong);
   min-height: 0;
-  overflow: hidden;
+}
+.trow:nth-child(even):not(.add) .th {
+  background: var(--bg-3b);
 }
 .th .ti {
-  padding: 7px 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px 6px 8px;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+.tracks.one .th .ti {
+  justify-content: flex-start;
   gap: 8px;
 }
 .th .tn {
   display: flex;
-}
-.th .tn {
-  gap: 4px;
   align-items: center;
+  gap: 6px;
+}
+.th .tn span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  background: var(--c);
+  color: #111;
+  padding: 1px 6px;
+  border-radius: 1px;
 }
 .th .tn .rn {
   flex: 1;
@@ -655,16 +683,29 @@ button.upd {
   border: 1px solid var(--line-strong);
   padding: 0 5px;
 }
-.th .tx {
-  border: 0;
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 10px;
-  padding: 0 2px;
+.th .rsz {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 7px;
+  z-index: 7;
+  cursor: row-resize;
 }
-.th .tx:hover {
-  color: var(--text);
+.th .rsz::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+}
+.th .rsz:hover::after {
+  background: #5a5a5a;
+}
+body.rsizing,
+body.rsizing * {
+  cursor: row-resize !important;
 }
 .tcl {
   display: flex;
@@ -684,34 +725,97 @@ button.upd {
   padding: 0;
   flex: none;
 }
-.ms.m.on {
+/* The numbered button is the track's on/off: lit while it plays. */
+.ms.m {
   background: #cfcfcf;
   color: #111;
+  width: 20px;
+}
+.ms.m.on {
+  background: var(--bg-4);
+  color: var(--text-faint);
 }
 .ms.s.on {
   background: #47a6f2;
   color: #08121d;
 }
-.dv {
-  font: 10.5px var(--mono);
-  padding: 1px 4px;
-  border-radius: 3px;
+.vk {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 4px 0 2px;
+  border-radius: 4px;
   cursor: ns-resize;
-  white-space: nowrap;
 }
-.dv:hover {
+.vk:hover {
   background: var(--bg-4);
 }
-.th .tn span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  background: var(--c);
-  color: #111;
-  padding: 1px 6px;
+.vk svg,
+.pan svg {
+  display: block;
+  overflow: visible;
+  flex: none;
+  pointer-events: none;
+}
+.vk .tm {
+  width: 7px;
+  height: 16px;
+  flex: none;
+  display: flex;
+  gap: 1px;
+  background: var(--bg-0);
   border-radius: 1px;
+  overflow: hidden;
+}
+.vk .tm i {
+  flex: 1;
+  position: relative;
+  display: block;
+}
+.vk .tm i b {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: linear-gradient(0deg, var(--ok) 0 13px, var(--warn) 13px 15px, var(--danger) 15px);
+  background-size: 100% 16px;
+  background-position: bottom;
+  display: block;
+}
+.vk .vv {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: text;
+}
+.ktype {
+  width: 44px;
+  min-width: 0;
+  font: 10px var(--mono);
+  background: var(--bg-0);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  padding: 0 3px;
+}
+.pan {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -2px 0;
+}
+.menu.ctx {
+  position: fixed;
+  z-index: 30;
+  min-width: 190px;
 }
 .tinfo {
   display: flex;
