@@ -145,20 +145,20 @@ impl Renderer {
                         for (slot, sec) in sections.iter().enumerate() {
                             let Some(sec) = sec else { continue };
                             let z = &mut st.z[slot];
-                            for f in buf.chunks_exact_mut(OUT_CHANNELS) {
+                            for f in buf.as_chunks_mut::<OUT_CHANNELS>().0 {
                                 f[0] = sec.tick(f[0] as f64, &mut z[0]) as f32;
                                 f[1] = sec.tick(f[1] as f64, &mut z[1]) as f32;
                             }
                         }
                         if let Some(sink) = tap.as_deref_mut() {
-                            for f in buf.chunks_exact(OUT_CHANNELS) {
+                            for f in buf.as_chunks::<OUT_CHANNELS>().0 {
                                 // A full ring drops samples; the analyser
                                 // only needs the latest.
                                 let _ = sink.push(0.5 * (f[0] + f[1]));
                             }
                         }
                         let base = (at - from) as usize * OUT_CHANNELS;
-                        for (i, f) in buf.chunks_exact(OUT_CHANNELS).enumerate() {
+                        for (i, f) in buf.as_chunks::<OUT_CHANNELS>().0.iter().enumerate() {
                             let (l, r) = (f[0] * gl, f[1] * gr);
                             out[base + i * OUT_CHANNELS] += l;
                             out[base + i * OUT_CHANNELS + 1] += r;
