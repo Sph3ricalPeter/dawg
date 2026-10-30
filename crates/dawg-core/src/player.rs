@@ -12,10 +12,11 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use realfft::RealFftPlanner;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::model::Project;
-use crate::render::{Renderer, METER_TRACKS, OUT_CHANNELS};
+use crate::render::{Renderer, METER_TRACKS, NO_TAP, OUT_CHANNELS};
 
 /// Frames rendered per block.
 const BLOCK: usize = 256;
@@ -40,6 +41,8 @@ pub struct PlayerShared {
     /// Peak level per track and side since the last read, as `f32` bits.
     /// Non-negative floats order like their bits, so `fetch_max` works.
     peaks: [[AtomicU32; 2]; METER_TRACKS],
+    /// The track the analyser listens to, or [`NO_TAP`].
+    tap_track: AtomicU64,
 }
 
 impl Default for PlayerShared {
@@ -47,6 +50,7 @@ impl Default for PlayerShared {
         Self {
             playing: AtomicBool::new(false),
             position: AtomicU64::new(0),
+            tap_track: AtomicU64::new(NO_TAP),
             peaks: std::array::from_fn(|_| [AtomicU32::new(0), AtomicU32::new(0)]),
         }
     }
@@ -57,6 +61,34 @@ pub struct PlayerHandle {
     tx: Producer<PlayerMsg>,
     garbage: Consumer<Arc<Project>>,
     shared: Arc<PlayerShared>,
+    analyser: Analyser,
+}
+
+/// FFT size of the analyser: about 6 Hz per bin at 48 kHz.
+const ANALYSER_FFT: usize = 8192;
+/// Points of a spectrum, log-spaced.
+pub const SPECTRUM_POINTS: usize = 256;
+/// Lowest frequency of a spectrum.
+pub const SPECTRUM_FROM_HZ: f64 = 10.0;
+
+/// The handle's side of the analyser: the tapped track's latest samples.
+struct Analyser {
+    rx: Consumer<f32>,
+    /// The last `ANALYSER_FFT` samples, oldest first.
+    hist: Vec<f32>,
+    /// Samples taken since the last spectrum.
+    fresh: usize,
+    window: Vec<f64>,
+}
+
+/// One track's spectrum after its EQ: `db[i]` is the level at
+/// `from_hz × (to_hz / from_hz)^(i / (len − 1))`, in dBFS for a sine.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Spectrum {
+    pub from_hz: f64,
+    pub to_hz: f64,
+    pub db: Vec<f32>,
 }
 
 impl PlayerHandle {
@@ -91,6 +123,67 @@ impl PlayerHandle {
 
     /// Peak level (linear, left and right) of each of the first `tracks`
     /// tracks since the last call, which resets them.
+    /// The spectrum of `track` after its EQ, from what played since the last
+    /// call, or `None` when nothing new played. Starts listening to that
+    /// track; `None` stops listening.
+    pub fn spectrum(&mut self, track: Option<u64>, rate: u32) -> Option<Spectrum> {
+        self.shared
+            .tap_track
+            .store(track.unwrap_or(NO_TAP), Ordering::Relaxed);
+        let a = &mut self.analyser;
+        let mut n = 0;
+        while let Ok(x) = a.rx.pop() {
+            a.hist.push(x);
+            n += 1;
+        }
+        if a.hist.len() > ANALYSER_FFT {
+            a.hist.drain(..a.hist.len() - ANALYSER_FFT);
+        }
+        a.fresh += n;
+        if track.is_none() || a.fresh == 0 {
+            return None;
+        }
+        a.fresh = 0;
+        let mut buf = vec![0f64; ANALYSER_FFT];
+        let pad = ANALYSER_FFT - a.hist.len();
+        for (i, &x) in a.hist.iter().enumerate() {
+            buf[pad + i] = x as f64 * a.window[pad + i];
+        }
+        let fft = RealFftPlanner::<f64>::new().plan_fft_forward(ANALYSER_FFT);
+        let mut spec = fft.make_output_vec();
+        fft.process(&mut buf, &mut spec).ok()?;
+        // A full-scale sine reads 0 dB.
+        let scale = 2.0 / a.window.iter().sum::<f64>();
+        let mags: Vec<f64> = spec.iter().map(|c| c.norm() * scale).collect();
+        let bin_hz = rate as f64 / ANALYSER_FFT as f64;
+        let to_hz = rate as f64 / 2.0;
+        let ratio = to_hz / SPECTRUM_FROM_HZ;
+        let mut db = Vec::with_capacity(SPECTRUM_POINTS);
+        for i in 0..SPECTRUM_POINTS {
+            let at = |k: f64| SPECTRUM_FROM_HZ * ratio.powf(k / (SPECTRUM_POINTS - 1) as f64);
+            let (lo, hi) = (at(i as f64 - 0.5) / bin_hz, at(i as f64 + 0.5) / bin_hz);
+            // Where a point spans several bins, the loudest; where it falls
+            // between two, a blend of them.
+            let m = if hi - lo >= 1.0 {
+                let (a, b) = (
+                    lo.ceil() as usize,
+                    (hi.floor() as usize).min(mags.len() - 1),
+                );
+                mags[a.min(b)..=b].iter().copied().fold(0.0, f64::max)
+            } else {
+                let x = (at(i as f64) / bin_hz).min((mags.len() - 2) as f64);
+                let k = x.floor() as usize;
+                mags[k] + (mags[k + 1] - mags[k]) * (x - k as f64)
+            };
+            db.push((20.0 * m.max(1e-9).log10()) as f32);
+        }
+        Some(Spectrum {
+            from_hz: SPECTRUM_FROM_HZ,
+            to_hz,
+            db,
+        })
+    }
+
     pub fn take_peaks(&self, tracks: usize) -> Vec<[f32; 2]> {
         self.shared.peaks[..tracks.min(METER_TRACKS)]
             .iter()
@@ -135,11 +228,14 @@ pub fn player(project: Arc<Project>, device_rate: u32, channels: usize) -> (Play
     let (gtx, grx) = RingBuffer::new(RING * 2);
     let shared = Arc::new(PlayerShared::default());
     let step = project.sample_rate as f64 / device_rate as f64;
+    let (tap_tx, tap_rx) = RingBuffer::new(ANALYSER_FFT * 4);
+    let mut renderer = Renderer::new(project, 0);
+    renderer.set_tap(tap_tx);
     let player = Player {
         rx,
         garbage: gtx,
         shared: shared.clone(),
-        renderer: Renderer::new(project, 0),
+        renderer,
         channels: channels.max(1),
         device_rate: device_rate as f64,
         playing: false,
@@ -157,6 +253,16 @@ pub fn player(project: Arc<Project>, device_rate: u32, channels: usize) -> (Play
         tx,
         garbage: grx,
         shared,
+        analyser: Analyser {
+            rx: tap_rx,
+            hist: Vec::with_capacity(ANALYSER_FFT * 2),
+            fresh: 0,
+            window: (0..ANALYSER_FFT)
+                .map(|i| {
+                    0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / ANALYSER_FFT as f64).cos()
+                })
+                .collect(),
+        },
     };
     (player, handle)
 }
@@ -243,6 +349,8 @@ impl Player {
             self.block_len = 0;
         }
         if self.block_pos == self.block_len {
+            self.renderer
+                .tap_track(self.shared.tap_track.load(Ordering::Relaxed));
             self.renderer.process(&mut self.block);
             for (shared, peak) in self.shared.peaks.iter().zip(self.renderer.take_peaks()) {
                 shared[0].fetch_max(peak[0].to_bits(), Ordering::Relaxed);
@@ -407,5 +515,53 @@ mod tests {
         assert_eq!(handle.garbage.slots(), 1);
         handle.collect();
         assert_eq!(handle.garbage.slots(), 0);
+    }
+
+    #[test]
+    fn the_analyser_hears_the_tapped_track() {
+        // A 1500 Hz sine (32 frames a cycle), on track 7.
+        let samples: Vec<f32> = (0..24_000)
+            .map(|i| (0.5 * (2.0 * std::f64::consts::PI * i as f64 / 32.0).sin()) as f32)
+            .collect();
+        let p = Arc::new(Project::with_tracks(
+            48_000,
+            vec![Track {
+                id: 7,
+                clips: vec![Clip::new(Arc::new(Source::new(1, samples)), 0)],
+                ..Track::default()
+            }],
+        ));
+        let (mut pl, mut handle) = player(p.clone(), 48_000, 2);
+        assert!(handle.spectrum(Some(7), 48_000).is_none());
+        handle.send(PlayerMsg::Play {
+            from: 0,
+            to: 24_000,
+            looping: None,
+        });
+        let mut out = vec![0.0; 2 * 480];
+        for _ in 0..30 {
+            pl.fill(&mut out);
+        }
+        let s = handle.spectrum(Some(7), 48_000).unwrap();
+        let (i, top) =
+            s.db.iter()
+                .enumerate()
+                .fold((0, f32::MIN), |m, (i, &d)| if d > m.1 { (i, d) } else { m });
+        let hz = s.from_hz * (s.to_hz / s.from_hz).powf(i as f64 / (s.db.len() - 1) as f64);
+        assert!((hz / 1500.0 - 1.0).abs() < 0.03, "peak at {hz} Hz");
+        assert!((top + 6.0).abs() < 1.0, "a -6 dB sine reads {top} dB");
+        // Tapping doesn't change what plays (no EQ here, so it's exact
+        // to within float rounding).
+        let (mut pl, mut handle) = player(p.clone(), 48_000, 2);
+        handle.spectrum(Some(7), 48_000);
+        handle.send(PlayerMsg::Play {
+            from: 0,
+            to: 960,
+            looping: None,
+        });
+        let mut out = vec![0.0; 2 * 960];
+        pl.fill(&mut out);
+        let want = crate::render(p, 0, 960);
+        assert!(out.iter().zip(&want).all(|(a, b)| (a - b).abs() < 1e-6));
     }
 }

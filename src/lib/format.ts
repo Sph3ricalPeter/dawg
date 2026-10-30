@@ -20,6 +20,31 @@ export function fadeAt(clip: Pick<ClipState, "len" | "fadeIn" | "fadeOut">, i: n
   return f;
 }
 
+/** Same as `Clip::source_at` in dawg-core: source frame of frame `i` of the
+ * clip. */
+export function srcAt(clip: Pick<ClipState, "offset" | "stretch">, i: number): number {
+  return clip.stretch === 1 ? clip.offset + i : clip.offset + Math.floor(i / clip.stretch);
+}
+
+/** Same as `Clip::max_len`: the longest a clip can be from source frame
+ * `offset` of a source `frames` long, in timeline frames. */
+export function maxLen(clip: Pick<ClipState, "stretch">, offset: number, frames: number): number {
+  const rest = Math.max(0, frames - offset);
+  return clip.stretch === 1 ? rest : Math.floor(rest * clip.stretch);
+}
+
+/** "+3 st", "−0.25 st" */
+export function fmtPitch(st: number, unit = true): string {
+  const v = Math.round(st * 100) / 100;
+  const body = Number.isInteger(v) ? Math.abs(v).toString() : Math.abs(v).toFixed(2);
+  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${body}${unit ? " st" : "st"}`;
+}
+
+/** "×1.50" */
+export function fmtStretch(s: number): string {
+  return `×${s.toFixed(2)}`;
+}
+
 /** Same as `Clip::envelope_at` in dawg-core: gain at source frame `at`. */
 export function envelopeAt(env: EnvPoint[], at: number): number {
   if (!env.length) return 1;

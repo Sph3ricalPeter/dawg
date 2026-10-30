@@ -1057,6 +1057,79 @@ body.rsizing * {
   opacity: 1;
   outline: 1px solid rgba(255, 255, 255, 0.7);
 }
+/* Pitch and stretch readouts, left of the gain in the title strip. */
+.clip .tp,
+.clip .tsr {
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 2px;
+  flex: none;
+  white-space: nowrap;
+}
+.clip .ct .nm + .tsr,
+.clip .ct .nm + .tp,
+.clip .ct .locate + .tsr,
+.clip .ct .locate + .tp {
+  margin-left: auto;
+}
+.clip .tsr ~ .gain,
+.clip .tp ~ .gain {
+  margin-left: 0;
+}
+.clip .tp {
+  cursor: ns-resize;
+}
+.clip .tp.zero {
+  opacity: 0.55;
+}
+.clip .tp:hover,
+.clip .tsr:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+/* Stretch handles: a small triangle in each bottom corner, above the trim
+   zones like the fade handles. */
+.clip .sh {
+  position: absolute;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  pointer-events: auto;
+  cursor: col-resize;
+  z-index: 3;
+}
+.clip .sh.l {
+  left: 0;
+}
+.clip .sh.r {
+  right: 0;
+}
+.clip .sh::before {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  opacity: 0.35;
+}
+.clip .sh.l::before {
+  left: 1px;
+  border-width: 7px 0 0 7px;
+  border-color: transparent transparent transparent #121212;
+}
+.clip .sh.r::before {
+  right: 1px;
+  border-width: 0 0 7px 7px;
+  border-color: transparent transparent #121212 transparent;
+}
+.clip .sh.on::before {
+  opacity: 0.85;
+}
+.clip .sh:hover::before {
+  opacity: 1;
+}
 .playhead {
   position: absolute;
   top: 0;
@@ -1300,4 +1373,221 @@ body.rsizing * {
 }
 .toast .x {
   font-size: 10px;
+}
+
+/* Track EQ, docked under the playlist like Ableton's detail view. */
+.ms.eq {
+  width: 22px;
+  font-size: 9px;
+  letter-spacing: -0.2px;
+}
+.ms.eq.on {
+  background: color-mix(in srgb, var(--knob) 70%, #000);
+  color: #04141a;
+}
+.ms.eq.open {
+  box-shadow: 0 0 0 1px var(--text);
+}
+.eqp {
+  flex: none;
+  height: 252px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-strong);
+}
+.eqh {
+  height: 26px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.eqh b {
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+}
+.eqh .eqt {
+  background: var(--c);
+  color: #111;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 1px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eqh .sp {
+  flex: 1;
+}
+.eqb {
+  height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--bg-3);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.eqb:hover {
+  background: var(--bg-4);
+}
+.eqb.on {
+  background: color-mix(in srgb, var(--knob) 70%, #000);
+  border-color: transparent;
+  color: #04141a;
+  font-weight: 600;
+}
+.eqx {
+  width: 22px;
+  height: 20px;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.eqx:hover {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.eqbody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.eqg {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-0);
+  overflow: hidden;
+  cursor: crosshair;
+}
+.eqg canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.eqn {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  margin: -7.5px 0 0 -7.5px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #111;
+  font: 600 9px/15px var(--font);
+  text-align: center;
+  cursor: move;
+  z-index: 2;
+}
+.eqn:hover {
+  transform: scale(1.15);
+}
+.eqn.sel {
+  box-shadow: 0 0 0 1.5px #fff;
+}
+.eqn.off {
+  background: var(--bg-0);
+  color: var(--c);
+  box-shadow: inset 0 0 0 1.5px var(--c);
+}
+.eqn.off.sel {
+  box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 1.5px #fff;
+}
+.eqs {
+  width: 236px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.eqrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.eqrow.knobs {
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.eqnum {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #111;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 18px;
+}
+.eqs select {
+  flex: 1;
+  height: 22px;
+  background: var(--bg-3);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  font: inherit;
+  padding: 0 4px;
+}
+.eqk {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 96px;
+  padding: 2px 4px 2px 2px;
+  border-radius: 4px;
+  cursor: ns-resize;
+}
+.eqk:hover {
+  background: var(--bg-4);
+}
+.eqk svg {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+.eql {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.eqv {
+  font-size: 11px;
+}
+.eqslope {
+  display: flex;
+  gap: 2px;
+}
+.eqslope button {
+  height: 18px;
+  min-width: 24px;
+  padding: 0 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--bg-3);
+  color: var(--text-dim);
+  font: 10px var(--mono);
+  cursor: pointer;
+}
+.eqslope button.on {
+  background: var(--text);
+  color: #111;
+  border-color: transparent;
+}
+.eqhelp {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
 }

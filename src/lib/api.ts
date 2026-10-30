@@ -26,6 +26,26 @@ export interface ClipState {
   fadeIn: number;
   fadeOut: number;
   envelope: EnvPoint[];
+  /** Timeline frames per source frame (1 = as recorded). */
+  stretch: number;
+  /** Semitones. */
+  pitch: number;
+}
+
+/** Mirrors `dawg_core::eq::BandKind`. */
+export type BandKind = "bell" | "low_shelf" | "high_shelf" | "low_cut" | "high_cut" | "notch" | "band_pass";
+
+/** Mirrors `dawg_core::EqBand`. */
+export interface EqBand {
+  kind: BandKind;
+  /** Hz. */
+  freq: number;
+  /** Bells and shelves. */
+  gainDb: number;
+  q: number;
+  /** Cuts: dB per octave, one of 6, 12, 18, 24, 36, 48. */
+  slope: number;
+  on: boolean;
 }
 
 /** Mirrors `dawg_core::session::TrackState`. */
@@ -37,6 +57,8 @@ export interface TrackState {
   muted: boolean;
   solo: boolean;
   clips: ClipState[];
+  eq: EqBand[];
+  eqBypass: boolean;
 }
 
 /** Mirrors `dawg_core::session::SourceState`. */
@@ -121,6 +143,8 @@ export type Command =
   | { type: "set_clip_gain"; clip: number; gain_db: number }
   | { type: "set_clip_fades"; clip: number; fade_in: number; fade_out: number }
   | { type: "set_envelope"; clip: number; points: EnvPoint[] }
+  | { type: "stretch_clip"; clip: number; stretch: number; start?: number }
+  | { type: "set_clip_pitch"; clip: number; semitones: number }
   | { type: "add_clip"; source: number; track: number; start: number }
   | { type: "delete_clip"; clip: number }
   | { type: "split_clip"; clip: number; at: number }
@@ -136,6 +160,7 @@ export type Command =
       muted?: boolean;
       solo?: boolean;
     }
+  | { type: "set_track_eq"; track: number; bands: EqBand[]; bypass?: boolean }
   | { type: "batch"; commands: Command[] };
 
 /** Errors from the Rust side carry a kind to branch on. */
@@ -157,6 +182,14 @@ export function apiMessage(e: unknown): string {
 export interface Replaced {
   original: string;
   backup: string;
+}
+
+/** Mirrors `dawg_core::player::Spectrum`: `db[i]` is at
+ * `fromHz × (toHz / fromHz)^(i / (db.length − 1))`. */
+export interface Spectrum {
+  fromHz: number;
+  toHz: number;
+  db: number[];
 }
 
 /** Mirrors `recent::Recent` in the app crate. */
@@ -192,6 +225,9 @@ export const api = {
   play: (from: number, to: number, looping: number | null) => invoke<void>("play", { from, to, looping }),
   stop: () => invoke<void>("stop"),
   transport: () => invoke<{ playing: boolean; position: number; levels: [number, number][] }>("transport"),
+  /** A track's spectrum after its EQ, from what played since the last call
+   * (null when nothing did); `null` stops listening. */
+  spectrum: (track: number | null) => invoke<Spectrum | null>("spectrum", { track }),
   savePreview: () => invoke<SavePreview>("save_preview"),
   replaceOriginal: () =>
     invoke<{ state: SessionState; backup: string }>("replace_original"),

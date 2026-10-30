@@ -100,6 +100,10 @@ fn player_fill_does_not_allocate_or_free() {
             // freeing it in the callback.
             let next = std::sync::Arc::new((*scene.project).clone());
             handle.send(PlayerMsg::Project(next));
+            // The analyser listening to the first track.
+            if let Some(t) = scene.project.tracks.first() {
+                handle.spectrum(Some(t.id), scene.project.sample_rate);
+            }
             // Long enough to loop back twice.
             handle.send(PlayerMsg::Play {
                 from: 0,

@@ -106,6 +106,7 @@ pub fn run() {
             commands::play,
             commands::stop,
             commands::transport,
+            commands::spectrum,
             commands::save_preview,
             commands::replace_original,
             commands::save_as,

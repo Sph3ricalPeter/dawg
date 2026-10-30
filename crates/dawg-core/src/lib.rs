@@ -7,6 +7,7 @@
 //! the real-time path.
 
 pub mod command;
+pub mod eq;
 pub mod file;
 mod model;
 pub mod mp3;
@@ -17,9 +18,11 @@ mod render;
 pub mod resample;
 pub mod save;
 pub mod session;
+pub mod stretch;
 pub mod wav;
 
 pub use command::{Command, CommandError};
+pub use eq::{BandKind, Eq, EqBand};
 pub use model::{Clip, EnvPoint, Project, Source, Track, ENV_MAX};
 pub use render::{render, Renderer, OUT_CHANNELS};
 pub use session::Session;

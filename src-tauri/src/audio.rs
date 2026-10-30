@@ -7,7 +7,7 @@ use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
-use dawg_core::player::{player, Player, PlayerHandle, PlayerMsg};
+use dawg_core::player::{player, Player, PlayerHandle, PlayerMsg, Spectrum};
 use dawg_core::Project;
 
 /// Frames converted per pass for devices that don't take `f32`.
@@ -73,6 +73,15 @@ impl Audio {
             }
             None => (false, 0, Vec::new()),
         }
+    }
+}
+
+impl Audio {
+    /// The spectrum of `track` after its EQ since the last call, and from
+    /// now on listens to it; `None` stops listening.
+    pub fn spectrum(&mut self, track: Option<u64>) -> Option<Spectrum> {
+        let rate = self.project.as_ref()?.sample_rate;
+        self.output.as_mut()?.handle.spectrum(track, rate)
     }
 }
 

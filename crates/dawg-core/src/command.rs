@@ -6,7 +6,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::eq::{Eq, EqBand, MAX_BANDS};
 use crate::model::{Clip, EnvPoint, Project, Track, ENV_MAX};
+use crate::stretch::{MAX_PITCH, MAX_STRETCH, MIN_STRETCH};
 
 /// Shortest clip a trim or split can leave, in frames.
 pub const MIN_CLIP: u64 = 16;
@@ -45,6 +47,21 @@ pub enum Command {
     SetEnvelope {
         clip: u64,
         points: Vec<EnvPoint>,
+    },
+    /// Time-stretch a clip: `stretch` timeline frames per source frame
+    /// (0.25 to 4), keeping its pitch. The clip keeps the same audio, so its
+    /// length and fades scale with it. With `start`, the clip also moves
+    /// there (stretching from the left edge).
+    StretchClip {
+        clip: u64,
+        stretch: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start: Option<u64>,
+    },
+    /// Pitch-shift a clip by `semitones` (-24 to 24), keeping its length.
+    SetClipPitch {
+        clip: u64,
+        semitones: f32,
     },
     /// Place a source on a track; the whole source, at `start`.
     AddClip {
@@ -88,6 +105,15 @@ pub enum Command {
         muted: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         solo: Option<bool>,
+    },
+    /// Replace a track's EQ bands (at most 12; values are clamped into
+    /// range). `bypass` turns the whole EQ off and on, keeping the bands; left
+    /// out, it stays as it is.
+    SetTrackEq {
+        track: u64,
+        bands: Vec<EqBand>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bypass: Option<bool>,
     },
     /// Several edits as one: all apply or none do.
     Batch {
@@ -167,12 +193,16 @@ impl Command {
                 if len == 0 {
                     return err("a clip can't be trimmed to nothing");
                 }
-                if offset.checked_add(len).is_none_or(|end| end > frames) {
+                // A stretched clip's end rounds to whole frames, so allow
+                // a frame of slack per source frame and trim it off.
+                let max = clip.max_len(offset);
+                let slack = clip.stretch.ceil() as u64 - 1;
+                if offset >= frames || len > max + slack {
                     return err(format!(
-                        "trim {offset}..{} runs past the source's {frames} frames",
-                        offset.saturating_add(len)
+                        "trim from {offset} for {len} frames runs past the source's {frames} frames"
                     ));
                 }
+                let len = len.min(max).max(1);
                 if start.checked_add(len).is_none() {
                     return err("the clip would end past the end of time");
                 }
@@ -225,6 +255,41 @@ impl Command {
                 pts.sort_by_key(|pt| pt.at);
                 clip.envelope = pts.into();
             }
+            Command::StretchClip {
+                clip,
+                stretch,
+                start,
+            } => {
+                let rate = p.sample_rate;
+                if !stretch.is_finite() {
+                    return err("stretch must be a number");
+                }
+                let s = stretch.clamp(MIN_STRETCH, MAX_STRETCH);
+                let c = clip_mut(p, *clip)?;
+                let k = s / c.stretch;
+                let scale = |v: u64| (v as f64 * k).round() as u64;
+                c.stretch = s;
+                c.len = scale(c.len).clamp(1, c.max_len(c.offset).max(1));
+                c.fade_in = scale(c.fade_in);
+                c.fade_out = scale(c.fade_out);
+                if let Some(start) = start {
+                    c.start = *start;
+                }
+                if c.start.checked_add(c.len).is_none() {
+                    return err("the clip would end past the end of time");
+                }
+                fit_fades(c);
+                c.retime(rate, None);
+            }
+            Command::SetClipPitch { clip, semitones } => {
+                let rate = p.sample_rate;
+                let st = finite(*semitones, "pitch")?.clamp(-MAX_PITCH, MAX_PITCH);
+                let c = clip_mut(p, *clip)?;
+                if c.pitch != st {
+                    c.pitch = st;
+                    c.retime(rate, None);
+                }
+            }
             Command::AddClip {
                 source,
                 track,
@@ -260,7 +325,7 @@ impl Command {
                 left.len = head;
                 left.fade_out = 0;
                 right.start = *at;
-                right.offset += head;
+                right.offset = c.source_at(head);
                 right.len -= head;
                 right.fade_in = 0;
                 right.id = p.new_id();
@@ -318,6 +383,19 @@ impl Command {
                 if let Some(s) = solo {
                     tr.solo = *s;
                 }
+            }
+            Command::SetTrackEq {
+                track,
+                bands,
+                bypass,
+            } => {
+                if bands.len() > MAX_BANDS {
+                    return err(format!("an EQ holds at most {MAX_BANDS} bands"));
+                }
+                let rate = p.sample_rate;
+                let t = track_index(p, *track)?;
+                let tr = &mut p.tracks[t];
+                tr.eq = Eq::new(bands, bypass.unwrap_or(tr.eq.bypass()), rate);
             }
             Command::Batch { commands } => {
                 for c in commands {
@@ -592,5 +670,101 @@ mod tests {
         let mix: Command =
             serde_json::from_str(r#"{"type":"set_track_mix","track":1,"muted":true}"#).unwrap();
         assert!(mix.apply(&project()).unwrap().tracks[0].muted);
+    }
+
+    #[test]
+    fn stretch_scales_the_clip_and_keeps_its_audio() {
+        let p = Command::SetClipFades {
+            clip: 2,
+            fade_in: 100,
+            fade_out: 200,
+        }
+        .apply(&project())
+        .unwrap();
+        let p = Command::StretchClip {
+            clip: 2,
+            stretch: 2.0,
+            start: Some(50),
+        }
+        .apply(&p)
+        .unwrap();
+        let c = clip(&p, 2);
+        assert_eq!(
+            (c.start, c.len, c.fade_in, c.fade_out),
+            (50, 2000, 200, 400)
+        );
+        assert_eq!(c.audio.as_ref().unwrap().frames(), 2000);
+        // Trims are in timeline frames and stop at the source's end.
+        let trim = |offset, len| Command::TrimClip {
+            clip: 2,
+            start: 0,
+            offset,
+            len,
+        };
+        assert!(trim(500, 1000).apply(&p).is_ok());
+        assert!(trim(500, 1002).apply(&p).is_err());
+        assert_eq!(clip(&trim(500, 1001).apply(&p).unwrap(), 2).len, 1000);
+        // A split keeps both halves on the same audio.
+        let q = Command::SplitClip { clip: 2, at: 1050 }.apply(&p).unwrap();
+        let right = &q.tracks[0].clips[1];
+        assert_eq!((right.offset, right.len), (500, 1000));
+        assert!(Arc::ptr_eq(
+            right.audio.as_ref().unwrap(),
+            clip(&q, 2).audio.as_ref().unwrap()
+        ));
+        // Back to 1 drops the stretched audio.
+        let r = Command::StretchClip {
+            clip: 2,
+            stretch: 1.0,
+            start: None,
+        }
+        .apply(&p)
+        .unwrap();
+        assert_eq!((clip(&r, 2).len, clip(&r, 2).audio.is_none()), (1000, true));
+        assert!(Command::StretchClip {
+            clip: 2,
+            stretch: f64::NAN,
+            start: None
+        }
+        .apply(&p)
+        .is_err());
+    }
+
+    #[test]
+    fn pitch_keeps_the_length() {
+        let p = Command::SetClipPitch {
+            clip: 2,
+            semitones: 40.0,
+        }
+        .apply(&project())
+        .unwrap();
+        let c = clip(&p, 2);
+        assert_eq!((c.pitch, c.len), (24.0, 1000));
+        assert_eq!(c.audio.as_ref().unwrap().frames(), 1000);
+    }
+
+    #[test]
+    fn track_eq_is_replaced_and_capped() {
+        let bell = EqBand {
+            kind: crate::eq::BandKind::Bell,
+            freq: 1000.0,
+            gain_db: 3.0,
+            q: 1.0,
+            slope: 12,
+            on: true,
+        };
+        let set = |n: usize, bypass| Command::SetTrackEq {
+            track: 1,
+            bands: vec![bell; n],
+            bypass,
+        };
+        let p = set(2, None).apply(&project()).unwrap();
+        assert_eq!(p.tracks[0].eq.bands().len(), 2);
+        assert!(p.tracks[0].eq.active());
+        let q = set(2, Some(true)).apply(&p).unwrap();
+        assert!(!q.tracks[0].eq.active() && q.tracks[0].eq.bypass());
+        // Bypass stays when left out.
+        assert!(set(1, None).apply(&q).unwrap().tracks[0].eq.bypass());
+        assert!(set(MAX_BANDS + 1, None).apply(&p).is_err());
     }
 }

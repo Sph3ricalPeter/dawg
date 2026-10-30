@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use dawg_core::{Clip, EnvPoint, Project, Source, Track};
+use dawg_core::{BandKind, Clip, EnvPoint, Eq, EqBand, Project, Source, Track};
 
 pub const RATE: u32 = 48_000;
 
@@ -180,5 +180,86 @@ pub fn scenes() -> Vec<Scene> {
             )),
             frames: 4800,
         },
+        Scene {
+            name: "eq_bell_and_cut",
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![
+                    Track {
+                        clips: vec![Clip::new(
+                            stereo(&noise(4800, 23, 0.5), &triangle(4800, 71, 0.6)),
+                            0,
+                        )],
+                        eq: Eq::new(
+                            &[
+                                band(BandKind::LowCut, 300.0, 0.0, 24),
+                                band(BandKind::Bell, 2500.0, 9.0, 12),
+                                band(BandKind::HighShelf, 9000.0, -6.0, 12),
+                            ],
+                            false,
+                            RATE,
+                        ),
+                        pan: 0.3,
+                        ..Track::default()
+                    },
+                    Track {
+                        clips: vec![Clip::new(mono(noise(3000, 29, 0.3)), 900)],
+                        eq: Eq::new(&[band(BandKind::HighCut, 1200.0, 0.0, 18)], false, RATE),
+                        ..Track::default()
+                    },
+                ],
+            )),
+            frames: 4800,
+        },
+        Scene {
+            name: "stretch_and_pitch",
+            project: Arc::new(Project::with_tracks(
+                RATE,
+                vec![Track {
+                    clips: vec![
+                        retimed(
+                            Clip {
+                                offset: 100,
+                                len: 3000,
+                                fade_out: 300,
+                                ..Clip::new(mono(triangle(2400, 120, 0.7)), 0)
+                            },
+                            1.5,
+                            0.0,
+                        ),
+                        retimed(
+                            Clip::new(
+                                stereo(&triangle(2000, 90, 0.5), &noise(2000, 31, 0.3)),
+                                3000,
+                            ),
+                            0.8,
+                            -5.0,
+                        ),
+                    ],
+                    ..Track::default()
+                }],
+            )),
+            frames: 4800,
+        },
     ]
+}
+
+fn band(kind: BandKind, freq: f32, gain_db: f32, slope: u8) -> EqBand {
+    EqBand {
+        kind,
+        freq,
+        gain_db,
+        q: 0.71,
+        slope,
+        on: true,
+    }
+}
+
+/// `clip` stretched and pitched, its audio made.
+fn retimed(mut clip: Clip, stretch: f64, pitch: f32) -> Clip {
+    clip.stretch = stretch;
+    clip.pitch = pitch;
+    clip.len = clip.len.min(clip.max_len(clip.offset));
+    clip.retime(RATE, None);
+    clip
 }

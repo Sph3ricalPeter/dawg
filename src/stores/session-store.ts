@@ -8,7 +8,7 @@ import {
   type SessionState,
   type TrackState,
 } from "@/lib/api";
-import { clamp } from "@/lib/format";
+import { clamp, srcAt } from "@/lib/format";
 
 /** Visible window onto the timeline. */
 export interface View {
@@ -75,6 +75,9 @@ interface SessionStore {
   busy: string | null;
   /** Bumped whenever the session's audio is (re)loaded from disk. */
   fileRev: number;
+  /** The track whose EQ is open under the playlist. */
+  eqTrack: number | null;
+  openEq: (track: number | null) => void;
 
   /** Opens a WAV or MP3 as a scratch session, or a .dawg project. True
    * when it did. */
@@ -91,6 +94,9 @@ interface SessionStore {
   scrollTo: (start: number) => void;
   /** A drag step: shown at once, sent to the engine as a transient edit. */
   drag: (cmd: Command, draft: Draft) => void;
+  /** A drag step shown at once but sent to the engine only when it ends:
+   * for edits the engine takes a moment over (stretch, pitch). */
+  sketch: (cmd: Command, draft: Draft) => void;
   /** Ends a drag with its last command as one undo step. */
   commit: () => Promise<void>;
   apply: (cmd: Command) => Promise<boolean>;
@@ -233,6 +239,8 @@ export const useSession = create<SessionStore>((set, get) => ({
   dialog: null,
   busy: null,
   fileRev: 0,
+  eqTrack: null,
+  openEq: (track) => set({ eqTrack: track }),
 
   open: async (path) => {
     await get().stop();
@@ -327,6 +335,12 @@ export const useSession = create<SessionStore>((set, get) => ({
       pending = null;
       if (c) await api.apply(c, true);
     }).catch(() => undefined);
+  },
+
+  sketch: (cmd, draft) => {
+    if (!get().session) return;
+    set({ draft });
+    lastDrag = cmd;
   },
 
   commit: async () => {
@@ -512,7 +526,7 @@ export const useSession = create<SessionStore>((set, get) => ({
       if (e - s < MIN_LEN) {
         commands.push({ type: "delete_clip", clip: c.id });
       } else if (s !== c.start || e !== c.start + c.len) {
-        commands.push({ type: "trim_clip", clip: c.id, start: s, offset: c.offset + (s - c.start), len: e - s });
+        commands.push({ type: "trim_clip", clip: c.id, start: s, offset: srcAt(c, s - c.start), len: e - s });
       }
     }
     if (commands.every((c) => c.type === "delete_clip")) {

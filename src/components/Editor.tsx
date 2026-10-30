@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TrackState } from "@/lib/api";
 import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
-import { clamp, fmtDb, fmtMs, fmtSeconds, fmtTime, MIN_GAIN_DB } from "@/lib/format";
+import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime, MIN_GAIN_DB } from "@/lib/format";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
 import { scrollSpan, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { rulerStep, snapToGrid, trackColor, useWheel } from "@/lib/timeline";
@@ -246,6 +246,7 @@ function TrackHeader({
   const [renaming, setRenaming] = useState(false);
   const [typing, setTyping] = useState(false);
   const [menu, setMenu] = useState<MenuAt | null>(null);
+  const eqOpen = useSession((s) => s.eqTrack === track.id);
   if (!session) return <div className="th" />;
   const store = useSession.getState;
   const mix = (m: { gain_db?: number; pan?: number }, done: boolean) => {
@@ -274,7 +275,7 @@ function TrackHeader({
   const clip = tall ? (track.clips.find((c) => selected.includes(c.id)) ?? (track.clips.length === 1 ? track.clips[0] : null)) : null;
   const src = clip ? session.sources.find((s) => s.id === clip.source) : null;
   const cutStart = clip ? clip.offset : 0;
-  const cutEnd = clip && src ? src.frames - clip.offset - clip.len : 0;
+  const cutEnd = clip && src ? Math.max(0, src.frames - clip.offset - Math.round(clip.len / clip.stretch)) : 0;
 
   return (
     <div
@@ -318,6 +319,13 @@ function TrackHeader({
               {track.name || `Track ${index + 1}`}
             </span>
           )}
+          <button
+            className={`ms eq${track.eq.some((b) => b.on) && !track.eqBypass ? " on" : ""}${eqOpen ? " open" : ""}`}
+            onClick={() => store().openEq(eqOpen ? null : track.id)}
+            data-hint={`EQ${track.eq.length ? ` · ${track.eq.length} band${track.eq.length === 1 ? "" : "s"}${track.eqBypass ? ", off" : ""}` : ""} · click to open or close it under the playlist`}
+          >
+            EQ
+          </button>
         </div>
         <div className="tcl">
           <button
@@ -399,6 +407,18 @@ function TrackHeader({
               )}
               <span>Gain</span>
               <span className="mono">{fmtDb(clip.gainDb)}</span>
+              {clip.stretch !== 1 && (
+                <>
+                  <span>Stretch</span>
+                  <span className="mono">{fmtStretch(clip.stretch)}</span>
+                </>
+              )}
+              {clip.pitch !== 0 && (
+                <>
+                  <span>Pitch</span>
+                  <span className="mono">{fmtPitch(clip.pitch)}</span>
+                </>
+              )}
               <span>Fades</span>
               <span className="mono">
                 {fmtMs(clip.fadeIn, rate)} · {fmtMs(clip.fadeOut, rate)}

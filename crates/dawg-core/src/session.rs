@@ -24,6 +24,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::command::{fit_fades, gain_to_db, Command, CommandError};
+use crate::eq::{Eq, EqBand};
 use crate::file::{AudioFile, Codec, FileError};
 use crate::model::{Clip, EnvPoint, Project, Source, Track};
 use crate::mp3::{self, Tags};
@@ -32,6 +33,7 @@ use crate::project_file::{ProjectError, ProjectFile, EXTENSION};
 use crate::render::{render, OUT_CHANNELS};
 use crate::resample::resample;
 use crate::save::{self, FileStamp, Replaced, SaveError};
+use crate::stretch::{MAX_PITCH, MAX_STRETCH, MIN_STRETCH};
 use crate::wav::{encode_simple, WavFormat};
 
 /// Undo steps kept.
@@ -158,6 +160,8 @@ pub struct TrackState {
     pub muted: bool,
     pub solo: bool,
     pub clips: Vec<ClipState>,
+    pub eq: Vec<EqBand>,
+    pub eq_bypass: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +176,10 @@ pub struct ClipState {
     pub fade_in: u64,
     pub fade_out: u64,
     pub envelope: Vec<EnvPoint>,
+    /// Timeline frames per source frame.
+    pub stretch: f64,
+    /// Semitones.
+    pub pitch: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -260,7 +268,7 @@ pub fn is_project(path: &Path) -> bool {
 fn fit_to_source(clip: &mut Clip) {
     let frames = clip.source.frames();
     clip.offset = clip.offset.min(frames.saturating_sub(1));
-    clip.len = clip.len.clamp(1, frames - clip.offset);
+    clip.len = clip.len.clamp(1, clip.max_len(clip.offset).max(1));
     fit_fades(clip);
 }
 
@@ -272,10 +280,19 @@ fn with_source(p: &Project, source: &Arc<Source>) -> Project {
     for s in p.sources.iter_mut().filter(|s| s.id() == id) {
         *s = source.clone();
     }
+    let rate = p.sample_rate;
+    let mut done: Vec<Clip> = Vec::new();
     for t in &mut p.tracks {
         for c in t.clips.iter_mut().filter(|c| c.source.id() == id) {
             c.source = source.clone();
             fit_to_source(c);
+            let like = done
+                .iter()
+                .find(|d| d.stretch == c.stretch && d.pitch == c.pitch);
+            c.retime(rate, like);
+            if c.retimed() {
+                done.push(c.clone());
+            }
         }
     }
     p
@@ -380,6 +397,8 @@ impl Session {
             sources.insert(entry.id, info);
         }
         let mut top = file.next_id;
+        // Clips that share a source, stretch and pitch share their audio.
+        let mut retimed: Vec<Clip> = Vec::new();
         for t in &file.tracks {
             top = top.max(t.id + 1);
             let mut clips = Vec::with_capacity(t.clips.len());
@@ -406,8 +425,28 @@ impl Session {
                     fade_in: c.fade_in,
                     fade_out: c.fade_out,
                     envelope: envelope.into(),
+                    stretch: if c.stretch.is_finite() {
+                        c.stretch.clamp(MIN_STRETCH, MAX_STRETCH)
+                    } else {
+                        1.0
+                    },
+                    pitch: if c.pitch.is_finite() {
+                        c.pitch.clamp(-MAX_PITCH, MAX_PITCH)
+                    } else {
+                        0.0
+                    },
+                    audio: None,
                 };
                 fit_to_source(&mut clip);
+                let like = retimed.iter().find(|r| {
+                    Arc::ptr_eq(&r.source, &clip.source)
+                        && r.stretch == clip.stretch
+                        && r.pitch == clip.pitch
+                });
+                clip.retime(rate, like);
+                if clip.retimed() {
+                    retimed.push(clip.clone());
+                }
                 clips.push(clip);
             }
             project.tracks.push(Track {
@@ -418,6 +457,7 @@ impl Session {
                 pan: t.pan,
                 muted: t.muted,
                 solo: t.solo,
+                eq: Eq::new(&t.eq, t.eq_bypass, rate),
             });
         }
         for s in &file.sources {
@@ -530,6 +570,8 @@ impl Session {
         let alone = clips.next().is_none();
         (alone
             && clip.source.id() == origin.source
+            && !clip.retimed()
+            && !track.eq.active()
             && track.gain == 1.0
             && track.pan == 0.0
             && p.audible(track))
@@ -564,6 +606,8 @@ impl Session {
                     pan: t.pan,
                     muted: t.muted,
                     solo: t.solo,
+                    eq: t.eq.bands().to_vec(),
+                    eq_bypass: t.eq.bypass(),
                     clips: t
                         .clips
                         .iter()
@@ -577,6 +621,8 @@ impl Session {
                             fade_in: c.fade_in,
                             fade_out: c.fade_out,
                             envelope: c.envelope.to_vec(),
+                            stretch: c.stretch,
+                            pitch: c.pitch,
                         })
                         .collect(),
                 })
@@ -693,6 +739,9 @@ impl Session {
             // A new project takes the rate of the first file put in it.
             if self.origin.is_none() && p.sources.is_empty() && p.clips().next().is_none() {
                 p.sample_rate = rate;
+                for t in &mut p.tracks {
+                    t.eq = t.eq.at_rate(rate);
+                }
             }
             let source = Arc::new(resample(&file.decode(), rate, p.sample_rate).with_id(id));
             p.sources.push(source.clone());
@@ -1290,9 +1339,31 @@ mod tests {
         s.apply(&trim(100, 600), false).unwrap();
         s.import(&[a], Placement::default()).unwrap();
         let t = s.project().tracks[1].id;
+        let t0 = s.project().tracks[0].id;
         s.apply(
             &Command::Batch {
                 commands: vec![
+                    Command::StretchClip {
+                        clip: CLIP,
+                        stretch: 1.5,
+                        start: None,
+                    },
+                    Command::SetClipPitch {
+                        clip: CLIP,
+                        semitones: -3.5,
+                    },
+                    Command::SetTrackEq {
+                        track: t0,
+                        bands: vec![EqBand {
+                            kind: crate::eq::BandKind::Bell,
+                            freq: 800.0,
+                            gain_db: 4.0,
+                            q: 2.0,
+                            slope: 12,
+                            on: true,
+                        }],
+                        bypass: None,
+                    },
                     Command::SetTrackMix {
                         track: t,
                         gain_db: Some(-3.0),
@@ -1340,6 +1411,9 @@ mod tests {
 
         let json = String::from_utf8(fs::read(&song).unwrap()).unwrap();
         assert!(json.contains("\"file\": \"Samples/a.wav\""), "{json}");
+        assert!(json.contains("\"stretch\": 1.5"), "{json}");
+        assert!(json.contains("\"pitch\": -3.5"), "{json}");
+        assert!(json.contains("\"kind\": \"bell\""), "{json}");
 
         let mut r = Session::open_project(&song).unwrap();
         let tracks = |s: &Session| serde_json::to_value(s.state().tracks).unwrap();

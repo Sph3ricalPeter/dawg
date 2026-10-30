@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type ClipState, type EnvPoint, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
-import { clamp, dbToGain, envelopeAt, fadeAt, fmtDb, fmtMs, stem } from "@/lib/format";
+import { clamp, dbToGain, envelopeAt, fadeAt, fmtDb, fmtMs, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
 import { MIN_LEN, allClips, useSession, type View } from "@/stores/session-store";
 
@@ -14,6 +14,10 @@ const EDGE = 6;
 const SNAP_PX = 8;
 /** The envelope line takes clicks this many pixels either side of it. */
 const ENV_BAND = 4;
+/** Stretch range, as in `dawg_core::stretch`. */
+const MIN_STRETCH = 0.25;
+const MAX_STRETCH = 4;
+const MAX_PITCH = 24;
 
 /** `hex` scaled towards black by `k` (0 to 1). */
 function shade(hex: string, k: number): string {
@@ -110,7 +114,9 @@ function drawClip(
     for (let i = 0; i < w; i++) {
       const t0 = f0 + i * fpp;
       const rel0 = t0 - clip.start;
-      const p = peakAt(peaks, clip.offset + rel0, clip.offset + rel0 + fpp);
+      // Stretched, the source passes under the clip at 1/stretch speed.
+      const s0 = clip.offset + rel0 / clip.stretch;
+      const p = peakAt(peaks, s0, s0 + fpp / clip.stretch);
       if (!p) continue;
       [lo[i], hi[i]] = p;
       if (outline) {
@@ -119,7 +125,7 @@ function drawClip(
         hi[i] = a;
       }
       const rel = clamp(rel0 + fpp / 2, 0, clip.len - 1);
-      gains[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, clip.offset + rel);
+      gains[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
     }
     if (outline) {
       const a = Float32Array.from(hi);
@@ -181,7 +187,7 @@ function drawClip(
     x.beginPath();
     for (let i = 0; i <= w; i += 2) {
       const rel = clamp(f0 + i * fpp - clip.start, 0, clip.len - 1);
-      const y = envY(envelopeAt(clip.envelope, clip.offset + rel), h);
+      const y = envY(envelopeAt(clip.envelope, srcAt(clip, rel)), h);
       if (i === 0) x.moveTo(i, y);
       else x.lineTo(i, y);
     }
@@ -193,12 +199,15 @@ function drawClip(
 function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; width: number; height: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const frames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? 0);
-  const shift = clip.start - clip.offset;
+  // Timeline frame of the source's first frame, and timeline frames per
+  // source frame.
+  const k = clip.stretch;
+  const shift = clip.start - clip.offset * k;
   const x0 = clamp((shift - view.start) / view.fpp, 0, width);
-  const x1 = clamp((shift + frames - view.start) / view.fpp, 0, width);
+  const x1 = clamp((shift + frames * k - view.start) / view.fpp, 0, width);
   const w = Math.ceil(x1 - x0);
   const f0 = view.start + x0 * view.fpp;
-  const peaks = usePeaks(clip.source, f0 - shift, f0 - shift + w * view.fpp, w);
+  const peaks = usePeaks(clip.source, (f0 - shift) / k, (f0 - shift + w * view.fpp) / k, w);
   useEffect(() => {
     const c = ref.current;
     if (!c || w <= 0) return;
@@ -209,12 +218,12 @@ function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; wid
     for (let i = 0; i < w; i++) {
       const t = f0 + i * view.fpp;
       if (t + view.fpp > clip.start && t < clip.start + clip.len) continue;
-      const p = peakAt(peaks, t - shift, t - shift + view.fpp);
+      const p = peakAt(peaks, (t - shift) / k, (t - shift + view.fpp) / k);
       if (!p) continue;
       const a = Math.max(-p[0], p[1]);
       x.fillRect(i, h / 2 - a * (h / 2 - 2), 1, Math.max(1, 2 * a * (h / 2 - 2)));
     }
-  }, [w, height, peaks, f0, view.fpp, shift, clip.start, clip.len]);
+  }, [w, height, peaks, f0, view.fpp, shift, k, clip.start, clip.len]);
   if (w <= 0) return null;
   return <canvas ref={ref} className="ghostcv" style={{ left: x0, top: 2 + TITLE_H }} />;
 }
@@ -303,7 +312,8 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const w = Math.max(0, Math.round(right - left));
   const f0 = view.start + left * view.fpp;
   const waveH = Math.max(8, height - TITLE_H - 5);
-  const peaks = usePeaks(clip.source, clip.offset + f0 - clip.start, clip.offset + f0 - clip.start + w * view.fpp, w);
+  const s0 = clip.offset + (f0 - clip.start) / clip.stretch;
+  const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w);
 
   useEffect(() => {
     if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
@@ -315,7 +325,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   /** y of the envelope at a pointer x, in px from the top of the wave area. */
   const envYAt = (clientX: number) => {
     const rel = clamp(toFrame(clientX) - clip.start, 0, clip.len - 1);
-    return envY(envelopeAt(clip.envelope, clip.offset + rel), waveH);
+    return envY(envelopeAt(clip.envelope, srcAt(clip, rel)), waveH);
   };
 
   /** Drag envelope point `i` of `pts` (already holding the new point, if
@@ -324,7 +334,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
     const c0 = clip;
     const top = body.current!.getBoundingClientRect().top + TITLE_H;
     const lo = Math.max(c0.offset, i > 0 ? pts[i - 1].at + 1 : 0);
-    const hi = Math.min(c0.offset + c0.len - 1, i < pts.length - 1 ? pts[i + 1].at - 1 : Infinity);
+    const hi = Math.min(srcAt(c0, c0.len - 1), i < pts.length - 1 ? pts[i + 1].at - 1 : Infinity);
     const send = (p: EnvPoint) => {
       const next = pts.slice();
       next[i] = p;
@@ -333,7 +343,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
     if (added) send(pts[i]);
     startDrag(e, {
       move: (_dx, _dy, ev) => {
-        const at = Math.round(clamp(toFrame(ev.clientX) - c0.start + c0.offset, lo, hi));
+        const at = Math.round(clamp(c0.offset + (toFrame(ev.clientX) - c0.start) / c0.stretch, lo, hi));
         let gain = clamp((1 - (ev.clientY - top - 1) / (waveH - 2)) * ENV_MAX, 0, ENV_MAX);
         if (!ev.altKey && Math.abs(gain - 1) < 0.04) gain = 1;
         send({ at, gain });
@@ -349,13 +359,13 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
     const y = e.clientY - r.top - TITLE_H;
     // The envelope line: click adds a point and drags it.
     if (envEdit && !ctrl && y >= 0 && Math.abs(y - envYAt(e.clientX)) <= ENV_BAND) {
-      const at = Math.round(clamp(toFrame(e.clientX) - clip.start, 0, clip.len - 1) + clip.offset);
+      const at = srcAt(clip, Math.round(clamp(toFrame(e.clientX) - clip.start, 0, clip.len - 1)));
       const g = envelopeAt(clip.envelope, at);
       let pts = clip.envelope.filter((p) => p.at !== at);
       if (!pts.length) {
         // A fresh envelope starts flat across the clip.
         const first = clip.offset;
-        const last = clip.offset + clip.len - 1;
+        const last = srcAt(clip, clip.len - 1);
         pts = [{ at: first, gain: g }, { at: last, gain: g }].filter((p) => p.at !== at);
       }
       pts.push({ at, gain: g });
@@ -441,12 +451,14 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         const d = Math.round(dx * view.fpp);
         let next: ClipState;
         if (side === "l") {
-          const first = Math.max(0, c0.start - c0.offset);
+          // Stretched, a frame of timeline is 1/stretch of a source frame.
+          const first = Math.max(0, Math.ceil(c0.start - c0.offset * c0.stretch));
           const start = clamp(c0.start + d, first, c0.start + c0.len - MIN_LEN);
           const shift = start - c0.start;
-          next = { ...c0, start, offset: c0.offset + shift, len: c0.len - shift };
+          const offset = Math.max(0, c0.offset + Math.round(shift / c0.stretch));
+          next = { ...c0, start, offset, len: Math.min(c0.len - shift, maxLen(c0, offset, sourceFrames)) };
         } else {
-          next = { ...c0, len: clamp(c0.len + d, MIN_LEN, sourceFrames - c0.offset) };
+          next = { ...c0, len: clamp(c0.len + d, MIN_LEN, maxLen(c0, c0.offset, sourceFrames)) };
         }
         store().drag(
           { type: "trim_clip", clip: c0.id, start: next.start, offset: next.offset, len: next.len },
@@ -472,12 +484,66 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
     });
   };
 
+  /** The bottom corners stretch the clip in time, keeping its pitch; the
+   * other edge stays put. Snaps to clip edges, the playhead and the
+   * unstretched length (Alt skips). The engine remakes the audio on release. */
+  const onStretch = (side: "l" | "r") => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const c0 = clip;
+    store().select(c0.id);
+    const end0 = c0.start + c0.len;
+    // Source frames under the clip; they stay the same while it stretches.
+    const span = c0.len / c0.stretch;
+    const snaps = [...snapPoints([c0.id]), side === "r" ? c0.start + span : end0 - span];
+    startDrag(e, {
+      move: (dx, _dy, ev) => {
+        let edge = (side === "r" ? end0 : c0.start) + dx * view.fpp;
+        if (!ev.altKey) {
+          let best = SNAP_PX * view.fpp;
+          const free = edge;
+          for (const p of snaps) {
+            if (Math.abs(p - free) < best) {
+              best = Math.abs(p - free);
+              edge = p;
+            }
+          }
+        }
+        const want = side === "r" ? edge - c0.start : end0 - edge;
+        const stretch = clamp(want / span, MIN_STRETCH, MAX_STRETCH);
+        const len = Math.max(1, Math.round(span * stretch));
+        const k = stretch / c0.stretch;
+        const start = side === "r" ? c0.start : Math.max(0, end0 - len);
+        const next: ClipState = {
+          ...c0,
+          start,
+          len,
+          stretch,
+          fadeIn: Math.round(c0.fadeIn * k),
+          fadeOut: Math.round(c0.fadeOut * k),
+        };
+        store().sketch(
+          { type: "stretch_clip", clip: c0.id, stretch, ...(side === "l" ? { start } : {}) },
+          { kind: "clip", track: track.id, clip: next },
+        );
+      },
+      end: (moved) => {
+        if (moved) void store().commit();
+      },
+    });
+  };
+  const resetStretch = (side: "l" | "r") => {
+    const span = clip.len / clip.stretch;
+    const start = side === "l" ? Math.max(0, Math.round(clip.start + clip.len - span)) : undefined;
+    void store().apply({ type: "stretch_clip", clip: clip.id, stretch: 1, ...(start !== undefined ? { start } : {}) });
+  };
+  const stretchHint = `Stretch ${fmtStretch(clip.stretch)} · drag to stretch in time, keeping the pitch (snaps to clip edges, the playhead and the original length, Alt skips) · double-click or right-click resets`;
+
   const fadeInX = clamp(px(clip.start + clip.fadeIn) - left, 0, w - 7);
   const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left - 7, 0, w - 7);
   const points = envEdit
     ? clip.envelope
-        .map((p, i) => ({ p, i, x: px(clip.start + p.at - clip.offset) - left }))
-        .filter(({ p }) => p.at >= clip.offset && p.at < clip.offset + clip.len)
+        .map((p, i) => ({ p, i, x: px(clip.start + (p.at - clip.offset) * clip.stretch) - left }))
+        .filter(({ p }) => p.at >= clip.offset && p.at <= srcAt(clip, clip.len - 1))
     : [];
 
   return (
@@ -508,6 +574,16 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
             Locate…
           </button>
         )}
+        {clip.stretch !== 1 && (
+          <span
+            className="tsr"
+            onDoubleClick={() => resetStretch("r")}
+            data-hint={`Stretched ${fmtStretch(clip.stretch)}, pitch kept · drag a bottom corner to change · double-click resets`}
+          >
+            {fmtStretch(clip.stretch)}
+          </span>
+        )}
+        {(clip.pitch !== 0 || selected) && <PitchReadout clip={clip} track={track.id} />}
         <GainReadout clip={clip} track={track.id} className="gain" />
       </div>
       <canvas ref={canvas} className="clipcv" />
@@ -518,15 +594,51 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         style={{ left: fadeInX }}
         onPointerDown={onFade("in")}
         onDoubleClick={() => void store().apply(fades(0, clip.fadeOut))}
-        data-hint={`Fade in ${fmtMs(clip.fadeIn, rate)} · drag to change, double-click to remove`}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (clip.fadeIn > 0) void store().apply(fades(0, clip.fadeOut));
+        }}
+        data-hint={`Fade in ${fmtMs(clip.fadeIn, rate)} · drag to change, double-click or right-click to remove`}
       />
       <div
         className={`fh${clip.fadeOut > 0 ? " on" : ""}`}
         style={{ left: fadeOutX }}
         onPointerDown={onFade("out")}
         onDoubleClick={() => void store().apply(fades(clip.fadeIn, 0))}
-        data-hint={`Fade out ${fmtMs(clip.fadeOut, rate)} · drag to change, double-click to remove`}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (clip.fadeOut > 0) void store().apply(fades(clip.fadeIn, 0));
+        }}
+        data-hint={`Fade out ${fmtMs(clip.fadeOut, rate)} · drag to change, double-click or right-click to remove`}
       />
+      {w > 30 && (
+        <>
+          <div
+            className={`sh l${clip.stretch !== 1 ? " on" : ""}`}
+            onPointerDown={onStretch("l")}
+            onDoubleClick={() => resetStretch("l")}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (clip.stretch !== 1) resetStretch("l");
+            }}
+            data-hint={stretchHint}
+          />
+          <div
+            className={`sh r${clip.stretch !== 1 ? " on" : ""}`}
+            onPointerDown={onStretch("r")}
+            onDoubleClick={() => resetStretch("r")}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (clip.stretch !== 1) resetStretch("r");
+            }}
+            data-hint={stretchHint}
+          />
+        </>
+      )}
       {points.map(({ p, i, x }) => (
         <div
           key={i}
@@ -554,6 +666,35 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
       ))}
       {w > 60 && height > 60 && <GainReadout clip={clip} track={track.id} className="gh" />}
     </div>
+  );
+}
+
+/** Clip pitch in semitones, dragged like the gain: up or down a semitone per
+ * 6 px, Shift for cents. The engine remakes the audio on release. */
+export function PitchReadout({ clip, track }: { clip: ClipState; track: number }) {
+  const onDown = (e: React.PointerEvent) => {
+    const p0 = clip.pitch;
+    const store = useSession.getState();
+    startDrag(e, {
+      move: (_dx, dy, ev) => {
+        const raw = ev.shiftKey ? p0 - dy * 0.01 : Math.round(p0 - dy / 6);
+        const pitch = clamp(Math.round(raw * 100) / 100, -MAX_PITCH, MAX_PITCH);
+        store.sketch({ type: "set_clip_pitch", clip: clip.id, semitones: pitch }, { kind: "clip", track, clip: { ...clip, pitch } });
+      },
+      end: (moved) => {
+        if (moved) void store.commit();
+      },
+    });
+  };
+  return (
+    <span
+      className={`tp${clip.pitch === 0 ? " zero" : ""}`}
+      onPointerDown={onDown}
+      onDoubleClick={() => void useSession.getState().apply({ type: "set_clip_pitch", clip: clip.id, semitones: 0 })}
+      data-hint="Pitch in semitones, keeping the length · drag up or down (Shift for cents) · double-click resets"
+    >
+      {fmtPitch(clip.pitch, false)}
+    </span>
   );
 }
 

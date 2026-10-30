@@ -19,8 +19,11 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   other tracks, with undo; a scratch session exports the original's format
   while it is one clip, else a mixdown), `project_file` (the versioned
   `.dawg` JSON format: relative and absolute source paths, missing files open
-  as silence and can be relinked), `resample` (offline rate conversion for added files), `player`
-  (the audio callback minus the device), `peaks`.
+  as silence and can be relinked), `resample` (offline rate conversion for added files),
+  `stretch` (offline clip time-stretch and pitch-shift: a phase vocoder cut
+  at onsets; a clip keeps the result in `Clip::audio`), `eq` (the track EQ:
+  biquads the renderer runs before volume and pan), `player`
+  (the audio callback minus the device, plus the EQ analyser's tap), `peaks`.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output), `recent.rs` (recent projects), plugins,
   installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`

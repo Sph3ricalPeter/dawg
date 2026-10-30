@@ -5,6 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Dialogs } from "@/components/Dialogs";
 import { Editor } from "@/components/Editor";
+import { EqPanel } from "@/components/EqPanel";
 import { TitleBar } from "@/components/TitleBar";
 import { api, type RecentProject } from "@/lib/api";
 import {
@@ -335,6 +336,7 @@ export function App() {
           </div>
         )}
       </main>
+      {session && <EqPanel />}
       <StatusBar hint={hint} />
       <Dialogs />
       <Toast />

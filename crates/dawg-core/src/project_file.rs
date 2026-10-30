@@ -10,11 +10,13 @@
 //!
 //! - New data is a new field with `#[serde(default)]`, left out when it is at
 //!   its default, so older projects keep opening and a project that doesn't
-//!   use a feature saves as before. Per-clip stretch and pitch belong on
-//!   [`ClipEntry`], per-track EQ on [`TrackEntry`].
+//!   use a feature saves as before.
 //! - Each such addition bumps [`FORMAT_VERSION`]. A build refuses a newer
 //!   version ([`ProjectError::Newer`]) rather than open it and then save it
 //!   without what it doesn't understand.
+//!
+//! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
+//! and `eqBypass`.
 
 use std::fmt;
 use std::io;
@@ -22,10 +24,11 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::eq::EqBand;
 use crate::model::{EnvPoint, Project};
 
 /// The format this build writes, and the newest it reads.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "dawg";
 /// The `format` tag, so a stray JSON file isn't taken for a project.
@@ -78,6 +81,10 @@ pub struct TrackEntry {
     #[serde(default)]
     pub solo: bool,
     pub clips: Vec<ClipEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub eq: Vec<EqBand>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub eq_bypass: bool,
 }
 
 /// A clip, in frames at the project's rate. See [`crate::Clip`].
@@ -97,6 +104,25 @@ pub struct ClipEntry {
     pub fade_out: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub envelope: Vec<EnvPoint>,
+    /// Timeline frames per source frame.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub stretch: f64,
+    /// Semitones.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pitch: f32,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+fn one() -> f64 {
+    1.0
+}
+fn is_one(v: &f64) -> bool {
+    *v == 1.0
+}
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
 }
 
 #[derive(Debug)]
@@ -183,6 +209,8 @@ impl ProjectFile {
                     pan: t.pan,
                     muted: t.muted,
                     solo: t.solo,
+                    eq: t.eq.bands().to_vec(),
+                    eq_bypass: t.eq.bypass(),
                     clips: t
                         .clips
                         .iter()
@@ -196,6 +224,8 @@ impl ProjectFile {
                             fade_in: c.fade_in,
                             fade_out: c.fade_out,
                             envelope: c.envelope.to_vec(),
+                            stretch: c.stretch,
+                            pitch: c.pitch,
                         })
                         .collect(),
                 })
@@ -352,5 +382,23 @@ mod tests {
             ProjectFile::parse(b"RIFF"),
             Err(ProjectError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn version_1_projects_open_with_no_stretch_pitch_or_eq() {
+        let v1 = br#"{"format":"dawg project","version":1,"sampleRate":48000,"nextId":4,
+            "sources":[{"id":1,"file":"a.wav","frames":10,"channels":1,"rate":48000}],
+            "tracks":[{"id":2,"name":"a","gain":1.0,"pan":0.0,
+              "clips":[{"id":3,"source":1,"start":0,"offset":0,"len":10,"gain":1.0}]}]}"#;
+        let f = ProjectFile::parse(v1).unwrap();
+        let (t, c) = (&f.tracks[0], &f.tracks[0].clips[0]);
+        assert!(t.eq.is_empty() && !t.eq_bypass);
+        assert_eq!((c.stretch, c.pitch), (1.0, 0.0));
+        // And they save without the new fields.
+        let json = String::from_utf8(f.to_json()).unwrap();
+        assert!(
+            !json.contains("stretch") && !json.contains("\"eq\""),
+            "{json}"
+        );
     }
 }

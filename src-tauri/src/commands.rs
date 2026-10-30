@@ -325,6 +325,13 @@ pub fn transport(state: State<AppState>) -> Transport {
     }
 }
 
+/// The spectrum of `track` after its EQ, from what played since the last
+/// call; `None` when nothing new played. `track: null` stops listening.
+#[tauri::command]
+pub fn spectrum(state: State<AppState>, track: Option<u64>) -> Option<dawg_core::player::Spectrum> {
+    state.lock().audio.spectrum(track)
+}
+
 #[tauri::command]
 pub fn save_preview(state: State<AppState>) -> Result<SavePreview> {
     Ok(state.lock().session()?.preview())

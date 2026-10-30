@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::eq::Eq;
+use crate::stretch;
+
 /// Decoded audio, interleaved `f32`, at the project sample rate.
 ///
 /// Sources are shared between clips and never change once decoded, so the
@@ -90,7 +93,8 @@ pub struct Clip {
     pub start: u64,
     /// First source frame that plays (the trimmed-off head).
     pub offset: u64,
-    /// Number of frames that play.
+    /// Number of timeline frames that play. With a stretch they cover
+    /// `len / stretch` source frames.
     pub len: u64,
     /// Linear gain.
     pub gain: f32,
@@ -102,6 +106,14 @@ pub struct Clip {
     /// points the gain is a straight line, and it holds the first and last
     /// values outside them.
     pub envelope: Arc<[EnvPoint]>,
+    /// Timeline frames per source frame: 2.0 plays the audio twice as long,
+    /// at the same pitch.
+    pub stretch: f64,
+    /// Pitch shift in semitones, keeping the length.
+    pub pitch: f32,
+    /// The whole source stretched and pitched, when either is set; frame `j`
+    /// is source position `j / stretch`. Made by [`Clip::retime`].
+    pub audio: Option<Arc<Source>>,
 }
 
 impl Clip {
@@ -118,11 +130,77 @@ impl Clip {
             fade_in: 0,
             fade_out: 0,
             envelope: Arc::new([]),
+            stretch: 1.0,
+            pitch: 0.0,
+            audio: None,
         }
     }
 
     pub fn end(&self) -> u64 {
         self.start + self.len
+    }
+
+    /// Stretched or pitched.
+    pub fn retimed(&self) -> bool {
+        self.stretch != 1.0 || self.pitch != 0.0
+    }
+
+    /// Remakes [`Clip::audio`] for the current stretch and pitch, unless
+    /// `like` (another clip of the same source) already has it.
+    pub fn retime(&mut self, rate: u32, like: Option<&Clip>) {
+        if !self.retimed() {
+            self.audio = None;
+            return;
+        }
+        if let Some(a) = like.filter(|c| {
+            Arc::ptr_eq(&c.source, &self.source)
+                && c.stretch == self.stretch
+                && c.pitch == self.pitch
+        }) {
+            if let Some(audio) = &a.audio {
+                self.audio = Some(audio.clone());
+                return;
+            }
+        }
+        self.audio = Some(Arc::new(stretch::process(
+            &self.source,
+            rate,
+            self.stretch,
+            self.pitch,
+        )));
+    }
+
+    /// Source position of frame `i` of the clip.
+    #[inline]
+    pub fn source_at(&self, i: u64) -> u64 {
+        if self.stretch == 1.0 {
+            self.offset + i
+        } else {
+            self.offset + (i as f64 / self.stretch) as u64
+        }
+    }
+
+    /// Longest the clip can be from source frame `offset` on, in timeline
+    /// frames.
+    pub fn max_len(&self, offset: u64) -> u64 {
+        let rest = self.source.frames().saturating_sub(offset);
+        if self.stretch == 1.0 {
+            rest
+        } else {
+            (rest as f64 * self.stretch).floor() as u64
+        }
+    }
+
+    /// Left and right sample at frame `i` of the clip, before gain.
+    #[inline]
+    pub(crate) fn frame(&self, i: u64) -> (f32, f32) {
+        match &self.audio {
+            Some(a) => {
+                let at = (self.offset as f64 * self.stretch).round() as u64 + i;
+                a.frame(at.min(a.frames().saturating_sub(1)))
+            }
+            None => self.source.frame(self.offset + i),
+        }
     }
 
     /// Fade multiplier at frame `i` of the clip (0 is the first frame that
@@ -166,7 +244,7 @@ impl Clip {
     /// clip. The renderer and the WAV export both use it.
     #[inline]
     pub fn gain_at(&self, i: u64) -> f64 {
-        self.gain as f64 * self.fade_at(i) * self.envelope_at(self.offset + i)
+        self.gain as f64 * self.fade_at(i) * self.envelope_at(self.source_at(i))
     }
 
     /// True when the clip plays the source's frames unchanged.
@@ -188,6 +266,8 @@ impl Clip {
             && self.fade_in == other.fade_in
             && self.fade_out == other.fade_out
             && self.envelope == other.envelope
+            && self.stretch == other.stretch
+            && self.pitch == other.pitch
     }
 }
 
@@ -204,6 +284,8 @@ pub struct Track {
     pub pan: f32,
     pub muted: bool,
     pub solo: bool,
+    /// Runs on the clips' sum, before volume and pan.
+    pub eq: Eq,
 }
 
 impl Default for Track {
@@ -216,6 +298,7 @@ impl Default for Track {
             pan: 0.0,
             muted: false,
             solo: false,
+            eq: Eq::default(),
         }
     }
 }
@@ -238,6 +321,8 @@ impl Track {
             && self.pan == b.pan
             && self.muted == b.muted
             && self.solo == b.solo
+            && self.eq.bands() == b.eq.bands()
+            && self.eq.bypass() == b.eq.bypass()
             && self.clips.len() == b.clips.len()
             && self.clips.iter().zip(&b.clips).all(|(x, y)| x.same_edit(y))
     }
