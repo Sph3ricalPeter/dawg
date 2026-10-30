@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AppInfo } from "@/lib/app-info";
+import { devBuild, type AppInfo } from "@/lib/app-info";
 import { api, type RecentProject } from "@/lib/api";
 import {
   exportDialog,
@@ -65,7 +65,11 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
       <button className={`logo${open ? " open" : ""}`} onClick={() => setOpen(!open)} title="Menu">
         <DawgMark className="mark" />
         dawg
-        {info?.channel === "dev" && <span className="pill">dev</span>}
+        {info?.channel === "dev" && (
+          <span className="pill" title={`dawg dev ${info.version}`}>
+            dev {devBuild(info)}
+          </span>
+        )}
         <span className="car">▾</span>
       </button>
       {open && (

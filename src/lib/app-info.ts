@@ -21,6 +21,13 @@ export async function getAppInfo(): Promise<AppInfo> {
   return invoke<AppInfo>("app_info");
 }
 
+/** What the dev badge says: the CI build number of a "dawg dev" build
+ * ("0.0.1-dev.22" → "22"), or "local" for a build that never updates. */
+export function devBuild(info: AppInfo): string {
+  const run = /-dev\.(\d+)$/.exec(info.version)?.[1];
+  return run && info.updatesEnabled ? run : "local";
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);

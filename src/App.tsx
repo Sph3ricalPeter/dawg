@@ -24,7 +24,7 @@ import {
 import { getAppInfo, type AppInfo } from "@/lib/app-info";
 import { fmtFormat } from "@/lib/format";
 import { useSession } from "@/stores/session-store";
-import { CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
+import { CHECK_INTERVAL_MS, DEV_CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
 
 function EmptyState({ dropping }: { dropping: boolean }) {
   // An empty project takes the files it is given; with nothing open, one
@@ -290,7 +290,9 @@ export function App() {
       updater.init(info.updatesEnabled);
       if (!info.updatesEnabled) return;
       void updater.checkNow();
-      timer = window.setInterval(() => void useUpdaterStore.getState().checkNow(), CHECK_INTERVAL_MS);
+      // "dawg dev" gets a build on every push, so it looks more often.
+      const every = info.channel === "dev" ? DEV_CHECK_INTERVAL_MS : CHECK_INTERVAL_MS;
+      timer = window.setInterval(() => void useUpdaterStore.getState().checkNow(), every);
     });
     return () => window.clearInterval(timer);
   }, []);

@@ -5,6 +5,8 @@ import { errorMessage } from "@/lib/app-info";
 
 /** How often a running app looks for a new release. */
 export const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+/** The same for "dawg dev", which updates on every push to dev. */
+export const DEV_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 export type UpdateStatus =
   | "disabled"
