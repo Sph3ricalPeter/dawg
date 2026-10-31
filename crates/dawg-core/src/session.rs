@@ -577,6 +577,24 @@ impl Session {
         Ok(())
     }
 
+    /// The project as `.dawg` JSON, as if saved at `path`, leaving the
+    /// session as it is: what autosave writes.
+    pub fn snapshot(&self, path: &Path) -> Vec<u8> {
+        ProjectFile::from_project(&self.project, path, |id| {
+            self.sources.get(&id).map(|s| (s.path.clone(), s.rate))
+        })
+        .to_json()
+    }
+
+    /// Opens an autosave written by [`Session::snapshot`]: unsaved, and
+    /// belonging to `project` when it was a saved project (else untitled).
+    pub fn recover(path: &Path, project: Option<&Path>) -> Result<Session, ProjectError> {
+        let mut s = Self::open_project(path)?;
+        s.project_path = project.map(Path::to_path_buf);
+        s.saved = Arc::new(Project::new(s.project.sample_rate));
+        Ok(s)
+    }
+
     /// Points a source at another file (a missing one, found). Any other
     /// missing files with the same name in that folder are found too. Not an
     /// undo step; the project needs saving afterwards. Returns how many
@@ -1754,6 +1772,36 @@ mod tests {
         assert!(ids[..ids.len() - 1]
             .iter()
             .all(|&id| id < ids[ids.len() - 1]));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_autosave_recovers_unsaved() {
+        let dir = temp_dir("autosave");
+        let path = dir.join("kick.wav");
+        fs::write(&path, session(1000).origin.unwrap().file.bytes()).unwrap();
+        let mut s = Session::open(&path).unwrap();
+        s.apply(&trim(100, 600), false).unwrap();
+        let snap = dir.join("auto").join("session.dawg");
+        fs::create_dir_all(snap.parent().unwrap()).unwrap();
+        fs::write(&snap, s.snapshot(&snap)).unwrap();
+        // Writing it changed nothing.
+        assert!(s.state().scratch && s.dirty());
+        let r = Session::recover(&snap, None).unwrap();
+        let st = r.state();
+        assert!(!st.scratch && st.dirty && st.project.is_none());
+        assert_eq!(r.clip(CLIP).unwrap().len, 600);
+        assert_eq!(
+            r.render_file(Codec::Wav).unwrap(),
+            s.render_with(
+                Codec::Wav,
+                &ExportOptions {
+                    bits: Some(24),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

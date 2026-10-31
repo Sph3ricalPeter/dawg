@@ -238,6 +238,14 @@ export interface Spectrum {
   db: number[];
 }
 
+/** Mirrors `autosave::Note` in the app crate. */
+export interface RecoveryNote {
+  name: string;
+  project: string | null;
+  /** ms since the Unix epoch. */
+  savedAt: number;
+}
+
 /** Mirrors `recent::Recent` in the app crate. */
 export interface RecentProject {
   path: string;
@@ -285,6 +293,13 @@ export const api = {
   mixPeak: (range: [number, number] | null) => invoke<number | null>("mix_peak", { range }),
   lastReplace: () => invoke<Replaced | null>("last_replace"),
   restoreLastReplace: () => invoke<SessionState | null>("restore_last_replace"),
+  /** Snapshots unsaved edits for crash recovery (clears it when saved). */
+  autosave: () => invoke<void>("autosave"),
+  clearAutosave: () => invoke<void>("clear_autosave"),
+  /** What an earlier run left unsaved. */
+  recovery: () => invoke<RecoveryNote | null>("recovery"),
+  recover: () => invoke<SessionState>("recover"),
+  discardRecovery: () => invoke<void>("discard_recovery"),
   /** Shows the file in Explorer. */
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
 };

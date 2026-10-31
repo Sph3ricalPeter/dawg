@@ -320,5 +320,11 @@ export async function restoreLastReplace() {
 /** Close the window, asking first about unsaved edits. */
 export function requestClose() {
   if (!isTauri()) return;
-  useSession.getState().guard("close dawg", () => void getCurrentWindow().destroy());
+  useSession.getState().guard("close dawg", () => {
+    // Closing on purpose: nothing to recover next time.
+    void api
+      .clearAutosave()
+      .catch(() => undefined)
+      .finally(() => void getCurrentWindow().destroy());
+  });
 }

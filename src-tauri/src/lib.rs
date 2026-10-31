@@ -1,4 +1,5 @@
 mod audio;
+mod autosave;
 mod commands;
 mod recent;
 
@@ -80,6 +81,7 @@ pub fn run() {
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
             commands::prune_backups(app.handle());
+            commands::set_aside_autosave(app.handle());
             if let Some(window) = app.get_webview_window("main") {
                 if !is_release(app.handle()) {
                     window.set_title("dawg dev")?;
@@ -115,6 +117,11 @@ pub fn run() {
             commands::last_replace,
             commands::restore_last_replace,
             commands::reveal_path,
+            commands::autosave,
+            commands::clear_autosave,
+            commands::recovery,
+            commands::recover,
+            commands::discard_recovery,
         ])
         .run(tauri::generate_context!())
         .expect("error while running dawg");

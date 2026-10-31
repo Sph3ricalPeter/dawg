@@ -8,6 +8,7 @@ import { Dialogs } from "@/components/Dialogs";
 import { Editor } from "@/components/Editor";
 import { EqPanel } from "@/components/EqPanel";
 import { ExportDialog } from "@/components/ExportDialog";
+import { RecoverDialog } from "@/components/RecoverDialog";
 import { TitleBar } from "@/components/TitleBar";
 import { api, type RecentProject } from "@/lib/api";
 import {
@@ -264,10 +265,10 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
       .then((u) => unlisten.push(u));
     void getCurrentWindow()
       .onCloseRequested((e) => {
-        if (useSession.getState().session?.dirty) {
-          e.preventDefault();
-          requestClose();
-        }
+        // Either way through requestClose, which asks about unsaved edits
+        // and clears the crash-recovery snapshot.
+        e.preventDefault();
+        requestClose();
       })
       .then((u) => unlisten.push(u));
     return () => unlisten.forEach((u) => u());
@@ -351,6 +352,7 @@ export function App() {
       <ClipPanel />
       <Dialogs />
       <ExportDialog />
+      <RecoverDialog />
       <Toast />
     </div>
   );

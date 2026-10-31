@@ -126,6 +126,8 @@ interface SessionStore {
   open: (path: string) => Promise<boolean>;
   /** Starts an empty, untitled project. */
   newProject: () => Promise<void>;
+  /** Opens what an earlier run left unsaved. */
+  recover: () => Promise<void>;
   /** Adds files to the open session. */
   importFiles: (paths: string[], at: Placement) => Promise<void>;
   /** Ask first if there are unsaved edits. */
@@ -322,6 +324,15 @@ export const useSession = create<SessionStore>((set, get) => ({
       return false;
     } finally {
       set({ busy: null });
+    }
+  },
+
+  recover: async () => {
+    await get().stop();
+    try {
+      start(await enqueue(() => api.recover()));
+    } catch (e) {
+      get().showToast(`Couldn't recover: ${apiMessage(e)}`, { error: true });
     }
   },
 

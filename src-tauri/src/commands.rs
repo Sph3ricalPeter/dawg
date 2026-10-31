@@ -15,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use crate::audio::Audio;
+use crate::autosave;
 use crate::recent::{self, Recent};
 
 pub struct AppState {
@@ -498,4 +499,57 @@ pub fn reveal_path(path: PathBuf) -> Result<()> {
     spawned
         .map(|_| ())
         .map_err(|e| Error::new("io", format!("couldn't open the folder: {e}")))
+}
+
+fn autosave_dir(app: &AppHandle) -> Result<PathBuf, Error> {
+    data_dir(app).map(|d| d.join("autosave"))
+}
+
+/// At launch: keeps what an earlier run left unsaved for [`recovery`].
+pub fn set_aside_autosave(app: &AppHandle) {
+    if let Ok(dir) = autosave_dir(app) {
+        autosave::set_aside(&dir);
+    }
+}
+
+/// Snapshots unsaved edits for crash recovery (or removes the snapshot
+/// when there are none). The UI calls it every half minute.
+#[tauri::command]
+pub fn autosave(app: AppHandle, state: State<AppState>) -> Result<()> {
+    let dir = autosave_dir(&app)?;
+    let s = state.lock();
+    match &s.session {
+        Some(session) => autosave::write(&dir, session),
+        None => autosave::clear(&dir),
+    }
+    Ok(())
+}
+
+/// Removes this session's autosave: the window is closing on purpose.
+#[tauri::command]
+pub fn clear_autosave(app: AppHandle) -> Result<()> {
+    autosave::clear(&autosave_dir(&app)?);
+    Ok(())
+}
+
+/// What an earlier run left unsaved, if anything.
+#[tauri::command]
+pub fn recovery(app: AppHandle) -> Result<Option<autosave::Note>> {
+    Ok(autosave::recovered(&autosave_dir(&app)?))
+}
+
+/// Opens what an earlier run left unsaved, in place of the open session.
+#[tauri::command]
+pub fn recover(app: AppHandle, state: State<AppState>) -> Result<SessionState> {
+    let dir = autosave_dir(&app)?;
+    let session = autosave::open(&dir).map_err(|e| Error::new(e.kind(), e.to_string()))?;
+    autosave::discard(&dir);
+    Ok(state.lock().replace_session(session))
+}
+
+/// Forgets what an earlier run left unsaved.
+#[tauri::command]
+pub fn discard_recovery(app: AppHandle) -> Result<()> {
+    autosave::discard(&autosave_dir(&app)?);
+    Ok(())
 }
