@@ -6,6 +6,7 @@ import { fmtTime } from "@/lib/format";
 import { useSession } from "@/stores/session-store";
 import { AppMenu } from "./AppMenu";
 import { HistoryPanel } from "./HistoryPanel";
+import { Master } from "./Master";
 import { UpdateIndicator } from "./UpdateIndicator";
 
 function windowAction(action: "minimize" | "toggleMaximize") {
@@ -93,6 +94,7 @@ function Transport() {
           <span className="big">{fmtTime(playhead / rate)}</span>
         </div>
       </div>
+      <Master />
       <div className="tg histwrap">
         <button
           className={`tb hb${historyOpen ? " on" : ""}`}

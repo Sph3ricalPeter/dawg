@@ -181,6 +181,12 @@ impl Renderer {
                 p[1] = p[1].max(pr);
             }
         }
+        let master = self.project.master_gain;
+        if master != 1.0 {
+            for x in out.iter_mut() {
+                *x *= master;
+            }
+        }
         self.pos = to;
     }
 }

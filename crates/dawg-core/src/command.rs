@@ -126,6 +126,10 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bypass: Option<bool>,
     },
+    /// Master volume in dB, -96 (silence) to +12.
+    SetMasterGain {
+        gain_db: f32,
+    },
     /// Several edits as one: all apply or none do. `label` names the step
     /// in the history ("Envelope: Swell", "AI: build riser").
     Batch {
@@ -222,6 +226,7 @@ impl Command {
                 _ => "Track mix",
             },
             Command::SetTrackEq { .. } => "EQ",
+            Command::SetMasterGain { .. } => "Master volume",
             Command::Batch { label: Some(l), .. } => return l.clone(),
             Command::Batch { commands, .. } => {
                 let Some(first) = commands.first() else {
@@ -480,6 +485,10 @@ impl Command {
                 let t = track_index(p, *track)?;
                 let tr = &mut p.tracks[t];
                 tr.eq = Eq::new(bands, bypass.unwrap_or(tr.eq.bypass()), rate);
+            }
+            Command::SetMasterGain { gain_db } => {
+                let db = finite(*gain_db, "master volume")?;
+                p.master_gain = db_to_gain(db.clamp(MIN_GAIN_DB, MAX_TRACK_DB));
             }
             Command::Batch { commands, .. } => {
                 for c in commands {
@@ -935,5 +944,26 @@ mod tests {
         );
         let json = serde_json::to_string(&fades(Some(FadeCurve::S), None)).unwrap();
         assert!(json.contains(r#""curve_in":"s""#), "{json}");
+    }
+
+    #[test]
+    fn master_gain_scales_the_mix() {
+        let mut p = project();
+        let src = Arc::new(Source::new(1, vec![0.5; 1000]).with_id(3));
+        p.tracks[0].clips[0].source = src;
+        let q = Command::SetMasterGain { gain_db: -6.0 }.apply(&p).unwrap();
+        let loud = crate::render(Arc::new(p), 0, 10);
+        let quiet = crate::render(Arc::new(q.clone()), 0, 10);
+        let k = db_to_gain(-6.0);
+        assert!(quiet
+            .iter()
+            .zip(&loud)
+            .all(|(a, b)| (a - b * k).abs() < 1e-6));
+        let top = Command::SetMasterGain { gain_db: 40.0 }.apply(&q).unwrap();
+        assert_eq!(top.master_gain, db_to_gain(MAX_TRACK_DB));
+        assert_eq!(
+            Command::SetMasterGain { gain_db: 0.0 }.label(),
+            "Master volume"
+        );
     }
 }

@@ -59,8 +59,8 @@ impl Audio {
     }
 
     /// Whether it is playing, the timeline frame being heard, and each
-    /// track's peak level (left, right) since the last call.
-    pub fn status(&mut self) -> (bool, u64, Vec<[f32; 2]>) {
+    /// track's peak level (left, right) since the last call, and the master's.
+    pub fn status(&mut self) -> (bool, u64, Vec<[f32; 2]>, [f32; 2]) {
         let tracks = self.project.as_ref().map_or(0, |p| p.tracks.len());
         match &mut self.output {
             Some(out) => {
@@ -69,9 +69,10 @@ impl Audio {
                     out.handle.playing(),
                     out.handle.position(),
                     out.handle.take_peaks(tracks),
+                    out.handle.take_master_peak(),
                 )
             }
-            None => (false, 0, Vec::new()),
+            None => (false, 0, Vec::new(), [0.0; 2]),
         }
     }
 }

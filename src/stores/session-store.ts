@@ -47,7 +47,9 @@ export type Draft =
   | { kind: "clip"; track: number; clip: ClipState; ghost?: boolean }
   /** Several clips being moved together. */
   | { kind: "clips"; items: { track: number; clip: ClipState }[] }
-  | { kind: "track"; track: TrackState };
+  | { kind: "track"; track: TrackState }
+  /** The master volume, in dB. */
+  | { kind: "master"; db: number };
 
 interface SessionStore {
   session: SessionState | null;
@@ -136,6 +138,10 @@ interface SessionStore {
   /** Each track's meter level (linear peak, left and right, with fall-off),
    * in track order; empty while stopped. */
   levels: [number, number][];
+  /** The master output's level, and its loudest peak since playback began. */
+  master: [number, number];
+  masterPeak: number;
+  resetMasterPeak: () => void;
   showToast: (text: string, opts?: { error?: boolean; action?: Toast["action"] }) => void;
   hideToast: () => void;
   setDialog: (d: Dialog) => void;
@@ -216,7 +222,7 @@ export function timelineEnd(s: SessionState): number {
 
 /** The tracks as they should be drawn right now, with any drag applied. */
 export function shownTracks(s: SessionState, draft: Draft | null): TrackState[] {
-  if (!draft) return s.tracks;
+  if (!draft || draft.kind === "master") return s.tracks;
   if (draft.kind === "track") {
     return s.tracks.map((t) => (t.id === draft.track.id ? { ...draft.track, clips: t.clips } : t));
   }
@@ -239,6 +245,9 @@ export const useSession = create<SessionStore>((set, get) => ({
   startPoint: 0,
   playing: false,
   levels: [],
+  master: [0, 0],
+  masterPeak: 0,
+  resetMasterPeak: () => set({ masterPeak: 0 }),
   range: null,
   loop: true,
   scrubbing: false,
@@ -582,7 +591,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (from >= b.to || (b.loopFrom !== null && from < b.loopFrom)) from = b.loopFrom ?? 0;
     try {
       await api.play(from, b.to, b.loopFrom);
-      set({ playing: true, playhead: from, startPoint: from });
+      set({ playing: true, playhead: from, startPoint: from, masterPeak: 0 });
     } catch (e) {
       get().showToast(`Can't play: ${apiMessage(e)}`, { error: true });
     }
@@ -600,7 +609,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     const t = await api.transport();
     if (!get().playing) return;
     if (!t.playing) {
-      set({ playing: false, playhead: get().startPoint, levels: [] });
+      set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0] });
       return;
     }
     // Peaks since the last poll, falling back gently between them.
@@ -609,7 +618,10 @@ export const useSession = create<SessionStore>((set, get) => ({
       Math.max(l, (old[i]?.[0] ?? 0) * METER_FALL),
       Math.max(r, (old[i]?.[1] ?? 0) * METER_FALL),
     ]);
-    set(get().scrubbing ? { levels } : { playhead: t.position, levels });
+    const m = get().master;
+    const master: [number, number] = [Math.max(t.master[0], m[0] * METER_FALL), Math.max(t.master[1], m[1] * METER_FALL)];
+    const masterPeak = Math.max(get().masterPeak, t.master[0], t.master[1]);
+    set(get().scrubbing ? { levels, master, masterPeak } : { playhead: t.position, levels, master, masterPeak });
   },
 
   showToast: (text, opts) => {

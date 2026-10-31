@@ -41,6 +41,8 @@ pub struct PlayerShared {
     /// Peak level per track and side since the last read, as `f32` bits.
     /// Non-negative floats order like their bits, so `fetch_max` works.
     peaks: [[AtomicU32; 2]; METER_TRACKS],
+    /// The same for the master output, after the master volume.
+    master: [AtomicU32; 2],
     /// The track the analyser listens to, or [`NO_TAP`].
     tap_track: AtomicU64,
 }
@@ -52,6 +54,7 @@ impl Default for PlayerShared {
             position: AtomicU64::new(0),
             tap_track: AtomicU64::new(NO_TAP),
             peaks: std::array::from_fn(|_| [AtomicU32::new(0), AtomicU32::new(0)]),
+            master: [AtomicU32::new(0), AtomicU32::new(0)],
         }
     }
 }
@@ -182,6 +185,14 @@ impl PlayerHandle {
             to_hz,
             db,
         })
+    }
+
+    /// The master output's peak level (left, right) since the last call.
+    pub fn take_master_peak(&self) -> [f32; 2] {
+        self.shared
+            .master
+            .each_ref()
+            .map(|a| f32::from_bits(a.swap(0, Ordering::Relaxed)))
     }
 
     pub fn take_peaks(&self, tracks: usize) -> Vec<[f32; 2]> {
@@ -356,6 +367,13 @@ impl Player {
                 shared[0].fetch_max(peak[0].to_bits(), Ordering::Relaxed);
                 shared[1].fetch_max(peak[1].to_bits(), Ordering::Relaxed);
             }
+            let (mut ml, mut mr) = (0.0f32, 0.0f32);
+            for f in self.block.as_chunks::<OUT_CHANNELS>().0 {
+                ml = ml.max(f[0].abs());
+                mr = mr.max(f[1].abs());
+            }
+            self.shared.master[0].fetch_max(ml.to_bits(), Ordering::Relaxed);
+            self.shared.master[1].fetch_max(mr.to_bits(), Ordering::Relaxed);
             self.block_pos = 0;
             self.block_len = BLOCK;
         }

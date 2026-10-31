@@ -160,6 +160,8 @@ pub struct SessionState {
     /// The session's sample rate; every source plays at it.
     pub rate: u32,
     pub tracks: Vec<TrackState>,
+    /// Master volume.
+    pub master_db: f32,
     pub sources: Vec<SourceState>,
     /// Timeline frames from the first clip heard to the end of the last:
     /// what a mixdown covers. Both 0 when nothing is heard.
@@ -510,6 +512,11 @@ impl Session {
             top = top.max(s.id + 1);
         }
         project.next_id = top;
+        project.master_gain = if file.master_gain.is_finite() {
+            file.master_gain.clamp(0.0, 4.0)
+        } else {
+            1.0
+        };
         Ok(Self::from_project(
             project,
             sources,
@@ -618,6 +625,7 @@ impl Session {
             && clip.source.id() == origin.source
             && !clip.retimed()
             && !track.eq.active()
+            && p.master_gain == 1.0
             && track.gain == 1.0
             && track.pan == 0.0
             && p.audible(track))
@@ -642,6 +650,7 @@ impl Session {
             kbps: o.and_then(|o| o.file.kbps()),
             frames: o.map_or(0, |o| o.file.frames()),
             rate: p.sample_rate,
+            master_db: gain_to_db(p.master_gain),
             tracks: p
                 .tracks
                 .iter()
@@ -1516,6 +1525,7 @@ mod tests {
                         clip: CLIP,
                         reversed: true,
                     },
+                    Command::SetMasterGain { gain_db: -2.0 },
                     Command::SetClipGain {
                         clip: CLIP,
                         gain_db: -1.5,
@@ -1555,9 +1565,11 @@ mod tests {
         assert!(json.contains("\"pitch\": -3.5"), "{json}");
         assert!(json.contains("\"kind\": \"bell\""), "{json}");
         assert!(json.contains("\"reversed\": true"), "{json}");
+        assert!(json.contains("\"masterGain\""), "{json}");
         assert!(json.contains("\"fadeOutCurve\": \"s\""), "{json}");
 
         let mut r = Session::open_project(&song).unwrap();
+        assert_eq!(r.state().master_db, s.state().master_db);
         let tracks = |s: &Session| serde_json::to_value(s.state().tracks).unwrap();
         assert_eq!(tracks(&r), tracks(&s));
         assert!(!r.dirty());

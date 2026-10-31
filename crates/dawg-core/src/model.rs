@@ -421,6 +421,8 @@ pub struct Project {
     pub sources: Vec<Arc<Source>>,
     /// The next id to hand out to a track, clip or source.
     pub next_id: u64,
+    /// Master volume, linear, on the sum of every track.
+    pub master_gain: f32,
 }
 
 impl Project {
@@ -430,6 +432,7 @@ impl Project {
             tracks: Vec::new(),
             sources: Vec::new(),
             next_id: 1,
+            master_gain: 1.0,
         }
     }
 
@@ -479,6 +482,7 @@ impl Project {
     /// Same edit state as `other`, clip by clip.
     pub fn same_edit(&self, other: &Project) -> bool {
         self.sample_rate == other.sample_rate
+            && self.master_gain == other.master_gain
             && self.tracks.len() == other.tracks.len()
             && self
                 .tracks

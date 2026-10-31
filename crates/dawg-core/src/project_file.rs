@@ -16,7 +16,8 @@
 //!   without what it doesn't understand.
 //!
 //! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
-//! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`.
+//! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`;
+//! 4 adds `masterGain`.
 
 use std::fmt;
 use std::io;
@@ -28,7 +29,7 @@ use crate::eq::EqBand;
 use crate::model::{EnvPoint, FadeCurve, Project};
 
 /// The format this build writes, and the newest it reads.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "dawg";
 /// The `format` tag, so a stray JSON file isn't taken for a project.
@@ -45,6 +46,9 @@ pub struct ProjectFile {
     pub sample_rate: u32,
     /// The next id to hand out, so ids stay unique after reopening.
     pub next_id: u64,
+    /// Master volume, linear.
+    #[serde(default = "one_f32", skip_serializing_if = "is_one_f32")]
+    pub master_gain: f32,
     pub sources: Vec<SourceEntry>,
     pub tracks: Vec<TrackEntry>,
 }
@@ -124,6 +128,12 @@ fn is_linear(v: &FadeCurve) -> bool {
 }
 fn is_false(v: &bool) -> bool {
     !*v
+}
+fn one_f32() -> f32 {
+    1.0
+}
+fn is_one_f32(v: &f32) -> bool {
+    *v == 1.0
 }
 fn one() -> f64 {
     1.0
@@ -208,6 +218,7 @@ impl ProjectFile {
             saved_by: crate::VERSION.into(),
             sample_rate: project.sample_rate,
             next_id: project.next_id,
+            master_gain: project.master_gain,
             sources,
             tracks: project
                 .tracks
@@ -359,6 +370,7 @@ mod tests {
             saved_by: String::new(),
             sample_rate: 48_000,
             next_id: 2,
+            master_gain: 1.0,
             sources: vec![SourceEntry {
                 id: 1,
                 file: "Samples/kick.wav".into(),

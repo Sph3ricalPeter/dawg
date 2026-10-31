@@ -105,6 +105,8 @@ export interface SessionState {
   /** The session's sample rate. */
   rate: number;
   tracks: TrackState[];
+  /** Master volume. */
+  masterDb: number;
   sources: SourceState[];
   /** What a mixdown covers: first clip heard to the end of the last. */
   start: number;
@@ -187,6 +189,7 @@ export type Command =
       solo?: boolean;
     }
   | { type: "set_track_eq"; track: number; bands: EqBand[]; bypass?: boolean }
+  | { type: "set_master_gain"; gain_db: number }
   | { type: "batch"; commands: Command[]; label?: string };
 
 /** Errors from the Rust side carry a kind to branch on. */
@@ -252,7 +255,8 @@ export const api = {
   /** Plays `from..to`; with `looping`, jumps back there at `to` until stopped. */
   play: (from: number, to: number, looping: number | null) => invoke<void>("play", { from, to, looping }),
   stop: () => invoke<void>("stop"),
-  transport: () => invoke<{ playing: boolean; position: number; levels: [number, number][] }>("transport"),
+  transport: () =>
+    invoke<{ playing: boolean; position: number; levels: [number, number][]; master: [number, number] }>("transport"),
   /** A track's spectrum after its EQ, from what played since the last call
    * (null when nothing did); `null` stops listening. */
   spectrum: (track: number | null) => invoke<Spectrum | null>("spectrum", { track }),

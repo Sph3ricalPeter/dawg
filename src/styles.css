@@ -1865,3 +1865,62 @@ body.rsizing * {
   width: 13px;
   height: 13px;
 }
+
+/* master volume and meter, top bar */
+.tg.master {
+  gap: 5px;
+}
+.master .mvk {
+  width: 20px;
+  height: 20px;
+  cursor: ns-resize;
+}
+.master .mv,
+.master .mpk {
+  font: 10px var(--mono);
+  color: var(--text-dim);
+  width: 34px;
+  text-align: right;
+}
+.master .mtype {
+  width: 34px;
+}
+.master .mstr {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 72px;
+}
+.master .mstr i {
+  display: block;
+  height: 4px;
+  background: var(--bg-0);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+.master .mstr i::after {
+  content: "";
+  position: absolute;
+  left: 94%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text-faint);
+}
+.master .mstr b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--ok) 0 80%, var(--warn) 80% 94%, var(--danger) 94%);
+  background-size: 72px 100%;
+}
+.master .mpk {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.master .mpk.over {
+  color: var(--danger);
+}
