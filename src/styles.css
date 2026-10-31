@@ -1942,3 +1942,76 @@ body.rsizing * {
   padding: 0 8px;
   font-size: 11px;
 }
+
+/* bars and beats, tempo, timeline settings */
+.lcd.bars {
+  flex-direction: column;
+  height: 26px;
+  gap: 0;
+  line-height: 1.05;
+}
+.lcd .small {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.lcd .lcdin,
+.bpmin {
+  width: 76px;
+  font: 12px var(--mono);
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  outline: 0;
+  text-align: center;
+}
+.titlebar .field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+.titlebar .well {
+  font: 11px var(--mono);
+  color: var(--text);
+  background: var(--bg-0);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: ns-resize;
+  user-select: none;
+}
+.bpmin {
+  width: 52px;
+  cursor: text;
+}
+.tlwrap {
+  position: relative;
+}
+.tb.tlset {
+  width: auto;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.tb.tlset .tlenv {
+  color: var(--warn);
+}
+.tb.tlset .car {
+  font-size: 8px;
+  color: var(--text-faint);
+}
+.menu.tlmenu {
+  top: 26px;
+  left: 0;
+  min-width: 200px;
+}
+.menu-item.check .tick {
+  display: inline-block;
+  width: 16px;
+  font-style: normal;
+  color: var(--text-dim);
+}
+.ruler .tk.maj.sub .lb {
+  color: var(--text-faint);
+}

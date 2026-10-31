@@ -4,8 +4,9 @@ import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime, MIN_GAIN_DB } from "@/lib/format";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
-import { scrollSpan, timelineLimit, useSession, useTracks } from "@/stores/session-store";
-import { rulerStep, snapToGrid, trackColor, useWheel } from "@/lib/timeline";
+import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
+import { rulerStep, trackColor, useWheel } from "@/lib/timeline";
+import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
 
@@ -16,28 +17,55 @@ function Ruler() {
   const width = useSession((s) => s.width);
   const playhead = useSession((s) => s.playhead);
   const range = useSession((s) => s.range);
+  const units = useSession((s) => gridOf(s).units);
   const ref = useRef<HTMLDivElement>(null);
   if (!session) return <div className="ruler" />;
 
   const rate = session.rate;
-  const pxPerSec = rate / view.fpp;
-  const step = rulerStep(pxPerSec);
-  const digits = step >= 1 ? 0 : step >= 0.1 ? (step === 0.25 ? 2 : 1) : step >= 0.01 ? 2 : 3;
-  const t0 = view.start / rate;
-  const t1 = (view.start + width * view.fpp) / rate;
   const ticks = [];
-  for (let k = Math.floor(t0 / step); k * step <= t1; k++) {
-    const t = k * step;
-    const x = (t - t0) * pxPerSec;
-    ticks.push(
-      <div key={k} className="tk maj" style={{ left: x }}>
-        <span className="lb">{fmtTime(t, digits)}</span>
-      </div>,
-    );
-    for (let m = 1; m < 5; m++) {
-      const xm = x + (m * step * pxPerSec) / 5;
-      if (xm > width) break;
-      ticks.push(<div key={`${k}.${m}`} className="tk" style={{ left: xm }} />);
+  if (units === "bars") {
+    // Labels on bars, or bar.beat zoomed in; four small ticks between.
+    const beat = beatFrames(rate, session.bpm);
+    const pxPerBeat = beat / view.fpp;
+    const step = barStep(pxPerBeat);
+    const b0 = view.start / beat;
+    const b1 = (view.start + width * view.fpp) / beat;
+    for (let k = Math.floor(b0 / step); k * step <= b1; k++) {
+      const b = k * step;
+      const x = (b - b0) * pxPerBeat;
+      const bar = Math.floor(b / BEATS_PER_BAR + 1e-9) + 1;
+      const inBar = b - (bar - 1) * BEATS_PER_BAR;
+      const label = Math.abs(inBar) < 1e-9 ? `${bar}` : Number.isInteger(Math.round(inBar * 1e6) / 1e6) ? `${bar}.${Math.round(inBar) + 1}` : "";
+      ticks.push(
+        <div key={k} className={`tk maj${label.includes(".") ? " sub" : ""}`} style={{ left: x }}>
+          {label && <span className="lb">{label}</span>}
+        </div>,
+      );
+      for (let m = 1; m < 4; m++) {
+        const xm = x + (m * step * pxPerBeat) / 4;
+        if (xm > width) break;
+        ticks.push(<div key={`${k}.${m}`} className="tk" style={{ left: xm }} />);
+      }
+    }
+  } else {
+    const pxPerSec = rate / view.fpp;
+    const step = rulerStep(pxPerSec);
+    const digits = step >= 1 ? 0 : step >= 0.1 ? (step === 0.25 ? 2 : 1) : step >= 0.01 ? 2 : 3;
+    const t0 = view.start / rate;
+    const t1 = (view.start + width * view.fpp) / rate;
+    for (let k = Math.floor(t0 / step); k * step <= t1; k++) {
+      const t = k * step;
+      const x = (t - t0) * pxPerSec;
+      ticks.push(
+        <div key={k} className="tk maj" style={{ left: x }}>
+          <span className="lb">{fmtTime(t, digits)}</span>
+        </div>,
+      );
+      for (let m = 1; m < 5; m++) {
+        const xm = x + (m * step * pxPerSec) / 5;
+        if (xm > width) break;
+        ticks.push(<div key={`${k}.${m}`} className="tk" style={{ left: xm }} />);
+      }
     }
   }
 
@@ -51,10 +79,11 @@ function Ruler() {
     const v = useSession.getState().view;
     return clamp(v.start + (clamp(clientX, r.left, r.right) - r.left) * v.fpp, 0, timelineLimit(session));
   };
-  // Snaps to the ruler's small ticks; Alt is smooth (mockup snapT).
+  // Snaps to the grid (the ruler's small ticks with snap on Line); Alt is
+  // smooth (mockup snapT).
   const snapped = (clientX: number, alt: boolean, follow = false) => {
     const f = toFrame(clientX, follow);
-    return alt ? f : snapToGrid(f, rate, useSession.getState().view.fpp);
+    return alt ? f : snapTo(f, snapStep());
   };
   // As in the mockup: a plain drag scrubs the playhead, Ctrl+drag makes the
   // range (loop, crop, export), and a click places the playhead and clears
@@ -107,7 +136,7 @@ function Ruler() {
       ref={ref}
       onPointerDown={onDown}
       onDoubleClick={onDouble}
-      data-hint="Click or drag to move the playhead · Ctrl+drag sets the range (loop, crop, export) · both snap to the ticks, hold Alt for smooth · double-click ranges over every clip"
+      data-hint="Click or drag to move the playhead · Ctrl+drag sets the range (loop, crop, export) · both snap to the grid, hold Alt for smooth · double-click ranges over every clip"
     >
       {ticks}
       {range && (

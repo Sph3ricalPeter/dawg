@@ -107,6 +107,8 @@ export interface SessionState {
   tracks: TrackState[];
   /** Master volume. */
   masterDb: number;
+  /** Tempo of the bars-and-beats grid. */
+  bpm: number;
   sources: SourceState[];
   /** What a mixdown covers: first clip heard to the end of the last. */
   start: number;
@@ -200,6 +202,7 @@ export type Command =
     }
   | { type: "set_track_eq"; track: number; bands: EqBand[]; bypass?: boolean }
   | { type: "set_master_gain"; gain_db: number }
+  | { type: "set_tempo"; bpm: number }
   | { type: "batch"; commands: Command[]; label?: string };
 
 /** Errors from the Rust side carry a kind to branch on. */

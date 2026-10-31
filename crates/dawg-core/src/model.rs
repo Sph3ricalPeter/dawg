@@ -90,6 +90,12 @@ pub struct EnvPoint {
     pub gain: f32,
 }
 
+/// Tempo of a new project.
+pub const DEFAULT_BPM: f64 = 120.0;
+/// Slowest and fastest tempo.
+pub const MIN_BPM: f64 = 20.0;
+pub const MAX_BPM: f64 = 999.0;
+
 /// Top of the envelope range: about +1.9 dB, so 0 dB sits at 80% height.
 pub const ENV_MAX: f32 = 1.25;
 
@@ -423,6 +429,8 @@ pub struct Project {
     pub next_id: u64,
     /// Master volume, linear, on the sum of every track.
     pub master_gain: f32,
+    /// Tempo for the bars-and-beats grid. Playback doesn't depend on it.
+    pub bpm: f64,
 }
 
 impl Project {
@@ -433,6 +441,7 @@ impl Project {
             sources: Vec::new(),
             next_id: 1,
             master_gain: 1.0,
+            bpm: DEFAULT_BPM,
         }
     }
 
@@ -483,6 +492,7 @@ impl Project {
     pub fn same_edit(&self, other: &Project) -> bool {
         self.sample_rate == other.sample_rate
             && self.master_gain == other.master_gain
+            && self.bpm == other.bpm
             && self.tracks.len() == other.tracks.len()
             && self
                 .tracks

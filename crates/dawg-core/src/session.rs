@@ -26,7 +26,9 @@ use serde::{Deserialize, Serialize};
 use crate::command::{fit_fades, gain_to_db, Command, CommandError};
 use crate::eq::{Eq, EqBand};
 use crate::file::{AudioFile, Codec, FileError};
-use crate::model::{Clip, EnvPoint, FadeCurve, Project, Source, Track};
+use crate::model::{
+    Clip, EnvPoint, FadeCurve, Project, Source, Track, DEFAULT_BPM, MAX_BPM, MIN_BPM,
+};
 use crate::mp3::{self, Tags};
 use crate::peaks::Peaks;
 use crate::project_file::{ProjectError, ProjectFile, EXTENSION};
@@ -188,6 +190,8 @@ pub struct SessionState {
     pub tracks: Vec<TrackState>,
     /// Master volume.
     pub master_db: f32,
+    /// Tempo of the bars-and-beats grid.
+    pub bpm: f64,
     pub sources: Vec<SourceState>,
     /// Timeline frames from the first clip heard to the end of the last:
     /// what a mixdown covers. Both 0 when nothing is heard.
@@ -538,6 +542,11 @@ impl Session {
             top = top.max(s.id + 1);
         }
         project.next_id = top;
+        project.bpm = if file.bpm.is_finite() {
+            file.bpm.clamp(MIN_BPM, MAX_BPM)
+        } else {
+            DEFAULT_BPM
+        };
         project.master_gain = if file.master_gain.is_finite() {
             file.master_gain.clamp(0.0, 4.0)
         } else {
@@ -677,6 +686,7 @@ impl Session {
             frames: o.map_or(0, |o| o.file.frames()),
             rate: p.sample_rate,
             master_db: gain_to_db(p.master_gain),
+            bpm: p.bpm,
             tracks: p
                 .tracks
                 .iter()
@@ -1678,6 +1688,7 @@ mod tests {
                         reversed: true,
                     },
                     Command::SetMasterGain { gain_db: -2.0 },
+                    Command::SetTempo { bpm: 140.0 },
                     Command::SetClipGain {
                         clip: CLIP,
                         gain_db: -1.5,
@@ -1722,6 +1733,7 @@ mod tests {
 
         let mut r = Session::open_project(&song).unwrap();
         assert_eq!(r.state().master_db, s.state().master_db);
+        assert_eq!(r.state().bpm, 140.0);
         let tracks = |s: &Session| serde_json::to_value(s.state().tracks).unwrap();
         assert_eq!(tracks(&r), tracks(&s));
         assert!(!r.dirty());

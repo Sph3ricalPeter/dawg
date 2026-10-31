@@ -18,13 +18,6 @@ export function rulerStep(pxPerSec: number): number {
   return STEPS.find((s) => s * pxPerSec >= 70) ?? 600;
 }
 
-/** `frame` rounded to the ruler's small ticks (a fifth of a label step) at
- * zoom `fpp`. */
-export function snapToGrid(frame: number, rate: number, fpp: number): number {
-  const tick = (rulerStep(rate / fpp) / 5) * rate;
-  return Math.round(frame / tick) * tick;
-}
-
 /** y of envelope gain `g` in a wave area `h` px tall. */
 export function envY(g: number, h: number): number {
   return (1 - g / ENV_MAX) * (h - 2) + 1;

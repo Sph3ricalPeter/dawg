@@ -2,11 +2,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
 import type { AppInfo } from "@/lib/app-info";
 import { exportDialog, requestClose } from "@/lib/actions";
-import { fmtTime } from "@/lib/format";
 import { useSession } from "@/stores/session-store";
 import { AppMenu } from "./AppMenu";
 import { HistoryPanel } from "./HistoryPanel";
 import { Master } from "./Master";
+import { Bpm, Lcd, TimelineMenu } from "./TimeControls";
 import { UpdateIndicator } from "./UpdateIndicator";
 
 function windowAction(action: "minimize" | "toggleMaximize") {
@@ -44,13 +44,11 @@ function Doc() {
 function Transport() {
   const session = useSession((s) => s.session);
   const playing = useSession((s) => s.playing);
-  const playhead = useSession((s) => s.playhead);
   const loop = useSession((s) => s.loop);
   const hasRange = useSession((s) => !!s.range);
   const canUndo = useSession((s) => !!s.session?.canUndo);
   const canRedo = useSession((s) => !!s.session?.canRedo);
   const historyOpen = useSession((s) => s.historyOpen);
-  const rate = session?.rate ?? 48_000;
   const store = useSession.getState;
   return (
     <div className="transport">
@@ -90,10 +88,14 @@ function Transport() {
         </button>
       </div>
       <div className="tg">
-        <div className="lcd" title="Playhead position">
-          <span className="big">{fmtTime(playhead / rate)}</span>
-        </div>
+        <Lcd />
       </div>
+      {session && !session.scratch && (
+        <div className="tg">
+          <Bpm />
+        </div>
+      )}
+      <TimelineMenu />
       <Master />
       <div className="tg histwrap">
         <button

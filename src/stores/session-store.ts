@@ -9,6 +9,41 @@ import {
   type TrackState,
 } from "@/lib/api";
 import { clamp, srcAt } from "@/lib/format";
+import { SNAPS, snapFrames, type Snap, type Units } from "@/lib/grid";
+
+const SNAP_VALUES = SNAPS.map((s) => s.v);
+
+function remembered<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key) as T | null;
+    return v && allowed.includes(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function remember(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Only a convenience.
+  }
+}
+
+/** The units and snap in effect: a scratch session counts in time, with its
+ * own snap. */
+export function gridOf(s: { session: SessionState | null; units: Units; snap: Snap; snapScratch: Snap }): { units: Units; snap: Snap } {
+  const scratch = !!s.session?.scratch;
+  return { units: scratch ? "time" : s.units, snap: scratch ? s.snapScratch : s.snap };
+}
+
+/** Frames between snap points at the current zoom, or null with snap off. */
+export function snapStep(): number | null {
+  const s = useSession.getState();
+  if (!s.session) return null;
+  const g = gridOf(s);
+  return snapFrames(g.snap, g.units, s.session.rate, s.session.bpm, s.view.fpp);
+}
 
 /** Visible window onto the timeline. */
 export interface View {
@@ -49,7 +84,8 @@ export type Draft =
   | { kind: "clips"; items: { track: number; clip: ClipState }[] }
   | { kind: "track"; track: TrackState }
   /** The master volume, in dB. */
-  | { kind: "master"; db: number };
+  | { kind: "master"; db: number }
+  | { kind: "tempo"; bpm: number };
 
 interface SessionStore {
   session: SessionState | null;
@@ -113,6 +149,13 @@ interface SessionStore {
   historyOpen: boolean;
   /** The Export dialog for a mixdown. */
   exportOpen: boolean;
+  /** Ruler and LCD units in a project (a scratch session shows time). */
+  units: Units;
+  /** Snap in a project, and in a scratch session. */
+  snap: Snap;
+  snapScratch: Snap;
+  setUnits: (u: Units) => void;
+  setSnap: (s: Snap) => void;
   toggleHistory: (open?: boolean) => void;
   select: (clip: number | null, toggle?: boolean) => void;
   selectAll: () => void;
@@ -224,7 +267,7 @@ export function timelineEnd(s: SessionState): number {
 
 /** The tracks as they should be drawn right now, with any drag applied. */
 export function shownTracks(s: SessionState, draft: Draft | null): TrackState[] {
-  if (!draft || draft.kind === "master") return s.tracks;
+  if (!draft || draft.kind === "master" || draft.kind === "tempo") return s.tracks;
   if (draft.kind === "track") {
     return s.tracks.map((t) => (t.id === draft.track.id ? { ...draft.track, clips: t.clips } : t));
   }
@@ -414,6 +457,22 @@ export const useSession = create<SessionStore>((set, get) => ({
 
   historyOpen: false,
   exportOpen: false,
+  units: remembered<Units>("dawg.units", ["bars", "time"], "bars"),
+  snap: remembered<Snap>("dawg.snap", SNAP_VALUES, "line"),
+  snapScratch: remembered<Snap>("dawg.snapScratch", SNAP_VALUES, "off"),
+  setUnits: (units) => {
+    remember("dawg.units", units);
+    set({ units });
+  },
+  setSnap: (snap) => {
+    if (get().session?.scratch) {
+      remember("dawg.snapScratch", snap);
+      set({ snapScratch: snap });
+    } else {
+      remember("dawg.snap", snap);
+      set({ snap });
+    }
+  },
   toggleHistory: (open) => set((s) => ({ historyOpen: open ?? !s.historyOpen })),
 
   select: (clip, toggle = false) => {

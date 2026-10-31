@@ -7,7 +7,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::eq::{Eq, EqBand, MAX_BANDS};
-use crate::model::{Clip, EnvPoint, FadeCurve, Project, Track, ENV_MAX};
+use crate::model::{Clip, EnvPoint, FadeCurve, Project, Track, ENV_MAX, MAX_BPM, MIN_BPM};
 use crate::stretch::{MAX_PITCH, MAX_STRETCH, MIN_STRETCH};
 
 /// Shortest clip a trim or split can leave, in frames.
@@ -126,6 +126,10 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bypass: Option<bool>,
     },
+    /// Tempo of the bars-and-beats grid, 20 to 999 BPM.
+    SetTempo {
+        bpm: f64,
+    },
     /// Master volume in dB, -96 (silence) to +12.
     SetMasterGain {
         gain_db: f32,
@@ -227,6 +231,7 @@ impl Command {
             },
             Command::SetTrackEq { .. } => "EQ",
             Command::SetMasterGain { .. } => "Master volume",
+            Command::SetTempo { .. } => "Tempo",
             Command::Batch { label: Some(l), .. } => return l.clone(),
             Command::Batch { commands, .. } => {
                 let Some(first) = commands.first() else {
@@ -485,6 +490,12 @@ impl Command {
                 let t = track_index(p, *track)?;
                 let tr = &mut p.tracks[t];
                 tr.eq = Eq::new(bands, bypass.unwrap_or(tr.eq.bypass()), rate);
+            }
+            Command::SetTempo { bpm } => {
+                if !bpm.is_finite() {
+                    return err("tempo must be a number");
+                }
+                p.bpm = bpm.clamp(MIN_BPM, MAX_BPM);
             }
             Command::SetMasterGain { gain_db } => {
                 let db = finite(*gain_db, "master volume")?;

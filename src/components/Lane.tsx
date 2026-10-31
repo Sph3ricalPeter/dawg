@@ -4,7 +4,8 @@ import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
 import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
-import { MIN_LEN, allClips, useSession, type View } from "@/stores/session-store";
+import { MIN_LEN, allClips, snapStep, useSession, type View } from "@/stores/session-store";
+import { snapTo } from "@/lib/grid";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
@@ -433,6 +434,9 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
               }
             }
           }
+          // Away from those, the clip's start lands on the grid.
+          const step = snapStep();
+          if (best === tol && step) snapped = snapTo(s0, step) - c0.start;
           d = snapped;
         }
         d = Math.max(d, -minStart);
@@ -466,9 +470,15 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const onEdge = (side: "l" | "r") => (e: React.PointerEvent) => {
     const c0 = clip;
     store().select(c0.id);
+    const step = snapStep();
     startDrag(e, {
-      move: (dx) => {
-        const d = Math.round(dx * view.fpp);
+      move: (dx, _dy, ev) => {
+        let d = Math.round(dx * view.fpp);
+        // The dragged edge lands on the grid; Alt is free.
+        if (step && !ev.altKey) {
+          const edge = side === "l" ? c0.start : c0.start + c0.len;
+          d = snapTo(edge + d, step) - edge;
+        }
         let next: ClipState;
         if (side === "l") {
           // Stretched, a frame of timeline is 1/stretch of a source frame.
@@ -616,8 +626,8 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         <GainReadout clip={clip} track={track.id} className="gain" />
       </div>
       <canvas ref={canvas} className="clipcv" />
-      {x0 >= -EDGE && <div className="edge l" onPointerDown={onEdge("l")} data-hint="Drag to trim the start" />}
-      {x1 <= width + EDGE && <div className="edge r" onPointerDown={onEdge("r")} data-hint="Drag to trim the end" />}
+      {x0 >= -EDGE && <div className="edge l" onPointerDown={onEdge("l")} data-hint="Drag to trim the start · snaps to the grid, hold Alt for free" />}
+      {x1 <= width + EDGE && <div className="edge r" onPointerDown={onEdge("r")} data-hint="Drag to trim the end · snaps to the grid, hold Alt for free" />}
       <div
         className={`fh${clip.fadeIn > 0 ? " on" : ""}`}
         style={{ left: fadeInX }}

@@ -17,7 +17,7 @@
 //!
 //! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
 //! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`;
-//! 4 adds `masterGain`.
+//! 4 adds `masterGain`; 5 adds `bpm`.
 
 use std::fmt;
 use std::io;
@@ -26,10 +26,10 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::eq::EqBand;
-use crate::model::{EnvPoint, FadeCurve, Project};
+use crate::model::{EnvPoint, FadeCurve, Project, DEFAULT_BPM};
 
 /// The format this build writes, and the newest it reads.
-pub const FORMAT_VERSION: u32 = 4;
+pub const FORMAT_VERSION: u32 = 5;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "dawg";
 /// The `format` tag, so a stray JSON file isn't taken for a project.
@@ -49,6 +49,9 @@ pub struct ProjectFile {
     /// Master volume, linear.
     #[serde(default = "one_f32", skip_serializing_if = "is_one_f32")]
     pub master_gain: f32,
+    /// Tempo of the grid.
+    #[serde(default = "default_bpm", skip_serializing_if = "is_default_bpm")]
+    pub bpm: f64,
     pub sources: Vec<SourceEntry>,
     pub tracks: Vec<TrackEntry>,
 }
@@ -128,6 +131,12 @@ fn is_linear(v: &FadeCurve) -> bool {
 }
 fn is_false(v: &bool) -> bool {
     !*v
+}
+fn default_bpm() -> f64 {
+    DEFAULT_BPM
+}
+fn is_default_bpm(v: &f64) -> bool {
+    *v == DEFAULT_BPM
 }
 fn one_f32() -> f32 {
     1.0
@@ -219,6 +228,7 @@ impl ProjectFile {
             sample_rate: project.sample_rate,
             next_id: project.next_id,
             master_gain: project.master_gain,
+            bpm: project.bpm,
             sources,
             tracks: project
                 .tracks
@@ -371,6 +381,7 @@ mod tests {
             sample_rate: 48_000,
             next_id: 2,
             master_gain: 1.0,
+            bpm: DEFAULT_BPM,
             sources: vec![SourceEntry {
                 id: 1,
                 file: "Samples/kick.wav".into(),
