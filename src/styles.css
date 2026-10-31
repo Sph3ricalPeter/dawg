@@ -1591,3 +1591,165 @@ body.rsizing * {
   font-size: 11px;
   line-height: 1.5;
 }
+
+/* clip settings popover (the mockup's inspector) */
+.clippanel {
+  position: fixed;
+  z-index: 58;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.clippanel .isec {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.clippanel .isec:last-child {
+  border-bottom: 0;
+}
+.clippanel h4 {
+  margin: 0 0 1px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.clippanel .idn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 0;
+}
+.clippanel .idn .sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--c, var(--text-dim));
+  flex: none;
+}
+.clippanel .idn .n,
+.clippanel .path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clippanel .path,
+.clippanel .small {
+  font-size: 10.5px;
+}
+.clippanel .irow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.clippanel .irow .k {
+  width: 64px;
+  color: var(--text-dim);
+  flex: none;
+}
+.clippanel .chk {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+}
+.clippanel .krow {
+  display: flex;
+  gap: 4px;
+  justify-content: space-between;
+}
+.clippanel .kc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  cursor: ns-resize;
+  width: 76px;
+  padding: 2px 0;
+  user-select: none;
+}
+.clippanel .kc:hover {
+  background: var(--bg-3);
+  border-radius: 2px;
+}
+.clippanel .kc .kl {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.clippanel .kc .kv {
+  font: 10.5px var(--mono);
+  color: var(--text);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg button {
+  background: var(--bg-3);
+  border: 0;
+  padding: 0 8px;
+  height: 22px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.seg button + button {
+  border-left: 1px solid var(--line-strong);
+}
+.seg button.on {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.clippanel .presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.clippanel .pre {
+  height: 34px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  padding: 2px;
+}
+.clippanel .pre:hover {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.clippanel .pre svg {
+  width: 44px;
+  height: 12px;
+  stroke: var(--text);
+  fill: none;
+  stroke-width: 1.4;
+}
+.clippanel .acts {
+  padding: 4px;
+  gap: 0;
+}
+.clip .ct .rev {
+  font-weight: 700;
+}

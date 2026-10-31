@@ -451,3 +451,23 @@ mod tests {
         );
     }
 }
+
+/// Shows a file in Explorer, selected.
+#[tauri::command]
+pub fn reveal_path(path: PathBuf) -> Result<()> {
+    #[cfg(windows)]
+    let spawned = {
+        use std::os::windows::process::CommandExt;
+        // `/select,` takes the rest of the argument as the path, quotes and all.
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", path.display()))
+            .spawn()
+    };
+    #[cfg(not(windows))]
+    let spawned = std::process::Command::new("xdg-open")
+        .arg(path.parent().unwrap_or(&path))
+        .spawn();
+    spawned
+        .map(|_| ())
+        .map_err(|e| Error::new("io", format!("couldn't open the folder: {e}")))
+}

@@ -1,4 +1,4 @@
-import type { ClipState, EnvPoint, WavFormat } from "./api";
+import type { ClipState, EnvPoint, FadeCurve, WavFormat } from "./api";
 
 export const MIN_GAIN_DB = -96;
 export const MAX_GAIN_DB = 24;
@@ -11,13 +11,23 @@ export function dbToGain(db: number): number {
 }
 
 /** Same as `Clip::fade_at` in dawg-core: frame `i` of the clip. */
-export function fadeAt(clip: Pick<ClipState, "len" | "fadeIn" | "fadeOut">, i: number): number {
+export function fadeAt(
+  clip: Pick<ClipState, "len" | "fadeIn" | "fadeOut"> & Partial<Pick<ClipState, "fadeInCurve" | "fadeOutCurve">>,
+  i: number,
+): number {
   let f = 1;
-  if (i < clip.fadeIn) f *= i / clip.fadeIn;
+  if (i < clip.fadeIn) f *= fadeShape(clip.fadeInCurve ?? "linear", i / clip.fadeIn);
   if (clip.fadeOut > 0 && i >= clip.len - clip.fadeOut) {
-    f *= Math.max(0, clip.len - (i + 1)) / clip.fadeOut;
+    f *= fadeShape(clip.fadeOutCurve ?? "linear", Math.max(0, clip.len - (i + 1)) / clip.fadeOut);
   }
   return f;
+}
+
+/** Same as `FadeCurve::shape` in dawg-core: level at `t` along a fade. */
+export function fadeShape(curve: FadeCurve, t: number): number {
+  if (curve === "exp") return t * t;
+  if (curve === "s") return t * t * (3 - 2 * t);
+  return t;
 }
 
 /** Same as `Clip::source_at` in dawg-core: source frame of frame `i` of the

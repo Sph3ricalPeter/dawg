@@ -7,7 +7,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::eq::{Eq, EqBand, MAX_BANDS};
-use crate::model::{Clip, EnvPoint, Project, Track, ENV_MAX};
+use crate::model::{Clip, EnvPoint, FadeCurve, Project, Track, ENV_MAX};
 use crate::stretch::{MAX_PITCH, MAX_STRETCH, MIN_STRETCH};
 
 /// Shortest clip a trim or split can leave, in frames.
@@ -36,11 +36,22 @@ pub enum Command {
         clip: u64,
         gain_db: f32,
     },
-    /// Fade lengths in frames; clamped so they fit inside the clip.
+    /// Fade lengths in frames; clamped so they fit inside the clip. Curves
+    /// left out stay as they are.
     SetClipFades {
         clip: u64,
         fade_in: u64,
         fade_out: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        curve_in: Option<FadeCurve>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        curve_out: Option<FadeCurve>,
+    },
+    /// Play a clip backwards (or forwards again). The clip keeps its place
+    /// and length; its envelope turns around with the audio.
+    ReverseClip {
+        clip: u64,
+        reversed: bool,
     },
     /// Replace a clip's volume envelope. Points are source frames and linear
     /// gains (0 to 1.25); they are sorted, and gains are clamped.
@@ -229,11 +240,27 @@ impl Command {
                 clip,
                 fade_in,
                 fade_out,
+                curve_in,
+                curve_out,
             } => {
                 let clip = clip_mut(p, *clip)?;
                 clip.fade_in = *fade_in;
                 clip.fade_out = *fade_out;
+                if let Some(c) = curve_in {
+                    clip.fade_in_curve = *c;
+                }
+                if let Some(c) = curve_out {
+                    clip.fade_out_curve = *c;
+                }
                 fit_fades(clip);
+            }
+            Command::ReverseClip { clip, reversed } => {
+                let rate = p.sample_rate;
+                let c = clip_mut(p, *clip)?;
+                if c.reversed != *reversed {
+                    c.reverse();
+                    c.retime(rate, None);
+                }
             }
             Command::SetEnvelope { clip, points } => {
                 let clip = clip_mut(p, *clip)?;
@@ -474,6 +501,8 @@ mod tests {
             clip: 2,
             fade_in: 400,
             fade_out: 400,
+            curve_in: None,
+            curve_out: None,
         }
         .apply(&project())
         .unwrap();
@@ -547,6 +576,8 @@ mod tests {
                     clip: 2,
                     fade_in: 100,
                     fade_out: 100,
+                    curve_in: None,
+                    curve_out: None,
                 },
                 Command::SplitClip { clip: 2, at: 400 },
             ],
@@ -678,6 +709,8 @@ mod tests {
             clip: 2,
             fade_in: 100,
             fade_out: 200,
+            curve_in: None,
+            curve_out: None,
         }
         .apply(&project())
         .unwrap();
@@ -766,5 +799,82 @@ mod tests {
         // Bypass stays when left out.
         assert!(set(1, None).apply(&q).unwrap().tracks[0].eq.bypass());
         assert!(set(MAX_BANDS + 1, None).apply(&p).is_err());
+    }
+
+    #[test]
+    fn reverse_plays_the_same_audio_backwards() {
+        // A ramp 0..1000, trimmed to frames 100..400 with a point at 150.
+        let ramp: Vec<f32> = (0..1000).map(|i| i as f32).collect();
+        let mut p = project();
+        let src = Arc::new(Source::new(1, ramp).with_id(3));
+        p.sources = vec![src.clone()];
+        {
+            let c = &mut p.tracks[0].clips[0];
+            c.source = src;
+            c.start = 50;
+            c.offset = 100;
+            c.len = 300;
+            c.envelope = vec![EnvPoint { at: 150, gain: 0.5 }].into();
+        }
+        let rev = Command::ReverseClip {
+            clip: 2,
+            reversed: true,
+        };
+        let q = rev.apply(&p).unwrap();
+        let c = clip(&q, 2);
+        assert!(c.reversed && c.retimed());
+        assert_eq!((c.start, c.offset, c.len), (50, 600, 300));
+        assert_eq!(c.envelope[0].at, 849);
+        // First frame plays what used to be the last, and so on.
+        assert_eq!(c.frame(0).0, 399.0);
+        assert_eq!(c.frame(299).0, 100.0);
+        // Same envelope gain on the same audio.
+        let before = clip(&p, 2);
+        assert_eq!(
+            before.envelope_at(before.source_at(50)),
+            c.envelope_at(c.source_at(249))
+        );
+        // Back again is where it started.
+        let r = Command::ReverseClip {
+            clip: 2,
+            reversed: false,
+        }
+        .apply(&q)
+        .unwrap();
+        let c = clip(&r, 2);
+        assert!(!c.reversed && c.audio.is_none());
+        assert_eq!((c.offset, c.len, c.envelope[0].at), (100, 300, 150));
+        // Asking for what it already is changes nothing.
+        let again = rev.apply(&q).unwrap();
+        assert_eq!(clip(&again, 2).offset, 600);
+    }
+
+    #[test]
+    fn fade_curves_shape_the_fades_and_stay_put() {
+        let fades = |curve_in, curve_out| Command::SetClipFades {
+            clip: 2,
+            fade_in: 100,
+            fade_out: 100,
+            curve_in,
+            curve_out,
+        };
+        let p = fades(Some(FadeCurve::Exp), Some(FadeCurve::S))
+            .apply(&project())
+            .unwrap();
+        let c = clip(&p, 2);
+        assert_eq!(c.fade_at(50), 0.25);
+        assert_eq!(c.fade_at(500), 1.0);
+        // Halfway through, an S curve is at half level, and eases near the ends.
+        assert_eq!(c.fade_at(949), 0.5);
+        assert!(c.fade_at(998) < 0.01 * 0.5);
+        // Lengths alone keep the curves.
+        let q = fades(None, None).apply(&p).unwrap();
+        let c = clip(&q, 2);
+        assert_eq!(
+            (c.fade_in_curve, c.fade_out_curve),
+            (FadeCurve::Exp, FadeCurve::S)
+        );
+        let json = serde_json::to_string(&fades(Some(FadeCurve::S), None)).unwrap();
+        assert!(json.contains(r#""curve_in":"s""#), "{json}");
     }
 }

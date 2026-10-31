@@ -23,7 +23,7 @@ pub mod wav;
 
 pub use command::{Command, CommandError};
 pub use eq::{BandKind, Eq, EqBand};
-pub use model::{Clip, EnvPoint, Project, Source, Track, ENV_MAX};
+pub use model::{Clip, EnvPoint, FadeCurve, Project, Source, Track, ENV_MAX};
 pub use render::{render, Renderer, OUT_CHANNELS};
 pub use session::Session;
 

@@ -57,6 +57,16 @@ impl Source {
         &self.samples
     }
 
+    /// The same audio back to front, under the same id.
+    pub fn reversed(&self) -> Source {
+        let ch = self.channels as usize;
+        let mut out = Vec::with_capacity(self.samples.len());
+        for f in self.samples.chunks_exact(ch).rev() {
+            out.extend_from_slice(f);
+        }
+        Source::new(self.channels, out).with_id(self.id)
+    }
+
     /// Left and right sample at `frame`; mono is copied to both sides.
     #[inline]
     pub(crate) fn frame(&self, frame: u64) -> (f32, f32) {
@@ -83,6 +93,31 @@ pub struct EnvPoint {
 /// Top of the envelope range: about +1.9 dB, so 0 dB sits at 80% height.
 pub const ENV_MAX: f32 = 1.25;
 
+/// Shape of a fade, from silence to full level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FadeCurve {
+    /// A straight line.
+    #[default]
+    Linear,
+    /// Slow near silence, quick near full level: `t²`.
+    Exp,
+    /// Eases in and out: smoothstep.
+    S,
+}
+
+impl FadeCurve {
+    /// Level at `t` (0 is silence, 1 full) along the fade.
+    #[inline]
+    pub fn shape(self, t: f64) -> f64 {
+        match self {
+            FadeCurve::Linear => t,
+            FadeCurve::Exp => t * t,
+            FadeCurve::S => t * t * (3.0 - 2.0 * t),
+        }
+    }
+}
+
 /// A window onto a source, placed on a track's timeline.
 #[derive(Debug, Clone)]
 pub struct Clip {
@@ -98,10 +133,16 @@ pub struct Clip {
     pub len: u64,
     /// Linear gain.
     pub gain: f32,
-    /// Linear fade from silence over the first `fade_in` frames.
+    /// Fade from silence over the first `fade_in` frames.
     pub fade_in: u64,
-    /// Linear fade to silence over the last `fade_out` frames.
+    /// Fade to silence over the last `fade_out` frames.
     pub fade_out: u64,
+    pub fade_in_curve: FadeCurve,
+    pub fade_out_curve: FadeCurve,
+    /// Plays the source backwards. `offset` and envelope points are then
+    /// frames of the reversed source, so trims and envelopes work as on any
+    /// other clip; [`Clip::audio`] holds the reversed audio.
+    pub reversed: bool,
     /// Volume envelope, sorted by `at`. Empty is flat at unity; between
     /// points the gain is a straight line, and it holds the first and last
     /// values outside them.
@@ -129,6 +170,9 @@ impl Clip {
             gain: 1.0,
             fade_in: 0,
             fade_out: 0,
+            fade_in_curve: FadeCurve::Linear,
+            fade_out_curve: FadeCurve::Linear,
+            reversed: false,
             envelope: Arc::new([]),
             stretch: 1.0,
             pitch: 0.0,
@@ -140,9 +184,9 @@ impl Clip {
         self.start + self.len
     }
 
-    /// Stretched or pitched.
+    /// Stretched, pitched or reversed: the clip plays [`Clip::audio`].
     pub fn retimed(&self) -> bool {
-        self.stretch != 1.0 || self.pitch != 0.0
+        self.stretch != 1.0 || self.pitch != 0.0 || self.reversed
     }
 
     /// Remakes [`Clip::audio`] for the current stretch and pitch, unless
@@ -156,18 +200,54 @@ impl Clip {
             Arc::ptr_eq(&c.source, &self.source)
                 && c.stretch == self.stretch
                 && c.pitch == self.pitch
+                && c.reversed == self.reversed
         }) {
             if let Some(audio) = &a.audio {
                 self.audio = Some(audio.clone());
                 return;
             }
         }
-        self.audio = Some(Arc::new(stretch::process(
-            &self.source,
-            rate,
-            self.stretch,
-            self.pitch,
-        )));
+        let reversed;
+        let src: &Source = if self.reversed {
+            reversed = self.source.reversed();
+            &reversed
+        } else {
+            &self.source
+        };
+        self.audio = Some(Arc::new(if self.stretch == 1.0 && self.pitch == 0.0 {
+            src.clone()
+        } else {
+            stretch::process(src, rate, self.stretch, self.pitch)
+        }));
+    }
+
+    /// Source frames the clip covers from `offset` on.
+    pub fn covered(&self) -> u64 {
+        let n = if self.stretch == 1.0 {
+            self.len
+        } else {
+            (self.len as f64 / self.stretch).ceil() as u64
+        };
+        n.min(self.source.frames().saturating_sub(self.offset))
+    }
+
+    /// Turns the clip around: the same stretch of audio, played the other
+    /// way, with its envelope mirrored onto it. Call [`Clip::retime`] after.
+    pub fn reverse(&mut self) {
+        let frames = self.source.frames();
+        self.offset = frames.saturating_sub(self.offset + self.covered());
+        let last = frames.saturating_sub(1);
+        let env: Vec<EnvPoint> = self
+            .envelope
+            .iter()
+            .rev()
+            .map(|p| EnvPoint {
+                at: last - p.at.min(last),
+                gain: p.gain,
+            })
+            .collect();
+        self.envelope = env.into();
+        self.reversed = !self.reversed;
     }
 
     /// Source position of frame `i` of the clip.
@@ -210,11 +290,13 @@ impl Clip {
     pub fn fade_at(&self, i: u64) -> f64 {
         let mut f = 1.0;
         if i < self.fade_in {
-            f *= i as f64 / self.fade_in as f64;
+            f *= self.fade_in_curve.shape(i as f64 / self.fade_in as f64);
         }
         let tail = self.len.saturating_sub(self.fade_out);
         if self.fade_out > 0 && i >= tail {
-            f *= self.len.saturating_sub(i + 1) as f64 / self.fade_out as f64;
+            f *= self
+                .fade_out_curve
+                .shape(self.len.saturating_sub(i + 1) as f64 / self.fade_out as f64);
         }
         f
     }
@@ -265,6 +347,9 @@ impl Clip {
             && self.gain == other.gain
             && self.fade_in == other.fade_in
             && self.fade_out == other.fade_out
+            && self.fade_in_curve == other.fade_in_curve
+            && self.fade_out_curve == other.fade_out_curve
+            && self.reversed == other.reversed
             && self.envelope == other.envelope
             && self.stretch == other.stretch
             && self.pitch == other.pitch

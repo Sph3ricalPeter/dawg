@@ -30,7 +30,14 @@ export interface ClipState {
   stretch: number;
   /** Semitones. */
   pitch: number;
+  fadeInCurve: FadeCurve;
+  fadeOutCurve: FadeCurve;
+  /** Plays backwards; `offset` and the envelope count from the source's end. */
+  reversed: boolean;
 }
+
+/** Mirrors `dawg_core::FadeCurve`. */
+export type FadeCurve = "linear" | "exp" | "s";
 
 /** Mirrors `dawg_core::eq::BandKind`. */
 export type BandKind = "bell" | "low_shelf" | "high_shelf" | "low_cut" | "high_cut" | "notch" | "band_pass";
@@ -141,7 +148,15 @@ export type Command =
   | { type: "trim_clip"; clip: number; start: number; offset: number; len: number }
   | { type: "move_clip"; clip: number; track: number; start: number }
   | { type: "set_clip_gain"; clip: number; gain_db: number }
-  | { type: "set_clip_fades"; clip: number; fade_in: number; fade_out: number }
+  | {
+      type: "set_clip_fades";
+      clip: number;
+      fade_in: number;
+      fade_out: number;
+      curve_in?: FadeCurve;
+      curve_out?: FadeCurve;
+    }
+  | { type: "reverse_clip"; clip: number; reversed: boolean }
   | { type: "set_envelope"; clip: number; points: EnvPoint[] }
   | { type: "stretch_clip"; clip: number; stretch: number; start?: number }
   | { type: "set_clip_pitch"; clip: number; semitones: number }
@@ -234,4 +249,6 @@ export const api = {
   saveAs: (path: string) => invoke<void>("save_as", { path }),
   lastReplace: () => invoke<Replaced | null>("last_replace"),
   restoreLastReplace: () => invoke<SessionState | null>("restore_last_replace"),
+  /** Shows the file in Explorer. */
+  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
 };

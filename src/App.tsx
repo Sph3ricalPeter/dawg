@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { Editor } from "@/components/Editor";
 import { EqPanel } from "@/components/EqPanel";
@@ -338,6 +339,7 @@ export function App() {
       </main>
       {session && <EqPanel />}
       <StatusBar hint={hint} />
+      <ClipPanel />
       <Dialogs />
       <Toast />
     </div>

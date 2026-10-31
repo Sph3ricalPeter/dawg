@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, type ClipState, type EnvPoint, type TrackState } from "@/lib/api";
+import { api, type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
-import { clamp, dbToGain, envelopeAt, fadeAt, fmtDb, fmtMs, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
+import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
 import { MIN_LEN, allClips, useSession, type View } from "@/stores/session-store";
 
@@ -33,20 +33,32 @@ interface Peaks {
   data: Float32Array;
 }
 
-/** Min/max peaks over source frames `from..to`, refetched when they change. */
-function usePeaks(source: number, from: number, to: number, buckets: number): Peaks | null {
+/** Min/max peaks over source frames `from..to`, refetched when they change.
+ * With `mirror` (the source's length), the frames count from its end: a
+ * reversed clip's view of it. */
+function usePeaks(source: number, from: number, to: number, buckets: number, mirror: number | null = null): Peaks | null {
   const [peaks, setPeaks] = useState<(Peaks & { key: string }) | null>(null);
   const fileRev = useSession((s) => s.fileRev);
-  const key = `${source}:${fileRev}`;
+  const key = `${source}:${fileRev}:${mirror ?? ""}`;
   const a = Math.max(0, Math.floor(from));
   const z = Math.max(a + 1, Math.ceil(to));
   const n = Math.max(1, Math.ceil(buckets));
   useEffect(() => {
     let live = true;
     const raf = requestAnimationFrame(() => {
-      void api
-        .peaks(source, a, z, n)
-        .then((data) => {
+      const fetch = mirror === null ? api.peaks(source, a, z, n) : api.peaks(source, Math.max(0, mirror - z), Math.max(0, mirror - a), n);
+      void fetch
+        .then((raw) => {
+          let data = raw;
+          if (mirror !== null) {
+            // Bucket order back to front; each (min, max) pair stays as is.
+            data = new Float32Array(raw.length);
+            const m = raw.length / 2;
+            for (let b = 0; b < m; b++) {
+              data[2 * b] = raw[2 * (m - 1 - b)];
+              data[2 * b + 1] = raw[2 * (m - 1 - b) + 1];
+            }
+          }
           if (live) setPeaks({ key, from: a, per: (z - a) / n, data });
         })
         .catch(() => undefined);
@@ -55,7 +67,7 @@ function usePeaks(source: number, from: number, to: number, buckets: number): Pe
       live = false;
       cancelAnimationFrame(raf);
     };
-  }, [key, source, a, z, n]);
+  }, [key, source, a, z, n, mirror]);
   return peaks && peaks.key === key ? peaks : null;
 }
 
@@ -165,20 +177,27 @@ function drawClip(
   x.fillStyle = "rgba(0,0,0,.28)";
   x.strokeStyle = "rgba(0,0,0,.4)";
   x.lineWidth = 1;
-  const fade = (edge: number, inner: number) => {
+  // The fade's level line from silence at `edge` to full at `inner`.
+  const fade = (edge: number, inner: number, curve: FadeCurve) => {
+    const n = Math.max(2, Math.min(64, Math.ceil(Math.abs(inner - edge) / 3)));
+    const line = () => {
+      x.moveTo(edge, h);
+      for (let k = 1; k <= n; k++) {
+        const t = k / n;
+        x.lineTo(edge + (inner - edge) * t, h - fadeShape(curve, t) * h);
+      }
+    };
     x.beginPath();
-    x.moveTo(edge, 0);
-    x.lineTo(inner, 0);
-    x.lineTo(edge, h);
+    line();
+    x.lineTo(edge, 0);
     x.closePath();
     x.fill();
     x.beginPath();
-    x.moveTo(edge, h);
-    x.lineTo(inner, 0);
+    line();
     x.stroke();
   };
-  if (clip.fadeIn > 0) fade(cx0, px(clip.start + clip.fadeIn));
-  if (clip.fadeOut > 0) fade(cx1, px(clip.start + clip.len - clip.fadeOut));
+  if (clip.fadeIn > 0) fade(cx0, px(clip.start + clip.fadeIn), clip.fadeInCurve);
+  if (clip.fadeOut > 0) fade(cx1, px(clip.start + clip.len - clip.fadeOut), clip.fadeOutCurve);
 
   // The envelope line.
   if (showEnv) {
@@ -207,7 +226,7 @@ function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; wid
   const x1 = clamp((shift + frames * k - view.start) / view.fpp, 0, width);
   const w = Math.ceil(x1 - x0);
   const f0 = view.start + x0 * view.fpp;
-  const peaks = usePeaks(clip.source, (f0 - shift) / k, (f0 - shift + w * view.fpp) / k, w);
+  const peaks = usePeaks(clip.source, (f0 - shift) / k, (f0 - shift + w * view.fpp) / k, w, clip.reversed ? frames : null);
   useEffect(() => {
     const c = ref.current;
     if (!c || w <= 0) return;
@@ -313,7 +332,8 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const f0 = view.start + left * view.fpp;
   const waveH = Math.max(8, height - TITLE_H - 5);
   const s0 = clip.offset + (f0 - clip.start) / clip.stretch;
-  const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w);
+  const srcFrames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? 0);
+  const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w, clip.reversed ? srcFrames : null);
 
   useEffect(() => {
     if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
@@ -558,10 +578,19 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         e.preventDefault();
         void store().deleteClips([clip.id]);
       }}
-      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click deletes · Ctrl+B duplicates"
+      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click deletes, right-click the title for clip settings · Ctrl+B duplicates"
     >
-      <div className="ct">
+      <div
+        className="ct"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          store().openClipPanel(clip.id, e.clientX, e.clientY);
+        }}
+        data-hint="Drag to move · right-click for clip settings: fades, envelope presets, reverse"
+      >
         <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
+          {clip.reversed && <span className="rev" title="Reversed">⇠ </span>}
           {stem(sourceName)}
         </span>
         {missing && (

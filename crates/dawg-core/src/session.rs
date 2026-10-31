@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::command::{fit_fades, gain_to_db, Command, CommandError};
 use crate::eq::{Eq, EqBand};
 use crate::file::{AudioFile, Codec, FileError};
-use crate::model::{Clip, EnvPoint, Project, Source, Track};
+use crate::model::{Clip, EnvPoint, FadeCurve, Project, Source, Track};
 use crate::mp3::{self, Tags};
 use crate::peaks::Peaks;
 use crate::project_file::{ProjectError, ProjectFile, EXTENSION};
@@ -180,6 +180,9 @@ pub struct ClipState {
     pub stretch: f64,
     /// Semitones.
     pub pitch: f32,
+    pub fade_in_curve: FadeCurve,
+    pub fade_out_curve: FadeCurve,
+    pub reversed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -288,7 +291,7 @@ fn with_source(p: &Project, source: &Arc<Source>) -> Project {
             fit_to_source(c);
             let like = done
                 .iter()
-                .find(|d| d.stretch == c.stretch && d.pitch == c.pitch);
+                .find(|d| d.stretch == c.stretch && d.pitch == c.pitch && d.reversed == c.reversed);
             c.retime(rate, like);
             if c.retimed() {
                 done.push(c.clone());
@@ -424,6 +427,9 @@ impl Session {
                     gain: c.gain,
                     fade_in: c.fade_in,
                     fade_out: c.fade_out,
+                    fade_in_curve: c.fade_in_curve,
+                    fade_out_curve: c.fade_out_curve,
+                    reversed: c.reversed,
                     envelope: envelope.into(),
                     stretch: if c.stretch.is_finite() {
                         c.stretch.clamp(MIN_STRETCH, MAX_STRETCH)
@@ -442,6 +448,7 @@ impl Session {
                     Arc::ptr_eq(&r.source, &clip.source)
                         && r.stretch == clip.stretch
                         && r.pitch == clip.pitch
+                        && r.reversed == clip.reversed
                 });
                 clip.retime(rate, like);
                 if clip.retimed() {
@@ -623,6 +630,9 @@ impl Session {
                             envelope: c.envelope.to_vec(),
                             stretch: c.stretch,
                             pitch: c.pitch,
+                            fade_in_curve: c.fade_in_curve,
+                            fade_out_curve: c.fade_out_curve,
+                            reversed: c.reversed,
                         })
                         .collect(),
                 })
@@ -1375,6 +1385,12 @@ mod tests {
                         clip: CLIP,
                         fade_in: 10,
                         fade_out: 20,
+                        curve_in: Some(FadeCurve::Exp),
+                        curve_out: Some(FadeCurve::S),
+                    },
+                    Command::ReverseClip {
+                        clip: CLIP,
+                        reversed: true,
                     },
                     Command::SetClipGain {
                         clip: CLIP,
@@ -1414,6 +1430,8 @@ mod tests {
         assert!(json.contains("\"stretch\": 1.5"), "{json}");
         assert!(json.contains("\"pitch\": -3.5"), "{json}");
         assert!(json.contains("\"kind\": \"bell\""), "{json}");
+        assert!(json.contains("\"reversed\": true"), "{json}");
+        assert!(json.contains("\"fadeOutCurve\": \"s\""), "{json}");
 
         let mut r = Session::open_project(&song).unwrap();
         let tracks = |s: &Session| serde_json::to_value(s.state().tracks).unwrap();

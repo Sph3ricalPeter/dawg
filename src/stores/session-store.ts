@@ -78,6 +78,10 @@ interface SessionStore {
   /** The track whose EQ is open under the playlist. */
   eqTrack: number | null;
   openEq: (track: number | null) => void;
+  /** The clip settings popover: which clip, at a window point. */
+  clipPanel: { clip: number; x: number; y: number } | null;
+  openClipPanel: (clip: number, x: number, y: number) => void;
+  closeClipPanel: () => void;
 
   /** Opens a WAV or MP3 as a scratch session, or a .dawg project. True
    * when it did. */
@@ -241,6 +245,13 @@ export const useSession = create<SessionStore>((set, get) => ({
   fileRev: 0,
   eqTrack: null,
   openEq: (track) => set({ eqTrack: track }),
+  clipPanel: null,
+  openClipPanel: (clip, x, y) => {
+    const sel = get().selected;
+    if (!sel.includes(clip)) set({ selected: [clip] });
+    set({ clipPanel: { clip, x, y } });
+  },
+  closeClipPanel: () => set({ clipPanel: null }),
 
   open: async (path) => {
     await get().stop();

@@ -112,6 +112,7 @@ pub fn run() {
             commands::save_as,
             commands::last_replace,
             commands::restore_last_replace,
+            commands::reveal_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running dawg");

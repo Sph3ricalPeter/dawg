@@ -16,7 +16,7 @@
 //!   without what it doesn't understand.
 //!
 //! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
-//! and `eqBypass`.
+//! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`.
 
 use std::fmt;
 use std::io;
@@ -25,10 +25,10 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::eq::EqBand;
-use crate::model::{EnvPoint, Project};
+use crate::model::{EnvPoint, FadeCurve, Project};
 
 /// The format this build writes, and the newest it reads.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "dawg";
 /// The `format` tag, so a stray JSON file isn't taken for a project.
@@ -110,8 +110,18 @@ pub struct ClipEntry {
     /// Semitones.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub pitch: f32,
+    #[serde(default, skip_serializing_if = "is_linear")]
+    pub fade_in_curve: FadeCurve,
+    #[serde(default, skip_serializing_if = "is_linear")]
+    pub fade_out_curve: FadeCurve,
+    /// Plays backwards; `offset` and the envelope count from the source's end.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub reversed: bool,
 }
 
+fn is_linear(v: &FadeCurve) -> bool {
+    *v == FadeCurve::Linear
+}
 fn is_false(v: &bool) -> bool {
     !*v
 }
@@ -226,6 +236,9 @@ impl ProjectFile {
                             envelope: c.envelope.to_vec(),
                             stretch: c.stretch,
                             pitch: c.pitch,
+                            fade_in_curve: c.fade_in_curve,
+                            fade_out_curve: c.fade_out_curve,
+                            reversed: c.reversed,
                         })
                         .collect(),
                 })
