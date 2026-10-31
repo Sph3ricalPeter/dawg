@@ -1068,6 +1068,63 @@ impl Session {
         }
     }
 
+    /// The sound of one track or one clip alone (or the whole mix), over
+    /// `range` or where it plays: interleaved stereo at the session's rate,
+    /// and the timeline frame it starts at. Track volume, pan and EQ apply;
+    /// solo and mute elsewhere don't matter.
+    pub fn render_part(
+        &self,
+        range: Option<(u64, u64)>,
+        track: Option<u64>,
+        clip: Option<u64>,
+    ) -> Result<(u64, Vec<f32>), CommandError> {
+        let mut p = (*self.project).clone();
+        if let Some(c) = clip {
+            let (t, _) = p
+                .clip(c)
+                .ok_or_else(|| CommandError(format!("no clip {c}")))?;
+            for (i, tr) in p.tracks.iter_mut().enumerate() {
+                tr.clips.retain(|x| x.id == c);
+                tr.muted = i != t;
+                tr.solo = false;
+            }
+        } else if let Some(t) = track {
+            if p.track(t).is_none() {
+                return Err(CommandError(format!("no track {t}")));
+            }
+            for tr in &mut p.tracks {
+                tr.muted = tr.id != t;
+                tr.solo = false;
+            }
+        }
+        let (a, b) = match range {
+            Some((a, b)) if b > a => (a, b),
+            Some(_) => return Err(CommandError("the range is empty".into())),
+            None => p
+                .audible_span()
+                .ok_or_else(|| CommandError("there's nothing to hear".into()))?,
+        };
+        if b - a > 3600 * p.sample_rate as u64 {
+            return Err(CommandError("that's over an hour; pick a range".into()));
+        }
+        Ok((a, render(Arc::new(p), a, (b - a) as usize)))
+    }
+
+    /// Measures the mix, a track or a clip; see [`Session::render_part`].
+    pub fn analyze(
+        &self,
+        range: Option<(u64, u64)>,
+        track: Option<u64>,
+        clip: Option<u64>,
+    ) -> Result<crate::analysis::Analysis, CommandError> {
+        let (_, samples) = self.render_part(range, track, clip)?;
+        Ok(crate::analysis::analyze(
+            &samples,
+            OUT_CHANNELS as u16,
+            self.project.sample_rate,
+        ))
+    }
+
     /// Loudest sample of the mixdown over `range` (or every clip heard), in
     /// dBFS; `None` when it is silent or there is nothing to mix.
     pub fn mix_peak(&self, range: Option<(u64, u64)>) -> Option<f32> {

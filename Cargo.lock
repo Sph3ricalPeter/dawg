@@ -768,6 +768,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dawg-cli"
+version = "0.0.1"
+dependencies = [
+ "dawg-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dawg-core"
 version = "0.0.1"
 dependencies = [

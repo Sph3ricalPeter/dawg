@@ -6,6 +6,7 @@
 //! playback and export sample-identical and lets the golden-render tests cover
 //! the real-time path.
 
+pub mod analysis;
 pub mod command;
 pub mod eq;
 pub mod file;

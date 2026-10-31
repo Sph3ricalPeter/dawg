@@ -102,6 +102,13 @@ jobs:
           else
             npm run build:dev
           fi
+      - name: Build dawg-cli (CLI and MCP server)
+        run: cargo build --release -p dawg-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dawg-cli
+          path: target/release/dawg-cli.exe
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: dawg-dev-installer

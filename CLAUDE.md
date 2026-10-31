@@ -10,7 +10,7 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 ## Layout
 
 - `crates/dawg-core`: headless project model and mixer. No UI, no device I/O.
-  The app, the future `dawg-cli` and the MCP server all drive it.
+  The app and `dawg-cli` (with its MCP server) both drive it.
   `wav` (format-preserving RIFF codec), `mp3` (Symphonia decode, LAME
   encode, gapless, tags kept), `file` (WAV or MP3 behind one type, and
   converting between them), `save` (safe replace and backups),
@@ -22,8 +22,15 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   as silence and can be relinked), `resample` (offline rate conversion for added files),
   `stretch` (offline clip time-stretch and pitch-shift: a phase vocoder cut
   at onsets; a clip keeps the result in `Clip::audio`), `eq` (the track EQ:
-  biquads the renderer runs before volume and pan), `player`
+  biquads the renderer runs before volume and pan), `analysis`
+  (peak, LUFS, onsets, centroid: what an agent "hears"), `player`
   (the audio callback minus the device, plus the EQ analyser's tap), `peaks`.
+- `crates/dawg-cli`: `dawg-cli` for scripts (info, analyze, render a
+  waveform PNG, trim/gain/normalize as dry runs until `--yes` or `--out`,
+  export) and `dawg-cli mcp`, the MCP server (`mcp.rs`, JSON-RPC on stdio):
+  open/import/apply commands as one "AI: ..." undo step, analyze,
+  render_image, export, save. Backups go to the app's own backups folder.
+  CI uploads `dawg-cli.exe` as an artifact; not in the installer yet.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output), `recent.rs` (recent projects), plugins,
   installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`
