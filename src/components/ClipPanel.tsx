@@ -255,7 +255,7 @@ export function ClipPanel() {
     <div className="clippanel" ref={ref} style={style} role="dialog" aria-label="Clip settings">
       <div className="isec">
         <h4>Clip</h4>
-        <div className="idn" style={{ ["--c" as string]: trackColor(Math.max(0, tIndex)) }}>
+        <div className="idn" style={{ ["--c" as string]: trackColor(Math.max(0, tIndex), items[0].track.color) }}>
           <span className="sw" />
           <span className="n">{src?.name ?? "Clip"}</span>
         </div>

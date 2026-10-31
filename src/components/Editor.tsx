@@ -5,7 +5,7 @@ import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime, MIN_GAIN_DB } from "@/lib/format";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
-import { rulerStep, trackColor, useWheel } from "@/lib/timeline";
+import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
@@ -208,7 +208,21 @@ interface MenuAt {
 }
 
 /** The track's right-click menu. */
-function TrackMenu({ at, track, onRename, onClose }: { at: MenuAt; track: TrackState; onRename: () => void; onClose: () => void }) {
+function TrackMenu({
+  at,
+  track,
+  index,
+  count,
+  onRename,
+  onClose,
+}: {
+  at: MenuAt;
+  track: TrackState;
+  index: number;
+  count: number;
+  onRename: () => void;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (e: MouseEvent | KeyboardEvent) => {
@@ -222,10 +236,11 @@ function TrackMenu({ at, track, onRename, onClose }: { at: MenuAt; track: TrackS
     };
   }, [onClose]);
   const store = useSession.getState;
-  const item = (label: string, keys: string, run: () => void) => (
+  const item = (label: string, keys: string, run: () => void, disabled = false) => (
     <button
       className="menu-item"
       role="menuitem"
+      disabled={disabled}
       onClick={() => {
         onClose();
         run();
@@ -241,6 +256,24 @@ function TrackMenu({ at, track, onRename, onClose }: { at: MenuAt; track: TrackS
         <b>{track.name || "Track"}</b>
       </div>
       {item("Rename…", "Dbl-click", onRename)}
+      <div className="menu-sep" />
+      <div className="swatches" role="group" aria-label="Track colour">
+        {COLORS.map((c, i) => (
+          <button
+            key={c}
+            className={`swatch${track.color === i ? " on" : ""}`}
+            style={{ background: c }}
+            title="Track colour"
+            onClick={() => {
+              onClose();
+              void store().apply({ type: "set_track_color", track: track.id, color: track.color === i ? null : i });
+            }}
+          />
+        ))}
+      </div>
+      <div className="menu-sep" />
+      {item("Move up", "Alt+↑", () => void store().apply({ type: "move_track", track: track.id, index: Math.max(0, index - 1) }), index === 0)}
+      {item("Move down", "Alt+↓", () => void store().apply({ type: "move_track", track: track.id, index: index + 1 }), index === count - 1)}
       <div className="menu-sep" />
       {item("Add track", "Ctrl+Shift+T", () => void store().addTrack())}
       {item("Delete track", "", () => {
@@ -309,7 +342,7 @@ function TrackHeader({
   return (
     <div
       className="th"
-      style={{ ["--c" as string]: trackColor(index) }}
+      style={{ ["--c" as string]: trackColor(index, track.color) }}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
@@ -465,7 +498,7 @@ function TrackHeader({
           </div>
         )}
       </div>
-      {menu && <TrackMenu at={menu} track={track} onRename={() => setRenaming(true)} onClose={() => setMenu(null)} />}
+      {menu && <TrackMenu at={menu} track={track} index={index} count={session.tracks.length} onRename={() => setRenaming(true)} onClose={() => setMenu(null)} />}
     </div>
   );
 }

@@ -126,6 +126,19 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bypass: Option<bool>,
     },
+    /// Move a track to position `index` (0 is the top; past the end is the
+    /// bottom).
+    MoveTrack {
+        track: u64,
+        index: usize,
+    },
+    /// A track's colour, as an index into the clip palette; `None` goes back
+    /// to colouring by position.
+    SetTrackColor {
+        track: u64,
+        #[serde(default)]
+        color: Option<u8>,
+    },
     /// Tempo of the bars-and-beats grid, 20 to 999 BPM.
     SetTempo {
         bpm: f64,
@@ -232,6 +245,8 @@ impl Command {
             Command::SetTrackEq { .. } => "EQ",
             Command::SetMasterGain { .. } => "Master volume",
             Command::SetTempo { .. } => "Tempo",
+            Command::MoveTrack { .. } => "Move track",
+            Command::SetTrackColor { .. } => "Track colour",
             Command::Batch { label: Some(l), .. } => return l.clone(),
             Command::Batch { commands, .. } => {
                 let Some(first) = commands.first() else {
@@ -490,6 +505,16 @@ impl Command {
                 let t = track_index(p, *track)?;
                 let tr = &mut p.tracks[t];
                 tr.eq = Eq::new(bands, bypass.unwrap_or(tr.eq.bypass()), rate);
+            }
+            Command::MoveTrack { track, index } => {
+                let from = track_index(p, *track)?;
+                let t = p.tracks.remove(from);
+                let to = (*index).min(p.tracks.len());
+                p.tracks.insert(to, t);
+            }
+            Command::SetTrackColor { track, color } => {
+                let i = track_index(p, *track)?;
+                p.tracks[i].color = *color;
             }
             Command::SetTempo { bpm } => {
                 if !bpm.is_finite() {
@@ -976,5 +1001,28 @@ mod tests {
             Command::SetMasterGain { gain_db: 0.0 }.label(),
             "Master volume"
         );
+    }
+
+    #[test]
+    fn tracks_move_and_take_colours() {
+        let p = project();
+        let q = Command::MoveTrack { track: 4, index: 0 }.apply(&p).unwrap();
+        assert_eq!(q.tracks.iter().map(|t| t.id).collect::<Vec<_>>(), [4, 1]);
+        let r = Command::MoveTrack {
+            track: 4,
+            index: 99,
+        }
+        .apply(&q)
+        .unwrap();
+        assert_eq!(r.tracks.iter().map(|t| t.id).collect::<Vec<_>>(), [1, 4]);
+        assert!(!r.same_edit(&q));
+        let c = Command::SetTrackColor {
+            track: 1,
+            color: Some(3),
+        }
+        .apply(&p)
+        .unwrap();
+        assert_eq!(c.tracks[0].color, Some(3));
+        assert!(Command::MoveTrack { track: 9, index: 0 }.apply(&p).is_err());
     }
 }

@@ -377,6 +377,8 @@ pub struct Track {
     pub solo: bool,
     /// Runs on the clips' sum, before volume and pan.
     pub eq: Eq,
+    /// Index into the UI's clip palette; `None` colours by position.
+    pub color: Option<u8>,
 }
 
 impl Default for Track {
@@ -390,6 +392,7 @@ impl Default for Track {
             muted: false,
             solo: false,
             eq: Eq::default(),
+            color: None,
         }
     }
 }
@@ -414,6 +417,7 @@ impl Track {
             && self.solo == b.solo
             && self.eq.bands() == b.eq.bands()
             && self.eq.bypass() == b.eq.bypass()
+            && self.color == b.color
             && self.clips.len() == b.clips.len()
             && self.clips.iter().zip(&b.clips).all(|(x, y)| x.same_edit(y))
     }

@@ -17,7 +17,7 @@
 //!
 //! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
 //! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`;
-//! 4 adds `masterGain`; 5 adds `bpm`.
+//! 4 adds `masterGain`; 5 adds `bpm` and track `color`.
 
 use std::fmt;
 use std::io;
@@ -92,6 +92,9 @@ pub struct TrackEntry {
     pub eq: Vec<EqBand>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub eq_bypass: bool,
+    /// Clip palette index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u8>,
 }
 
 /// A clip, in frames at the project's rate. See [`crate::Clip`].
@@ -242,6 +245,7 @@ impl ProjectFile {
                     solo: t.solo,
                     eq: t.eq.bands().to_vec(),
                     eq_bypass: t.eq.bypass(),
+                    color: t.color,
                     clips: t
                         .clips
                         .iter()

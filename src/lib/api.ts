@@ -58,6 +58,8 @@ export interface EqBand {
 /** Mirrors `dawg_core::session::TrackState`. */
 export interface TrackState {
   id: number;
+  /** Clip palette index; null colours by position. */
+  color: number | null;
   name: string;
   gainDb: number;
   pan: number;
@@ -203,6 +205,8 @@ export type Command =
   | { type: "set_track_eq"; track: number; bands: EqBand[]; bypass?: boolean }
   | { type: "set_master_gain"; gain_db: number }
   | { type: "set_tempo"; bpm: number }
+  | { type: "move_track"; track: number; index: number }
+  | { type: "set_track_color"; track: number; color: number | null }
   | { type: "batch"; commands: Command[]; label?: string };
 
 /** Errors from the Rust side carry a kind to branch on. */

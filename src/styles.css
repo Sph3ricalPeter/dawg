@@ -2015,3 +2015,22 @@ body.rsizing * {
 .ruler .tk.maj.sub .lb {
   color: var(--text-faint);
 }
+
+/* track colour swatches in the track menu */
+.swatches {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  padding: 0;
+}
+.swatch.on {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}

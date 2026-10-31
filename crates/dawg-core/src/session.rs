@@ -216,6 +216,8 @@ pub struct SessionState {
 #[serde(rename_all = "camelCase")]
 pub struct TrackState {
     pub id: u64,
+    /// Clip palette index; `None` colours by position.
+    pub color: Option<u8>,
     pub name: String,
     pub gain_db: f32,
     pub pan: f32,
@@ -536,6 +538,7 @@ impl Session {
                 muted: t.muted,
                 solo: t.solo,
                 eq: Eq::new(&t.eq, t.eq_bypass, rate),
+                color: t.color,
             });
         }
         for s in &file.sources {
@@ -692,6 +695,7 @@ impl Session {
                 .iter()
                 .map(|t| TrackState {
                     id: t.id,
+                    color: t.color,
                     name: t.name.clone(),
                     gain_db: gain_to_db(t.gain),
                     pan: t.pan,
@@ -1689,6 +1693,11 @@ mod tests {
                     },
                     Command::SetMasterGain { gain_db: -2.0 },
                     Command::SetTempo { bpm: 140.0 },
+                    Command::SetTrackColor {
+                        track: t,
+                        color: Some(5),
+                    },
+                    Command::MoveTrack { track: t, index: 0 },
                     Command::SetClipGain {
                         clip: CLIP,
                         gain_db: -1.5,

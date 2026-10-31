@@ -5,10 +5,11 @@ import { useSession } from "@/stores/session-store";
 export const ENV_MAX = 1.25;
 
 /** Clip colours from the mockup, one per track in turn. */
-const COLORS = ["#ee9f98", "#f5c55c", "#c3dd76", "#7dd6c4", "#9ec8ea", "#f0a8cf", "#b9c2cf", "#dcc89f"];
+export const COLORS = ["#ee9f98", "#f5c55c", "#c3dd76", "#7dd6c4", "#9ec8ea", "#f0a8cf", "#b9c2cf", "#dcc89f"];
 
-export function trackColor(index: number): string {
-  return COLORS[index % COLORS.length];
+/** A track's clip colour: the one picked for it, else by position. */
+export function trackColor(index: number, color: number | null = null): string {
+  return COLORS[(color ?? index) % COLORS.length];
 }
 
 /** Seconds between ruler labels, picked so labels sit at least ~70 px apart. */

@@ -150,6 +150,13 @@ function useShortcuts() {
       else if (ctrl && k === "e") void s.splitAtPlayhead();
       else if (ctrl && k === "a") s.selectAll();
       else if (ctrl && k === "h" && s.session) s.toggleHistory();
+      else if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && s.session) {
+        // Moves the track of the selected clip.
+        const tracks = s.session.tracks;
+        const i = tracks.findIndex((t) => t.clips.some((c) => s.selected.includes(c.id)));
+        const to = i + (e.key === "ArrowUp" ? -1 : 1);
+        if (i >= 0 && to >= 0 && to < tracks.length) void s.apply({ type: "move_track", track: tracks[i].id, index: to });
+      }
       else if (ctrl && k === "w") requestClose();
       else if (ctrl && (k === "0" || k === "f")) s.fit();
       else if (ctrl && (k === "=" || k === "+")) s.zoomAt(s.width / 2, 0.5);

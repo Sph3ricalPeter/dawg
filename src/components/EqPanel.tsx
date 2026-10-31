@@ -127,7 +127,7 @@ export function EqPanel() {
     return () => ro.disconnect();
   }, [hasTrack]);
 
-  const color = trackColor(Math.max(0, index));
+  const color = trackColor(Math.max(0, index), track?.color ?? null);
   const top = Math.min(MAX_FREQ, rate / 2);
   const ax = geometry(size.w, size.h, top, range);
   const { y, dbAt } = ax;
