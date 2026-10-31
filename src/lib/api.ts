@@ -268,6 +268,9 @@ export const api = {
   apply: (command: Command, transient: boolean) =>
     invoke<SessionState>("apply", { command, transient }),
   endGesture: () => invoke<SessionState>("end_gesture"),
+  /** What an agent's `get_selection` sees: clip ids and the ruler range. */
+  setSelection: (clips: number[], range: [number, number] | null) =>
+    invoke<void>("set_selection", { clips, range }),
   undo: () => invoke<SessionState>("undo"),
   redo: () => invoke<SessionState>("redo"),
   /** Undoes or redoes until `done` edits of the history are applied. */

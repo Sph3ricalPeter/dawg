@@ -21,6 +21,10 @@
   --text-faint: #6b6b6b;
   --accent: #e8e8e8;
   --accent-ink: #0b0b0b;
+  /* Reserved for AI: badges, the coproducer chip. */
+  --ai: #a68cf7;
+  --ai-ink: #140f26;
+  --ai-dim: rgba(166, 140, 247, 0.14);
   --ok: #3fd46a;
   --danger: #ff4d4d;
   --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -2033,4 +2037,66 @@ body.rsizing * {
 .swatch.on {
   outline: 2px solid var(--text);
   outline-offset: 1px;
+}
+
+/* AI: the badge on an agent's history rows. */
+.aib {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--ai-ink);
+  background: var(--ai);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* The coproducer chip in the status bar. */
+.aichip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  padding: 0 6px;
+  margin: 0 -6px 0 -2px;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aichip .d {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ai);
+  flex: none;
+}
+.aichip.off .d {
+  background: var(--text-faint);
+}
+.aichip:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
+.aichip.busy {
+  color: var(--ai);
+  background: var(--ai-dim);
+}
+.aichip.busy .d {
+  animation: ai-pulse 0.9s ease-in-out infinite;
+}
+@keyframes ai-pulse {
+  50% {
+    opacity: 0.25;
+  }
 }

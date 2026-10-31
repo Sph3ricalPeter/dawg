@@ -5,12 +5,10 @@
 //! Edits are dry runs unless `--yes` (write over the file, with a backup) or
 //! `--out` (a new file) says where they go.
 
-mod mcp;
-mod png;
-
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
+use dawg_cli::{backup_dir, frames, mcp, open, tools};
 use dawg_core::analysis::Analysis;
 use dawg_core::file::Codec;
 use dawg_core::session::{is_project, ExportOptions, Session};
@@ -130,40 +128,6 @@ fn run(raw: Vec<String>) -> Result<(), String> {
     }
 }
 
-/// Opens an audio file as a scratch session, or a `.dawg` project.
-pub fn open(path: &Path) -> Result<Session, String> {
-    if is_project(path) {
-        Session::open_project(path).map_err(|e| format!("{}: {e}", path.display()))
-    } else {
-        Session::open(path).map_err(|e| format!("{}: {e}", path.display()))
-    }
-}
-
-/// Where replaced files' backups go: the app's own folder, so the app's
-/// "restore" and its pruning see them too. `DAWG_BACKUPS` overrides it.
-pub fn backup_dir() -> PathBuf {
-    if let Some(d) = std::env::var_os("DAWG_BACKUPS") {
-        return PathBuf::from(d);
-    }
-    const ID: &str = "com.sph3ricalpeter.dawg";
-    let env = |k| std::env::var_os(k).map(PathBuf::from);
-    let base = if cfg!(windows) {
-        env("LOCALAPPDATA")
-    } else if cfg!(target_os = "macos") {
-        env("HOME").map(|h| h.join("Library/Application Support"))
-    } else {
-        env("XDG_DATA_HOME").or_else(|| env("HOME").map(|h| h.join(".local/share")))
-    };
-    base.unwrap_or_else(std::env::temp_dir)
-        .join(ID)
-        .join("backups")
-}
-
-/// Seconds to timeline frames.
-pub fn frames(seconds: f64, rate: u32) -> u64 {
-    (seconds.max(0.0) * rate as f64).round() as u64
-}
-
 fn range(a: &Args, s: &Session) -> Result<Option<(u64, u64)>, String> {
     let rate = s.state().rate;
     let from = a.num::<f64>("--from")?;
@@ -229,7 +193,7 @@ fn info(a: &Args) -> Result<(), String> {
     let st = s.state();
     let x = s.analyze(None, None, None).ok();
     if a.has("--json") {
-        let v = serde_json::json!({ "session": mcp::summary(&s), "analysis": x });
+        let v = serde_json::json!({ "session": tools::summary(&s), "analysis": x });
         println!("{}", json(&v));
         return Ok(());
     }
@@ -290,7 +254,7 @@ fn render(a: &Args) -> Result<(), String> {
     let out = PathBuf::from(a.arg(1, "the PNG to write")?);
     let s = open(&path)?;
     let width = a.num::<usize>("--width")?.unwrap_or(1200).clamp(64, 8000);
-    let bytes = mcp::picture(&s, range(a, &s)?, None, None, width)?;
+    let bytes = tools::picture(&s, range(a, &s)?, None, None, width)?;
     dawg_core::save::write_new(&out, &bytes).map_err(|e| format!("{}: {e}", out.display()))?;
     println!("wrote {}", out.display());
     Ok(())

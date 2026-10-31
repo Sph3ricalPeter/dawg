@@ -25,6 +25,7 @@ import {
   saveOrExport,
   saveProjectAs,
 } from "@/lib/actions";
+import { followAgent, useAgent } from "@/lib/agent";
 import { getAppInfo, type AppInfo } from "@/lib/app-info";
 import { fmtFormat } from "@/lib/format";
 import { useSession } from "@/stores/session-store";
@@ -89,12 +90,39 @@ function StatusBar({ hint }: { hint: string }) {
       <span className="hint">{busy ?? (hint || fallback)}</span>
       {session && (
         <span className="r">
+          <AiChip />
           <span>
             {session.simple ? `${fmtFormat(session.format, session.kbps)} (from file)` : `Mixdown at ${session.rate / 1000} kHz`}
           </span>
         </span>
       )}
     </footer>
+  );
+}
+
+/** The coproducer chip: whether an agent has reached this window over MCP,
+ * pulsing while it works. */
+function AiChip() {
+  const last = useAgent((s) => s.last);
+  const busy = useAgent((s) => s.busy);
+  const text = busy && last ? `AI working · ${last.tool.replace(/_/g, " ")}` : last ? "MCP · agent connected" : "MCP · no agent yet";
+  return (
+    <button
+      className={`aichip${busy ? " busy" : ""}${last ? "" : " off"}`}
+      data-hint="An AI agent works in this window through dawg-cli mcp: add it as an MCP server in Claude Code or Claude Desktop"
+      onClick={() =>
+        useSession
+          .getState()
+          .showToast(
+            last?.error
+              ? `The agent's last call (${last.tool}) failed: ${last.error}`
+              : "Add `dawg-cli mcp` as an MCP server in your agent (Claude Code: claude mcp add dawg -- dawg-cli mcp). Its edits land here as AI steps you can undo.",
+          )
+      }
+    >
+      <span className="d" />
+      <span>{text}</span>
+    </button>
   );
 }
 
@@ -321,6 +349,8 @@ export function App() {
     const unlisten = listen("open-requested", take);
     return () => void unlisten.then((f) => f());
   }, []);
+
+  useEffect(followAgent, []);
 
   useShortcuts();
   usePlayheadPolling();

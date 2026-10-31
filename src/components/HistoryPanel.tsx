@@ -40,7 +40,7 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
       </div>
       <div className="hist">
         {all.length === 0 && (
-          <div className="hempty">Every edit lands here as one step. Click a step to go back to it; Ctrl+Z and Ctrl+Y walk one step at a time.</div>
+          <div className="hempty">Every edit lands here as one step, yours and an agent's (with an AI badge). Click a step to go back to it; Ctrl+Z and Ctrl+Y walk one step at a time.</div>
         )}
         {all
           .map((e, i) => ({ e, i }))
@@ -52,10 +52,8 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
               onClick={() => jump(i + 1)}
               data-hint={i >= done ? "Undone · click to redo up to here" : "Click to go back to just after this edit"}
             >
-              <span className="ic">
-                <i />
-              </span>
-              <span className="lb">{e.label}</span>
+              <span className="ic">{e.label.startsWith("AI: ") ? <span className="aib">AI</span> : <i />}</span>
+              <span className="lb">{e.label.startsWith("AI: ") ? e.label.slice(4) : e.label}</span>
               <span className="tm">{clock(e.at)}</span>
             </button>
           ))}

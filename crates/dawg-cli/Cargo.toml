@@ -6,11 +6,15 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "dawg-cli"
 path = "src/main.rs"
 
 [dependencies]
 dawg-core = { path = "../dawg-core" }
+interprocess = "2.4.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

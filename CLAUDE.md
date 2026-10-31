@@ -29,8 +29,12 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   waveform PNG, trim/gain/normalize as dry runs until `--yes` or `--out`,
   export) and `dawg-cli mcp`, the MCP server (`mcp.rs`, JSON-RPC on stdio):
   open/import/apply commands as one "AI: ..." undo step, analyze,
-  render_image, export, save. Backups go to the app's own backups folder.
-  CI uploads `dawg-cli.exe` as an artifact; not in the installer yet.
+  render_image, export, save, get_selection. `pipe.rs`: when a dawg window
+  is open, `dawg-cli mcp` runs each tool there instead (a per-user local
+  pipe named after the app id, `src-tauri/src/agent.rs`), so edits land
+  live and the UI shows them (AI chip, `AI` history badge). `tools.rs` is
+  shared by both sides. Backups go to the app's own backups folder. CI
+  uploads `dawg-cli.exe` as an artifact; not in the installer yet.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output), `recent.rs` (recent projects), plugins,
   installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`

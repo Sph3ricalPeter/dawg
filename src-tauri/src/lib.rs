@@ -1,3 +1,4 @@
+mod agent;
 mod audio;
 mod autosave;
 mod commands;
@@ -82,6 +83,7 @@ pub fn run() {
             }
             commands::prune_backups(app.handle());
             commands::set_aside_autosave(app.handle());
+            agent::listen(app.handle());
             if let Some(window) = app.get_webview_window("main") {
                 if !is_release(app.handle()) {
                     window.set_title("dawg dev")?;
@@ -101,6 +103,7 @@ pub fn run() {
             commands::session_state,
             commands::apply,
             commands::end_gesture,
+            commands::set_selection,
             commands::undo,
             commands::redo,
             commands::jump_history,

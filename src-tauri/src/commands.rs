@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
+use dawg_cli::tools::{self, Ctx, Selection, Tools};
 use dawg_core::file::Codec;
 use dawg_core::save::{self, Replaced};
 use dawg_core::session::{
@@ -28,6 +29,8 @@ struct Inner {
     /// A file named on the command line ("Edit in dawg", Unity's external
     /// editor), or handed over by a second launch, until the UI takes it.
     pending_file: Option<PathBuf>,
+    /// The UI's selection, for an agent's `get_selection`.
+    selection: Selection,
 }
 
 impl AppState {
@@ -37,6 +40,7 @@ impl AppState {
                 session: None,
                 audio: Audio::default(),
                 pending_file: startup_file,
+                selection: Selection::default(),
             }),
         }
     }
@@ -44,6 +48,46 @@ impl AppState {
     /// Queues a file for the UI to open (see [`startup_file`]).
     pub fn request_open(&self, path: PathBuf) {
         self.lock().pending_file = Some(path);
+    }
+
+    /// An MCP tool call from `dawg-cli mcp`, on the window's session. Also
+    /// returns whether the session changed, and if so whether it was
+    /// replaced (opened or new) rather than edited.
+    pub fn agent_call(
+        &self,
+        tool: &str,
+        args: &serde_json::Value,
+        backups: &Path,
+    ) -> (
+        std::result::Result<Vec<serde_json::Value>, String>,
+        Option<bool>,
+    ) {
+        let mut s = self.lock();
+        let replaces = tools::REPLACES.contains(&tool);
+        if replaces && s.session.as_ref().is_some_and(Session::dirty) {
+            let msg =
+                "the dawg window has unsaved changes: ask the user to save or discard them first";
+            return (Err(msg.into()), None);
+        }
+        let selection = s.selection.clone();
+        let r = Tools {
+            slot: &mut s.session,
+            ctx: Ctx {
+                backups,
+                attached: true,
+                selection: Some(&selection),
+            },
+        }
+        .call(tool, args);
+        let changed = r.is_ok() && !tools::READS.contains(&tool);
+        if changed {
+            if replaces {
+                s.audio.stop();
+                s.selection = Selection::default();
+            }
+            s.publish();
+        }
+        (r, changed.then_some(replaces))
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -93,7 +137,7 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, Error> {
         .map_err(|e| Error::new("io", e.to_string()))
 }
 
-fn backup_dir(app: &AppHandle) -> Result<PathBuf, Error> {
+pub(crate) fn backup_dir(app: &AppHandle) -> Result<PathBuf, Error> {
     data_dir(app).map(|d| d.join("backups"))
 }
 
@@ -113,7 +157,7 @@ pub fn prune_backups(app: &AppHandle) {
 #[derive(Debug, Serialize)]
 pub struct Error {
     kind: &'static str,
-    message: String,
+    pub(crate) message: String,
 }
 
 impl Error {
@@ -221,6 +265,13 @@ pub fn apply(state: State<AppState>, command: Command, transient: bool) -> Resul
         .map_err(|e| Error::new("command", e.to_string()))?;
     s.publish();
     Ok(s.state().expect("session is open"))
+}
+
+/// The selected clips and ruler range, as an agent's `get_selection` sees
+/// them.
+#[tauri::command]
+pub fn set_selection(state: State<AppState>, clips: Vec<u64>, range: Option<(u64, u64)>) {
+    state.lock().selection = Selection { clips, range };
 }
 
 #[tauri::command]

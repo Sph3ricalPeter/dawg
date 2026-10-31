@@ -195,6 +195,8 @@ interface SessionStore {
   adopt: (s: SessionState | null) => void;
   /** The session's file was rewritten (Replace, Restore). */
   reloaded: (s: SessionState | null) => void;
+  /** A session opened elsewhere (by an agent): shown as if just opened. */
+  opened: (s: SessionState) => void;
 }
 
 /** Edits go to Rust one at a time and in order; a drag only sends its
@@ -716,6 +718,8 @@ export const useSession = create<SessionStore>((set, get) => ({
     // The loop follows the last clip's end.
     if (s && before && songEnd(s) !== songEnd(before)) void get().replay();
   },
+
+  opened: (s) => start(s),
 
   reloaded: (s) => {
     set({
