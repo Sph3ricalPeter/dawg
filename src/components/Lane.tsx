@@ -333,8 +333,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const f0 = view.start + left * view.fpp;
   const waveH = Math.max(8, height - TITLE_H - 5);
   const s0 = clip.offset + (f0 - clip.start) / clip.stretch;
-  const srcFrames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? 0);
-  const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w, clip.reversed ? srcFrames : null);
+  const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w, clip.reversed ? sourceFrames : null);
 
   useEffect(() => {
     if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
@@ -396,6 +395,25 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
       return;
     }
     const c0 = clip;
+    if (e.shiftKey && !ctrl) {
+      // Shift+drag slips the audio inside the clip: same place and length,
+      // other frames of the source (the envelope rides with the audio).
+      store().select(c0.id);
+      const maxOffset = Math.max(0, sourceFrames - Math.ceil(c0.len / c0.stretch));
+      startDrag(e, {
+        move: (dx) => {
+          const offset = Math.round(clamp(c0.offset - (dx * view.fpp) / c0.stretch, 0, maxOffset));
+          store().drag(
+            { type: "trim_clip", clip: c0.id, start: c0.start, offset, len: c0.len },
+            { kind: "clip", track: track.id, clip: { ...c0, offset }, ghost: true },
+          );
+        },
+        end: (moved) => {
+          if (moved) void store().commit();
+        },
+      });
+      return;
+    }
     if (ctrl) {
       // Ctrl+drag draws a marquee that adds to the selection; Ctrl+click
       // toggles this clip.
@@ -588,7 +606,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         e.preventDefault();
         void store().deleteClips([clip.id]);
       }}
-      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click deletes, right-click the title for clip settings · Ctrl+B duplicates"
+      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click deletes, right-click the title for clip settings · Shift+drag slips the audio inside the clip · Ctrl+B duplicates"
     >
       <div
         className="ct"
