@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, apiMessage, isApiError } from "./api";
+import { api, apiMessage, isApiError, type Codec, type ExportOptions } from "./api";
 import { dirOf, stem } from "./format";
 import { enqueue, useSession } from "@/stores/session-store";
 
@@ -240,11 +240,25 @@ function lastExportDir(): string | null {
   return remembered(EXPORT_DIR_KEY);
 }
 
+/** Export: a scratch file's own edit goes straight to the save dialog
+ * (Replace when saved over the original); a mixdown opens the Export dialog
+ * for its range and format first. */
 export async function exportDialog(): Promise<boolean> {
   const s = useSession.getState();
   if (!s.session || !isTauri()) return false;
   await s.stop();
-  const filters = s.session.codec === "mp3" ? [MP3, WAV] : [WAV, MP3];
+  if (s.session.simple) return exportTo(null, null);
+  useSession.setState({ exportOpen: true });
+  return false;
+}
+
+/** The save dialog, then the export with `options` as `codec` (null: the
+ * session's own). */
+export async function exportTo(options: ExportOptions | null, codec: Codec | null): Promise<boolean> {
+  const s = useSession.getState();
+  if (!s.session || !isTauri()) return false;
+  const want = codec ?? s.session.codec;
+  const filters = want === "mp3" ? [MP3, WAV] : [WAV, MP3];
   // After an export from this file, the next one starts where that went.
   // Before that, just the original file's clip saves over it (the "Edit in
   // dawg" round trip); a mix starts as a new file in the last export folder,
@@ -253,11 +267,11 @@ export async function exportDialog(): Promise<boolean> {
   // folder), named after it.
   const original = s.session.path;
   const from = original ?? s.session.project ?? "";
-  const ext = s.session.codec === "mp3" ? "mp3" : "wav";
+  const ext = want === "mp3" ? "mp3" : "wav";
   const mixDir = (s.session.project && dirOf(s.session.project)) || lastExportDir() || (original ? dirOf(original) : "");
   const defaultPath =
     lastExport && lastExport.from === from
-      ? lastExport.to
+      ? lastExport.to.replace(/\.(wave?|mp3)$/i, `.${ext}`)
       : s.session.simple && original
         ? original
         : `${mixDir}${stem(s.session.name)}${s.session.scratch ? " mix" : ""}.${ext}`;
@@ -267,7 +281,7 @@ export async function exportDialog(): Promise<boolean> {
   remember(EXPORT_DIR_KEY, dirOf(path));
   useSession.setState({ busy: "Saving…" });
   try {
-    await api.saveAs(path);
+    await api.saveAs(path, options);
     s.showToast(`Exported ${path.split(/[\\/]/).pop()}`);
     return true;
   } catch (e) {

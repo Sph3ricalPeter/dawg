@@ -7,7 +7,9 @@ use std::sync::{Mutex, MutexGuard};
 
 use dawg_core::file::Codec;
 use dawg_core::save::{self, Replaced};
-use dawg_core::session::{self, Imported, Placement, SavePreview, Session, SessionState};
+use dawg_core::session::{
+    self, ExportOptions, Imported, Placement, SavePreview, Session, SessionState,
+};
 use dawg_core::Command;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -376,7 +378,13 @@ pub fn replace_original(app: AppHandle, state: State<AppState>) -> Result<Replac
 /// session's own format when it has neither). Overwriting an existing one
 /// (the save dialog has already asked) keeps a backup like Replace does.
 #[tauri::command]
-pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<()> {
+pub fn save_as(
+    app: AppHandle,
+    state: State<AppState>,
+    path: PathBuf,
+    options: Option<ExportOptions>,
+) -> Result<()> {
+    let opts = options.unwrap_or_default();
     let mut s = state.lock();
     let session = s.session()?;
     if session::is_project(&path) {
@@ -385,7 +393,7 @@ pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<
             "that's a project file; export to a .wav or .mp3",
         ));
     }
-    if session.path().is_some_and(|p| same_file(&path, p)) {
+    if opts.is_default() && session.path().is_some_and(|p| same_file(&path, p)) {
         return Err(Error::new(
             "same_file",
             "that is the file being edited; use Replace original",
@@ -394,13 +402,21 @@ pub fn save_as(app: AppHandle, state: State<AppState>, path: PathBuf) -> Result<
     let codec = Codec::for_path(&path).unwrap_or(session.codec());
     let to_err = |e: dawg_core::session::SessionSaveError| Error::new(e.kind(), e.to_string());
     if path.exists() {
-        let bytes = session.render_file(codec).map_err(to_err)?;
+        let bytes = session.render_with(codec, &opts).map_err(to_err)?;
         save::replace(&path, &bytes, &backup_dir(&app)?, None)
             .map_err(|e| Error::new(e.kind(), e.to_string()))?;
         Ok(())
     } else {
-        session.save_as_new(&path, codec).map_err(to_err)
+        session.export_new(&path, codec, &opts).map_err(to_err)
     }
+}
+
+/// Loudest peak of the mixdown over `range` (or every clip heard), in dBFS;
+/// `None` when silent.
+#[tauri::command]
+pub fn mix_peak(state: State<AppState>, range: Option<(u64, u64)>) -> Result<Option<f32>> {
+    let mut s = state.lock();
+    Ok(s.session()?.mix_peak(range))
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {

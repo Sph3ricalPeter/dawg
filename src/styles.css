@@ -1924,3 +1924,21 @@ body.rsizing * {
 .master .mpk.over {
   color: var(--danger);
 }
+
+/* export dialog */
+.dlg.export .bd {
+  gap: 10px;
+  padding-top: 12px;
+}
+.dlg.export .row {
+  flex-wrap: wrap;
+}
+.seg button:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.btn.small {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+}

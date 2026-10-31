@@ -111,6 +111,8 @@ interface SessionStore {
   /** Undoes or redoes until `done` edits of the history are applied. */
   jumpHistory: (done: number) => Promise<void>;
   historyOpen: boolean;
+  /** The Export dialog for a mixdown. */
+  exportOpen: boolean;
   toggleHistory: (open?: boolean) => void;
   select: (clip: number | null, toggle?: boolean) => void;
   selectAll: () => void;
@@ -411,6 +413,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
 
   historyOpen: false,
+  exportOpen: false,
   toggleHistory: (open) => set((s) => ({ historyOpen: open ?? !s.historyOpen })),
 
   select: (clip, toggle = false) => {

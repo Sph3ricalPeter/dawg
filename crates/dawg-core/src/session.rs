@@ -111,6 +111,32 @@ pub struct Session {
     in_gesture: bool,
 }
 
+/// Choices in the Export dialog. Every field left out keeps what a plain
+/// export does.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportOptions {
+    /// Timeline frames to mix, start and end; by default from the first
+    /// clip heard to the end of the last.
+    #[serde(default)]
+    pub range: Option<(u64, u64)>,
+    /// WAV depth: 16, 24 or 32 (float).
+    #[serde(default)]
+    pub bits: Option<u16>,
+    /// Sample rate of the file, converted from the session's.
+    #[serde(default)]
+    pub rate: Option<u32>,
+    /// MP3 bitrate.
+    #[serde(default)]
+    pub kbps: Option<u32>,
+}
+
+impl ExportOptions {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// One entry of the undo or redo list.
 #[derive(Clone)]
 struct Step {
@@ -896,11 +922,16 @@ impl Session {
         })
     }
 
-    /// The mixdown, interleaved, from the first clip to the last: stereo, or
-    /// mono when everything heard is mono and centred.
-    fn mixdown(&self) -> Result<(u16, Vec<f32>), SessionSaveError> {
+    /// The mixdown, interleaved, over `range` (timeline frames) or from the
+    /// first clip heard to the end of the last: stereo, or mono when
+    /// everything heard is mono and centred.
+    fn mixdown(&self, range: Option<(u64, u64)>) -> Result<(u16, Vec<f32>), SessionSaveError> {
         let p = &self.project;
-        let (start, end) = p.audible_span().ok_or(SessionSaveError::Nothing)?;
+        let (start, end) = match range {
+            Some((a, b)) if b > a => (a, b),
+            Some(_) => return Err(SessionSaveError::Nothing),
+            None => p.audible_span().ok_or(SessionSaveError::Nothing)?,
+        };
         let stereo = render(self.project.clone(), start, (end - start) as usize);
         let mono = p
             .tracks
@@ -916,22 +947,74 @@ impl Session {
 
     /// The file the current edit would save, as `codec`.
     pub fn render_file(&self, codec: Codec) -> Result<Vec<u8>, SessionSaveError> {
-        if let (Some(clip), Some(o)) = (self.simple_clip(), &self.origin) {
-            return Ok(o.file.render(clip, codec)?);
+        self.render_with(codec, &ExportOptions::default())
+    }
+
+    /// The file an export with `opts` would write, as `codec`. With no
+    /// options, a scratch file's own clip saves in its own format, untouched
+    /// bytes and all; anything else is a mixdown.
+    pub fn render_with(
+        &self,
+        codec: Codec,
+        opts: &ExportOptions,
+    ) -> Result<Vec<u8>, SessionSaveError> {
+        if opts.is_default() {
+            if let (Some(clip), Some(o)) = (self.simple_clip(), &self.origin) {
+                return Ok(o.file.render(clip, codec)?);
+            }
         }
         let original = self.origin.as_ref().map(|o| &*o.file);
-        let (channels, samples) = self.mixdown()?;
-        let rate = self.project.sample_rate;
+        let (channels, mut samples) = self.mixdown(opts.range)?;
+        let mut rate = self.project.sample_rate;
+        if let Some(to) = opts.rate.filter(|&r| r != rate) {
+            if !(8_000..=192_000).contains(&to) {
+                return Err(SessionSaveError::Options(format!(
+                    "can't export at {to} Hz"
+                )));
+            }
+            let src = resample(&Source::new(channels, samples), rate, to);
+            samples = src.samples().to_vec();
+            rate = to;
+        }
         match codec {
             Codec::Wav => {
-                // The original's sample format when it is a WAV, else 24-bit.
-                let like = original.and_then(|f| f.wav_format()).unwrap_or(WavFormat {
-                    channels,
-                    sample_rate: rate,
-                    bits: 24,
-                    container_bytes: 3,
-                    float: false,
-                });
+                // The chosen depth; else the original's sample format when
+                // it is a WAV, else 24-bit.
+                let like = match opts.bits {
+                    Some(16) => WavFormat {
+                        channels,
+                        sample_rate: rate,
+                        bits: 16,
+                        container_bytes: 2,
+                        float: false,
+                    },
+                    Some(24) => WavFormat {
+                        channels,
+                        sample_rate: rate,
+                        bits: 24,
+                        container_bytes: 3,
+                        float: false,
+                    },
+                    Some(32) => WavFormat {
+                        channels,
+                        sample_rate: rate,
+                        bits: 32,
+                        container_bytes: 4,
+                        float: true,
+                    },
+                    Some(b) => {
+                        return Err(SessionSaveError::Options(format!(
+                            "{b}-bit WAV isn't offered; pick 16, 24 or 32 (float)"
+                        )))
+                    }
+                    None => original.and_then(|f| f.wav_format()).unwrap_or(WavFormat {
+                        channels,
+                        sample_rate: rate,
+                        bits: 24,
+                        container_bytes: 3,
+                        float: false,
+                    }),
+                };
                 let format = WavFormat {
                     channels,
                     sample_rate: rate,
@@ -945,11 +1028,20 @@ impl Session {
                     Some(AudioFile::Mp3(f)) => (f.kbps(), f.tags()),
                     _ => (mp3::DEFAULT_KBPS, Tags::default()),
                 };
+                let kbps = opts.kbps.unwrap_or(kbps);
                 let source = Source::new(channels, samples);
                 let clip = Clip::new(Arc::new(source.clone()), 0);
                 Ok(mp3::encode_clip(&source, &clip, rate, kbps, tags).map_err(FileError::from)?)
             }
         }
+    }
+
+    /// Loudest sample of the mixdown over `range` (or every clip heard), in
+    /// dBFS; `None` when it is silent or there is nothing to mix.
+    pub fn mix_peak(&self, range: Option<(u64, u64)>) -> Option<f32> {
+        let (_, samples) = self.mixdown(range).ok()?;
+        let peak = samples.iter().fold(0f32, |m, x| m.max(x.abs()));
+        (peak > 0.0).then(|| 20.0 * peak.log10())
     }
 
     pub fn preview(&self) -> SavePreview {
@@ -964,7 +1056,7 @@ impl Session {
             }
         };
         let Some(c) = self.simple_clip() else {
-            let (channels, samples) = self.mixdown().unwrap_or((2, Vec::new()));
+            let (channels, samples) = self.mixdown(None).unwrap_or((2, Vec::new()));
             let peak = samples.iter().fold(0f64, |m, x| m.max(x.abs() as f64));
             return SavePreview {
                 frames_before,
@@ -1024,7 +1116,17 @@ impl Session {
     /// Writes the edit to a new file as `codec`. The session stays on the
     /// original.
     pub fn save_as_new(&self, path: &Path, codec: Codec) -> Result<(), SessionSaveError> {
-        let bytes = self.render_file(codec)?;
+        self.export_new(path, codec, &ExportOptions::default())
+    }
+
+    /// Writes a new file with `opts`; see [`Session::render_with`].
+    pub fn export_new(
+        &self,
+        path: &Path,
+        codec: Codec,
+        opts: &ExportOptions,
+    ) -> Result<(), SessionSaveError> {
+        let bytes = self.render_with(codec, opts)?;
         save::write_new(path, &bytes)?;
         Ok(())
     }
@@ -1049,6 +1151,8 @@ pub enum SessionSaveError {
     Nothing,
     /// A project has no original file to replace.
     NoOriginal,
+    /// Export options that can't be met.
+    Options(String),
 }
 
 impl SessionSaveError {
@@ -1058,6 +1162,7 @@ impl SessionSaveError {
             SessionSaveError::Save(e) => e.kind(),
             SessionSaveError::Nothing => "nothing",
             SessionSaveError::NoOriginal => "no_original",
+            SessionSaveError::Options(_) => "options",
         }
     }
 }
@@ -1070,6 +1175,7 @@ impl fmt::Display for SessionSaveError {
             SessionSaveError::Nothing => {
                 write!(f, "there's nothing to hear: every clip is gone or muted")
             }
+            SessionSaveError::Options(m) => write!(f, "{m}"),
             SessionSaveError::NoOriginal => {
                 write!(
                     f,
@@ -1194,6 +1300,52 @@ mod tests {
         assert!(!s.jump(4));
         assert!(s.jump(0));
         assert!(!s.dirty());
+    }
+
+    #[test]
+    fn export_options_pick_range_depth_and_rate() {
+        // 1000 frames at 44.1 kHz, 24-bit stereo.
+        let s = session(1000);
+        let opts = ExportOptions {
+            range: Some((100, 600)),
+            bits: Some(16),
+            rate: Some(22_050),
+            kbps: None,
+        };
+        let f = AudioFile::parse(s.render_with(Codec::Wav, &opts).unwrap()).unwrap();
+        let w = f.wav_format().unwrap();
+        assert_eq!(
+            (w.bits, w.float, w.sample_rate, w.channels),
+            (16, false, 22_050, 2)
+        );
+        assert_eq!(f.frames(), 250);
+        let float = ExportOptions {
+            bits: Some(32),
+            ..Default::default()
+        };
+        let f = AudioFile::parse(s.render_with(Codec::Wav, &float).unwrap()).unwrap();
+        assert!(f.wav_format().unwrap().float);
+        assert_eq!(f.frames(), 1000);
+        // Plain options save the original's bytes as before.
+        assert_eq!(
+            s.render_with(Codec::Wav, &ExportOptions::default())
+                .unwrap(),
+            s.render_file(Codec::Wav).unwrap()
+        );
+        assert!(matches!(
+            s.render_with(
+                Codec::Wav,
+                &ExportOptions {
+                    bits: Some(20),
+                    ..Default::default()
+                }
+            ),
+            Err(SessionSaveError::Options(_))
+        ));
+        // The test signal peaks at 0.5.
+        let peak = s.mix_peak(None).unwrap();
+        assert!((peak + 6.02).abs() < 0.05, "{peak}");
+        assert_eq!(s.mix_peak(Some((5, 5))), None);
     }
 
     #[test]

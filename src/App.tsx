@@ -7,6 +7,7 @@ import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { Editor } from "@/components/Editor";
 import { EqPanel } from "@/components/EqPanel";
+import { ExportDialog } from "@/components/ExportDialog";
 import { TitleBar } from "@/components/TitleBar";
 import { api, type RecentProject } from "@/lib/api";
 import {
@@ -131,7 +132,7 @@ function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useSession.getState();
-      if (s.dialog || isTyping(e)) return;
+      if (s.dialog || s.exportOpen || isTyping(e)) return;
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
       let handled = true;
@@ -342,6 +343,7 @@ export function App() {
       <StatusBar hint={hint} />
       <ClipPanel />
       <Dialogs />
+      <ExportDialog />
       <Toast />
     </div>
   );

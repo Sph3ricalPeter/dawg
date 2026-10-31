@@ -124,6 +124,16 @@ export interface SessionState {
   truncated: boolean;
 }
 
+/** Mirrors `dawg_core::session::ExportOptions`; null keeps the default. */
+export interface ExportOptions {
+  /** Timeline frames to mix; default first clip heard to the last's end. */
+  range: [number, number] | null;
+  /** WAV depth: 16, 24 or 32 (float). */
+  bits: number | null;
+  rate: number | null;
+  kbps: number | null;
+}
+
 /** Mirrors `dawg_core::session::HistoryEntry`. */
 export interface HistoryEntry {
   label: string;
@@ -263,7 +273,9 @@ export const api = {
   savePreview: () => invoke<SavePreview>("save_preview"),
   replaceOriginal: () =>
     invoke<{ state: SessionState; backup: string }>("replace_original"),
-  saveAs: (path: string) => invoke<void>("save_as", { path }),
+  saveAs: (path: string, options: ExportOptions | null = null) => invoke<void>("save_as", { path, options }),
+  /** Loudest peak of the mixdown over `range` (or every clip heard), dBFS. */
+  mixPeak: (range: [number, number] | null) => invoke<number | null>("mix_peak", { range }),
   lastReplace: () => invoke<Replaced | null>("last_replace"),
   restoreLastReplace: () => invoke<SessionState | null>("restore_last_replace"),
   /** Shows the file in Explorer. */

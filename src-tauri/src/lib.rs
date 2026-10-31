@@ -111,6 +111,7 @@ pub fn run() {
             commands::save_preview,
             commands::replace_original,
             commands::save_as,
+            commands::mix_peak,
             commands::last_replace,
             commands::restore_last_replace,
             commands::reveal_path,
