@@ -114,8 +114,19 @@ export interface SessionState {
   dirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Edits that can be undone, oldest first. */
+  history: HistoryEntry[];
+  /** Undone edits that can be redone, the next one first. */
+  future: HistoryEntry[];
   extraChunks: string[];
   truncated: boolean;
+}
+
+/** Mirrors `dawg_core::session::HistoryEntry`. */
+export interface HistoryEntry {
+  label: string;
+  /** ms since the Unix epoch. */
+  at: number;
 }
 
 /** Mirrors `dawg_core::session::Placement`. */
@@ -176,7 +187,7 @@ export type Command =
       solo?: boolean;
     }
   | { type: "set_track_eq"; track: number; bands: EqBand[]; bypass?: boolean }
-  | { type: "batch"; commands: Command[] };
+  | { type: "batch"; commands: Command[]; label?: string };
 
 /** Errors from the Rust side carry a kind to branch on. */
 export interface ApiError {
@@ -231,6 +242,8 @@ export const api = {
   endGesture: () => invoke<SessionState>("end_gesture"),
   undo: () => invoke<SessionState>("undo"),
   redo: () => invoke<SessionState>("redo"),
+  /** Undoes or redoes until `done` edits of the history are applied. */
+  jumpHistory: (done: number) => invoke<SessionState>("jump_history", { done }),
   importFiles: (paths: string[], at: Placement) =>
     invoke<{ state: SessionState; imported: Imported }>("import_files", { paths, at }),
   /** `buckets` (min, max) pairs over frames `from..to` of a source. */

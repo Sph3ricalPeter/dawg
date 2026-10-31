@@ -106,6 +106,10 @@ interface SessionStore {
   apply: (cmd: Command) => Promise<boolean>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
+  /** Undoes or redoes until `done` edits of the history are applied. */
+  jumpHistory: (done: number) => Promise<void>;
+  historyOpen: boolean;
+  toggleHistory: (open?: boolean) => void;
   select: (clip: number | null, toggle?: boolean) => void;
   selectAll: () => void;
   setSelected: (ids: number[]) => void;
@@ -393,6 +397,13 @@ export const useSession = create<SessionStore>((set, get) => ({
     get().adopt(await enqueue(() => api.redo()));
   },
 
+  jumpHistory: async (done) => {
+    get().adopt(await enqueue(() => api.jumpHistory(done)));
+  },
+
+  historyOpen: false,
+  toggleHistory: (open) => set((s) => ({ historyOpen: open ?? !s.historyOpen })),
+
   select: (clip, toggle = false) => {
     if (clip === null) {
       if (!toggle) set({ selected: [] });
@@ -544,7 +555,7 @@ export const useSession = create<SessionStore>((set, get) => ({
       get().showToast("The range doesn't overlap any clip");
       return;
     }
-    if (await get().apply({ type: "batch", commands })) set({ range: null, playhead: a, startPoint: a });
+    if (await get().apply({ type: "batch", commands, label: "Crop to range" })) set({ range: null, playhead: a, startPoint: a });
   },
 
   toggleEnvEdit: () => {

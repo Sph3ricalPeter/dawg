@@ -5,6 +5,7 @@ import { exportDialog, requestClose } from "@/lib/actions";
 import { fmtTime } from "@/lib/format";
 import { useSession } from "@/stores/session-store";
 import { AppMenu } from "./AppMenu";
+import { HistoryPanel } from "./HistoryPanel";
 import { UpdateIndicator } from "./UpdateIndicator";
 
 function windowAction(action: "minimize" | "toggleMaximize") {
@@ -47,6 +48,7 @@ function Transport() {
   const hasRange = useSession((s) => !!s.range);
   const canUndo = useSession((s) => !!s.session?.canUndo);
   const canRedo = useSession((s) => !!s.session?.canRedo);
+  const historyOpen = useSession((s) => s.historyOpen);
   const rate = session?.rate ?? 48_000;
   const store = useSession.getState;
   return (
@@ -91,7 +93,20 @@ function Transport() {
           <span className="big">{fmtTime(playhead / rate)}</span>
         </div>
       </div>
-      <div className="tg">
+      <div className="tg histwrap">
+        <button
+          className={`tb hb${historyOpen ? " on" : ""}`}
+          id="tHist"
+          title="History (Ctrl+H)"
+          disabled={!session}
+          onClick={() => store().toggleHistory()}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+            <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.6h2.6M8 5v3.2l2.2 1.4" />
+          </svg>
+          <span className="car">▾</span>
+        </button>
+        {historyOpen && session && <HistoryPanel onClose={() => store().toggleHistory(false)} />}
         <button className="tb" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={() => void store().undo()}>
           <svg viewBox="0 0 16 16">
             <path d="M6 3 1.5 7 6 11V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z" />

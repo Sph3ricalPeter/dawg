@@ -1753,3 +1753,115 @@ body.rsizing * {
 .clip .ct .rev {
   font-weight: 700;
 }
+
+/* history popover */
+.histwrap {
+  position: relative;
+}
+.tb.hb {
+  width: auto;
+  padding: 0 4px;
+  gap: 1px;
+}
+.tb.hb .car {
+  font-size: 8px;
+  color: var(--text-faint);
+}
+.histpop {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  z-index: 40;
+  width: 310px;
+  max-height: 440px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  text-align: left;
+}
+.histpop .phead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.histpop .phead .faint {
+  margin-left: auto;
+  text-transform: none;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.hist {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 3px 0;
+}
+.he {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px 5px 12px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.he:hover,
+.he.cur {
+  background: var(--bg-4);
+}
+.he.cur {
+  border-left-color: var(--text-dim);
+}
+.he.undone {
+  opacity: 0.42;
+}
+.he .ic {
+  width: 22px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+}
+.he .ic i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.he .lb {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.he .tm {
+  flex: none;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.hempty {
+  padding: 14px 12px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.tb.hb svg {
+  fill: none;
+  width: 13px;
+  height: 13px;
+}

@@ -103,10 +103,36 @@ pub struct Session {
     project: Arc<Project>,
     /// The state that matches the file on disk.
     saved: Arc<Project>,
-    undo: Vec<Arc<Project>>,
-    redo: Vec<Arc<Project>>,
+    /// The state before each edit, oldest first, named after that edit.
+    undo: Vec<Step>,
+    /// Undone edits, the next to redo last; each holds the state after it.
+    redo: Vec<Step>,
     /// A drag is under way; its first transient command took the undo step.
     in_gesture: bool,
+}
+
+/// One entry of the undo or redo list.
+#[derive(Clone)]
+struct Step {
+    project: Arc<Project>,
+    label: String,
+    /// When the edit was made, in ms since the Unix epoch.
+    at: u64,
+}
+
+/// An edit in the history, for the History panel.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    pub label: String,
+    /// When it was made, in ms since the Unix epoch.
+    pub at: u64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// What the UI shows about the session.
@@ -145,6 +171,10 @@ pub struct SessionState {
     pub dirty: bool,
     pub can_undo: bool,
     pub can_redo: bool,
+    /// Edits that can be undone, oldest first.
+    pub history: Vec<HistoryEntry>,
+    /// Undone edits that can be redone, the next one first.
+    pub future: Vec<HistoryEntry>,
     /// Chunk ids carried over on save, besides `fmt ` and `data`.
     pub extra_chunks: Vec<String>,
     pub truncated: bool,
@@ -299,6 +329,15 @@ fn with_source(p: &Project, source: &Arc<Source>) -> Project {
         }
     }
     p
+}
+
+impl Step {
+    fn entry(&self) -> HistoryEntry {
+        HistoryEntry {
+            label: self.label.clone(),
+            at: self.at,
+        }
+    }
 }
 
 impl Session {
@@ -530,8 +569,8 @@ impl Session {
                 Arc::new(resample(&file.decode(), rate, self.project.sample_rate).with_id(id));
             let swap = |p: &Arc<Project>| Arc::new(with_source(p, &audio));
             self.project = swap(&self.project);
-            for p in self.undo.iter_mut().chain(self.redo.iter_mut()) {
-                *p = swap(p);
+            for s in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+                s.project = swap(&s.project);
             }
             self.sources.insert(id, SourceInfo::new(p, audio, rate));
             n += 1;
@@ -656,6 +695,8 @@ impl Session {
             dirty: self.dirty(),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
+            history: self.undo.iter().map(Step::entry).collect(),
+            future: self.redo.iter().rev().map(Step::entry).collect(),
             extra_chunks: o.map_or_else(Vec::new, |o| o.file.extra_chunks()),
             truncated: o.is_some_and(|o| o.file.truncated()),
         }
@@ -666,16 +707,16 @@ impl Session {
     /// [`Session::end_gesture`].
     pub fn apply(&mut self, cmd: &Command, transient: bool) -> Result<(), CommandError> {
         let next = cmd.apply(&self.project)?;
-        self.commit(next, transient);
+        self.commit(next, transient, cmd.label());
         Ok(())
     }
 
-    fn commit(&mut self, next: Project, transient: bool) {
+    fn commit(&mut self, next: Project, transient: bool, label: String) {
         if !self.in_gesture {
             if next.same_edit(&self.project) {
                 return;
             }
-            self.push_undo();
+            self.push_undo(label);
         }
         self.project = Arc::new(next);
         self.in_gesture = true;
@@ -690,13 +731,21 @@ impl Session {
             return;
         }
         self.in_gesture = false;
-        if self.undo.last().is_some_and(|p| p.same_edit(&self.project)) {
+        if self
+            .undo
+            .last()
+            .is_some_and(|s| s.project.same_edit(&self.project))
+        {
             self.undo.pop();
         }
     }
 
-    fn push_undo(&mut self) {
-        self.undo.push(self.project.clone());
+    fn push_undo(&mut self, label: String) {
+        self.undo.push(Step {
+            project: self.project.clone(),
+            label,
+            at: now_ms(),
+        });
         if self.undo.len() > HISTORY {
             self.undo.remove(0);
         }
@@ -705,19 +754,43 @@ impl Session {
 
     pub fn undo(&mut self) -> bool {
         self.end_gesture();
-        let Some(p) = self.undo.pop() else {
+        let Some(s) = self.undo.pop() else {
             return false;
         };
-        self.redo.push(std::mem::replace(&mut self.project, p));
+        let after = std::mem::replace(&mut self.project, s.project);
+        self.redo.push(Step {
+            project: after,
+            ..s
+        });
         true
     }
 
     pub fn redo(&mut self) -> bool {
         self.end_gesture();
-        let Some(p) = self.redo.pop() else {
+        let Some(s) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(std::mem::replace(&mut self.project, p));
+        let before = std::mem::replace(&mut self.project, s.project);
+        self.undo.push(Step {
+            project: before,
+            ..s
+        });
+        true
+    }
+
+    /// Undoes or redoes until `done` edits of the history are applied, as a
+    /// click on a History row does. Returns false when `done` is out of range.
+    pub fn jump(&mut self, done: usize) -> bool {
+        self.end_gesture();
+        if done > self.undo.len() + self.redo.len() {
+            return false;
+        }
+        while self.undo.len() > done {
+            self.undo();
+        }
+        while self.undo.len() < done {
+            self.redo();
+        }
         true
     }
 
@@ -780,7 +853,11 @@ impl Session {
                 .insert(id, SourceInfo::new(path.clone(), source, rate));
         }
         if !out.clips.is_empty() {
-            self.commit(p, false);
+            let label = match out.clips.len() {
+                1 => "Add file".to_string(),
+                n => format!("Add {n} files"),
+            };
+            self.commit(p, false, label);
         }
         Ok(out)
     }
@@ -1062,6 +1139,52 @@ mod tests {
         assert!(!s.undo());
         assert!(s.redo());
         assert_eq!(s.clip(CLIP).unwrap().len, 700);
+    }
+
+    #[test]
+    fn history_names_each_step_and_jumps() {
+        let mut s = session(1000);
+        s.apply(&trim(0, 900), false).unwrap();
+        s.apply(
+            &Command::SetClipGain {
+                clip: CLIP,
+                gain_db: -6.0,
+            },
+            false,
+        )
+        .unwrap();
+        s.apply(
+            &Command::Batch {
+                label: Some("Envelope: Swell".into()),
+                commands: vec![],
+            },
+            false,
+        )
+        .unwrap();
+        s.apply(
+            &Command::Batch {
+                label: None,
+                commands: vec![trim(0, 800), trim(0, 700)],
+            },
+            false,
+        )
+        .unwrap();
+        let labels = |v: &[HistoryEntry]| v.iter().map(|e| e.label.clone()).collect::<Vec<_>>();
+        // The empty batch changed nothing, so it isn't a step.
+        assert_eq!(
+            labels(&s.state().history),
+            ["Trim clip", "Clip gain", "Trim clip ×2"]
+        );
+        assert!(s.jump(1));
+        let st = s.state();
+        assert_eq!(s.clip(CLIP).unwrap().len, 900);
+        assert_eq!(labels(&st.history), ["Trim clip"]);
+        assert_eq!(labels(&st.future), ["Clip gain", "Trim clip ×2"]);
+        assert!(s.jump(3));
+        assert_eq!(s.clip(CLIP).unwrap().len, 700);
+        assert!(!s.jump(4));
+        assert!(s.jump(0));
+        assert!(!s.dirty());
     }
 
     #[test]
@@ -1352,6 +1475,7 @@ mod tests {
         let t0 = s.project().tracks[0].id;
         s.apply(
             &Command::Batch {
+                label: None,
                 commands: vec![
                     Command::StretchClip {
                         clip: CLIP,

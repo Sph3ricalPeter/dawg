@@ -101,6 +101,7 @@ pub fn run() {
             commands::end_gesture,
             commands::undo,
             commands::redo,
+            commands::jump_history,
             commands::import_files,
             commands::peaks,
             commands::play,

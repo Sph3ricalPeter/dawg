@@ -148,6 +148,7 @@ function useShortcuts() {
       else if (ctrl && k === "b") void s.duplicateSelected();
       else if (ctrl && k === "e") void s.splitAtPlayhead();
       else if (ctrl && k === "a") s.selectAll();
+      else if (ctrl && k === "h" && s.session) s.toggleHistory();
       else if (ctrl && k === "w") requestClose();
       else if (ctrl && (k === "0" || k === "f")) s.fit();
       else if (ctrl && (k === "=" || k === "+")) s.zoomAt(s.width / 2, 0.5);

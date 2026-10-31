@@ -129,7 +129,8 @@ export function ClipPanel() {
   if (!items.length) return null;
   const store = useSession.getState;
   const rate = session.rate;
-  const batch = (commands: Command[]) => void store().apply(commands.length === 1 ? commands[0] : { type: "batch", commands });
+  const batch = (commands: Command[], label?: string) =>
+    void store().apply(commands.length === 1 && !label ? commands[0] : { type: "batch", commands, label });
   const clips = items.map((c) => c.clip);
 
   const presets = (
@@ -141,7 +142,12 @@ export function ClipPanel() {
             key={p.key}
             className="pre"
             data-hint={p.hint}
-            onClick={() => batch(clips.map((c) => ({ type: "set_envelope", clip: c.id, points: presetPoints(c, p.key) })))}
+            onClick={() =>
+              batch(
+                clips.map((c) => ({ type: "set_envelope", clip: c.id, points: presetPoints(c, p.key) })),
+                `Envelope: ${p.label}`,
+              )
+            }
           >
             <PresetShape points={p.points} />
             {p.label}
@@ -168,6 +174,7 @@ export function ClipPanel() {
         { type: "set_clip_fades", clip: c.id, fade_in: 0, fade_out: 0, curve_in: "linear", curve_out: "linear" },
         { type: "set_envelope", clip: c.id, points: [] },
       ]),
+      clips.length > 1 ? `Reset ${clips.length} clips` : "Reset clip",
     );
   const act = (label: string, keys: string, run: () => void, disabled = false) => (
     <button
@@ -305,7 +312,7 @@ export function ClipPanel() {
                 key={c.curve}
                 className={curve === c.curve ? "on" : ""}
                 data-hint={c.hint}
-                onClick={() => batch([fades(clip.fadeIn, clip.fadeOut, c.curve)])}
+                onClick={() => batch([fades(clip.fadeIn, clip.fadeOut, c.curve)], `Fade curve: ${c.label}`)}
               >
                 {c.label}
               </button>

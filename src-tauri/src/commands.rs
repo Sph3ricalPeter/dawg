@@ -235,6 +235,15 @@ pub fn undo(state: State<AppState>) -> Result<SessionState> {
     Ok(s.state().expect("session is open"))
 }
 
+/// Undoes or redoes to the point where `done` edits are applied.
+#[tauri::command]
+pub fn jump_history(state: State<AppState>, done: usize) -> Result<SessionState> {
+    let mut s = state.lock();
+    s.session()?.jump(done);
+    s.publish();
+    Ok(s.state().expect("session is open"))
+}
+
 #[tauri::command]
 pub fn redo(state: State<AppState>) -> Result<SessionState> {
     let mut s = state.lock();

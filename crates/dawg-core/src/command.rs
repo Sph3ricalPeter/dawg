@@ -126,9 +126,12 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bypass: Option<bool>,
     },
-    /// Several edits as one: all apply or none do.
+    /// Several edits as one: all apply or none do. `label` names the step
+    /// in the history ("Envelope: Swell", "AI: build riser").
     Batch {
         commands: Vec<Command>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
 }
 
@@ -184,6 +187,60 @@ fn finite(v: f32, what: &str) -> Result<f32, CommandError> {
 }
 
 impl Command {
+    /// What the edit is called in the history.
+    pub fn label(&self) -> String {
+        let s = match self {
+            Command::TrimClip { .. } => "Trim clip",
+            Command::MoveClip { .. } => "Move clip",
+            Command::SetClipGain { .. } => "Clip gain",
+            Command::SetClipFades { .. } => "Fades",
+            Command::ReverseClip { reversed: true, .. } => "Reverse clip",
+            Command::ReverseClip { .. } => "Play clip forwards",
+            Command::SetEnvelope { .. } => "Envelope",
+            Command::StretchClip { .. } => "Stretch clip",
+            Command::SetClipPitch { .. } => "Pitch",
+            Command::AddClip { .. } => "Add clip",
+            Command::DeleteClip { .. } => "Delete clip",
+            Command::SplitClip { .. } => "Split clip",
+            Command::DuplicateClip { .. } => "Duplicate clip",
+            Command::AddTrack { .. } => "Add track",
+            Command::DeleteTrack { .. } => "Delete track",
+            Command::RenameTrack { .. } => "Rename track",
+            Command::SetTrackMix {
+                gain_db,
+                pan,
+                muted,
+                solo,
+                ..
+            } => match (gain_db, pan, muted, solo) {
+                (Some(_), None, None, None) => "Track volume",
+                (None, Some(_), None, None) => "Pan",
+                (None, None, Some(true), None) => "Mute",
+                (None, None, Some(false), None) => "Unmute",
+                (None, None, None, Some(true)) => "Solo",
+                (None, None, None, Some(false)) => "Unsolo",
+                _ => "Track mix",
+            },
+            Command::SetTrackEq { .. } => "EQ",
+            Command::Batch { label: Some(l), .. } => return l.clone(),
+            Command::Batch { commands, .. } => {
+                let Some(first) = commands.first() else {
+                    return "Edit".into();
+                };
+                let l = first.label();
+                if commands.iter().all(|c| c.label() == l) {
+                    return if commands.len() > 1 {
+                        format!("{l} ×{}", commands.len())
+                    } else {
+                        l
+                    };
+                }
+                "Edit"
+            }
+        };
+        s.into()
+    }
+
     pub fn apply(&self, project: &Project) -> Result<Project, CommandError> {
         let mut p = project.clone();
         self.apply_in_place(&mut p)?;
@@ -424,7 +481,7 @@ impl Command {
                 let tr = &mut p.tracks[t];
                 tr.eq = Eq::new(bands, bypass.unwrap_or(tr.eq.bypass()), rate);
             }
-            Command::Batch { commands } => {
+            Command::Batch { commands, .. } => {
                 for c in commands {
                     c.apply_in_place(p)?;
                 }
@@ -571,6 +628,7 @@ mod tests {
     #[test]
     fn split_and_duplicate_make_new_clips() {
         let p = Command::Batch {
+            label: None,
             commands: vec![
                 Command::SetClipFades {
                     clip: 2,
@@ -612,6 +670,7 @@ mod tests {
     fn a_failed_batch_changes_nothing() {
         let p = project();
         let bad = Command::Batch {
+            label: None,
             commands: vec![
                 Command::DeleteClip { clip: 2 },
                 Command::DeleteClip { clip: 2 },
