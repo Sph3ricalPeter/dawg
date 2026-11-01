@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { richTips } from "@/lib/rich-tips";
 
 /** How long the pointer rests on something before its tooltip shows. */
 const DELAY_MS = 450;
@@ -125,9 +126,10 @@ export function TooltipLayer() {
   }, [tip]);
 
   if (!tip) return null;
+  const rich = tip.el.dataset.tipRich ? richTips.get(tip.el.dataset.tipRich) : undefined;
   return (
-    <div ref={box} className="tooltip" role="tooltip">
-      {tip.text}
+    <div ref={box} className={rich ? "tooltip rich" : "tooltip"} role="tooltip">
+      {rich ?? tip.text}
     </div>
   );
 }

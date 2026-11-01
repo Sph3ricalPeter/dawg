@@ -415,6 +415,12 @@ button.upd {
   border-radius: 50%;
   background: var(--ok);
 }
+.upd-ready .upd-ver {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.18);
+  font: 600 11px var(--mono);
+}
 .upd-btn {
   margin-right: 8px;
 }
@@ -2644,6 +2650,45 @@ body.secdrag * {
   visibility: visible;
   opacity: 1;
   transform: none;
+}
+.tooltip.rich {
+  max-width: 340px;
+  padding: 7px 10px 8px;
+  white-space: normal;
+}
+.updtip-head {
+  font-weight: 600;
+}
+.updtip-vers {
+  margin-top: 3px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font: 11px var(--mono);
+}
+.updtip-arrow {
+  color: var(--text-faint);
+}
+.updtip-new {
+  color: var(--accent);
+  font-weight: 600;
+}
+.updtip-notes {
+  margin: 6px 0 0;
+  padding: 6px 0 0 14px;
+  border-top: 1px solid #333;
+}
+.updtip-notes li + li {
+  margin-top: 2px;
+}
+.updtip-notes code {
+  margin-right: 6px;
+  font: 11px var(--mono);
+  color: var(--text-dim);
+}
+.updtip-foot {
+  margin-top: 6px;
+  font-size: 11px;
 }
 .tooltip.above {
   transform: translateY(2px);

@@ -125,12 +125,14 @@ jobs:
           cp "$EXE.sig" publish/dawg-dev-setup.exe.sig
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/dev-build/dawg-dev-setup.exe"
           SUBJECT=$(git log -1 --pretty=format:%s)
-          VERSION="$VERSION" URL="$URL" SUBJECT="$SUBJECT" node -e '
+          VERSION="$VERSION" URL="$URL" SUBJECT="$SUBJECT" COMMIT="${GITHUB_SHA::7}" node -e '
             const fs = require("fs");
             const e = process.env;
             fs.writeFileSync("publish/latest.json", JSON.stringify({
               version: e.VERSION,
               notes: e.SUBJECT,
+              // Extra field, shown in the "Restart to update" tooltip.
+              commit: e.COMMIT,
               pub_date: new Date().toISOString(),
               platforms: {
                 "windows-x86_64": {

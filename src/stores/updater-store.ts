@@ -22,8 +22,14 @@ interface UpdaterState {
   status: UpdateStatus;
   /** Version that is downloading or ready to apply. */
   pendingVersion: string | null;
+  /** The version running now, as the updater sees it. */
+  currentVersion: string | null;
   /** Release notes for the pending version, when the feed has any. */
   releaseNotes: string | null;
+  /** Short commit the pending build came from ("dawg dev" feeds only). */
+  pendingCommit: string | null;
+  /** When the pending version was published (ISO), when the feed says. */
+  pendingDate: string | null;
   downloadProgress: number;
   error: string | null;
   lastChecked: number | null;
@@ -42,7 +48,10 @@ interface UpdaterState {
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
   status: "disabled",
   pendingVersion: null,
+  currentVersion: null,
   releaseNotes: null,
+  pendingCommit: null,
+  pendingDate: null,
   downloadProgress: 0,
   error: null,
   lastChecked: null,
@@ -81,7 +90,10 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     set({
       status: "downloading",
       pendingVersion: update.version,
+      currentVersion: update.currentVersion,
       releaseNotes: update.body?.trim() || null,
+      pendingCommit: rawString(update.rawJson, "commit"),
+      pendingDate: rawString(update.rawJson, "pub_date") ?? update.date ?? null,
       downloadProgress: 0,
       _update: update,
     });
@@ -120,6 +132,18 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     }
   },
 }));
+
+function rawString(json: Record<string, unknown> | undefined, key: string): string | null {
+  const v = json?.[key];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/** A version as the title bar shows it: "0.0.1-dev.42" → "dev 42",
+ * "0.2.0" → "v0.2.0". */
+export function shortVersion(version: string): string {
+  const run = /-dev\.(\d+)$/.exec(version)?.[1];
+  return run ? `dev ${run}` : `v${version}`;
+}
 
 /** One line on where the updater stands, for the menu and the title-bar button. */
 export function updateLine(status: UpdateStatus, lastChecked: number | null): string {
