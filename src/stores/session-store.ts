@@ -15,6 +15,8 @@ import { Clock } from "@/lib/frame-loop";
 import { SNAPS, snapFrames, type Snap, type Units } from "@/lib/grid";
 import { choice, setSetting, setting } from "@/lib/settings";
 import { follow, recall, touched, tracksScroll, UNTITLED, viewKey, type SavedView } from "@/lib/view-memory";
+import { categoryById, categoryOfLabels } from "@/lib/categories";
+import { useLibrary } from "@/stores/library-store";
 
 const SNAP_VALUES = SNAPS.map((s) => s.v);
 
@@ -464,9 +466,34 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (!get().session || !paths.length) return;
     set({ busy: paths.length > 1 ? `Adding ${paths.length} files…` : "Adding…" });
     try {
-      const r = await enqueue(() => api.importFiles(paths, at));
+      // Each file's category from its Browser labels: a track without one
+      // takes the first that lands on it.
+      const lib = useLibrary.getState();
+      const categories = paths.map((p) => categoryOfLabels(lib.labelsOf(p)));
+      const before = new Map(get().session!.tracks.map((t) => [t.id, t]));
+      const r = await enqueue(() => api.importFiles(paths, { ...at, categories }));
       const grew = timelineEnd(r.state) > timelineEnd(get().session!);
       set({ session: r.state, draft: null, selected: r.imported.clips });
+      const sorted = r.state.tracks.filter((t) => t.category && !before.get(t.id)?.category);
+      if (sorted.length === 1) {
+        const t = sorted[0];
+        // Clearing keeps the clip: the category goes, and the old name comes back.
+        const name = before.get(t.id)?.name ?? `Track ${r.state.tracks.indexOf(t) + 1}`;
+        get().showToast(`${name} is ${categoryById(t.category)?.name ?? t.category} now, from its file's label`, {
+          action: {
+            label: "Clear",
+            run: () =>
+              void get().apply({
+                type: "batch",
+                label: "Track category",
+                commands: [
+                  { type: "set_track_category", track: t.id, category: null },
+                  ...(name !== t.name ? [{ type: "rename_track" as const, track: t.id, name }] : []),
+                ],
+              }),
+          },
+        });
+      }
       if (grew) get().fit();
       const failed = r.imported.failed;
       if (failed.length) {

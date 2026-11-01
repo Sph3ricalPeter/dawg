@@ -14,7 +14,9 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   `wav` (format-preserving RIFF codec), `mp3` (Symphonia decode, LAME
   encode, gapless, tags kept), `file` (WAV or MP3 behind one type, and
   converting between them), `save` (safe replace and backups),
-  `command` (edits as serde data; tracks and clips by stable id), `session`
+  `command` (edits as serde data; tracks and clips by stable id), `category`
+  (track categories: Drums, Bass…; the UI's `lib/categories.ts` mirrors the
+  list and maps Browser Type labels to them), `session`
   (a scratch session opened from a file, or a project, plus files added onto
   other tracks, with undo; a scratch session exports the original's format
   while it is one clip, else a mixdown), `project_file` (the versioned

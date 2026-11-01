@@ -778,7 +778,7 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
 
   const px = (f: number) => (f - view.start) / view.fpp;
   const ghost = draft?.kind === "clip" && draft.ghost && draft.track === track.id ? draft.clip : null;
-  const color = trackColor(index, track.color);
+  const color = trackColor(index, track.color, track.category);
 
   return (
     <div

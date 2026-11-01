@@ -111,6 +111,7 @@ impl Tools<'_> {
                 let at = Placement {
                     track: a.get("track").and_then(Value::as_u64),
                     start: frames(num(a, "start").unwrap_or(0.0), rate),
+                    ..Placement::default()
                 };
                 let r = s.import(&paths, at).map_err(|e| e.to_string())?;
                 let mut out = vec![text(&json!(r).to_string())];
@@ -385,7 +386,8 @@ pub fn picture(
     let st = s.state();
     let color = |i: usize| {
         let t = &st.tracks[i];
-        COLORS[t.color.map_or(i, usize::from) % COLORS.len()]
+        COLORS[dawg_core::category::color(t.color, t.category.as_deref()).map_or(i, usize::from)
+            % COLORS.len()]
     };
     let index = |id: u64| st.tracks.iter().position(|t| t.id == id);
     let mut lanes: Vec<(Vec<f32>, [u8; 3])> = Vec::new();
@@ -453,7 +455,7 @@ frames are at the session's rate; dB values are numbers.
 - add_track {name}, delete_track {track}, rename_track {track, name}, move_track {track, index}
 - set_track_mix {track, gain_db?, pan?, muted?, solo?} (gain -96..12, pan -1..1)
 - set_track_eq {track, bands: [{kind, freq, gainDb, q, slope}], bypass?} (kind: \"bell\"|\"low_shelf\"|\"high_shelf\"|\"low_cut\"|\"high_cut\"|\"notch\"|\"band_pass\"; slope: dB/octave for cuts)
-- set_track_color {track, color} (0..7 or null), set_tempo {bpm}, set_master_gain {gain_db} (-96..12)";
+- set_track_color {track, color} (0..7 or null), set_track_category {track, category} (drums, perc, bass, leads, pads, vox, fx, foley, ambience, music, ui, or null; names a \"Track N\" after it), set_tempo {bpm}, set_master_gain {gain_db} (-96..12)";
 
 fn range_props() -> Value {
     json!({

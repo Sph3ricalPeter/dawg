@@ -139,6 +139,15 @@ pub enum Command {
         #[serde(default)]
         color: Option<u8>,
     },
+    /// What a track holds: a category id (drums, perc, bass, leads, pads,
+    /// vox, fx, foley, ambience, music, ui), or `None` for none. It sets the
+    /// track's colour unless one was picked, and renames a track still
+    /// called "Track N" after it.
+    SetTrackCategory {
+        track: u64,
+        #[serde(default)]
+        category: Option<String>,
+    },
     /// Tempo of the bars-and-beats grid, 20 to 999 BPM.
     SetTempo {
         bpm: f64,
@@ -247,6 +256,7 @@ impl Command {
             Command::SetTempo { .. } => "Tempo",
             Command::MoveTrack { .. } => "Move track",
             Command::SetTrackColor { .. } => "Track colour",
+            Command::SetTrackCategory { .. } => "Track category",
             Command::Batch { label: Some(l), .. } => return l.clone(),
             Command::Batch { commands, .. } => {
                 let Some(first) = commands.first() else {
@@ -515,6 +525,15 @@ impl Command {
             Command::SetTrackColor { track, color } => {
                 let i = track_index(p, *track)?;
                 p.tracks[i].color = *color;
+            }
+            Command::SetTrackCategory { track, category } => {
+                let i = track_index(p, *track)?;
+                if let Some(c) = category {
+                    if crate::category::name(c).is_none() {
+                        return err(format!("no category {c:?}"));
+                    }
+                }
+                crate::category::set(&mut p.tracks, i, category.as_deref());
             }
             Command::SetTempo { bpm } => {
                 if !bpm.is_finite() {

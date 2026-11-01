@@ -379,6 +379,9 @@ pub struct Track {
     pub eq: Eq,
     /// Index into the UI's clip palette; `None` colours by position.
     pub color: Option<u8>,
+    /// What the track holds: an id from [`crate::category::CATEGORIES`]
+    /// (or a newer build's, kept as is).
+    pub category: Option<String>,
 }
 
 impl Default for Track {
@@ -393,6 +396,7 @@ impl Default for Track {
             solo: false,
             eq: Eq::default(),
             color: None,
+            category: None,
         }
     }
 }

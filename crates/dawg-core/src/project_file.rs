@@ -17,7 +17,8 @@
 //!
 //! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
 //! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`;
-//! 4 adds `masterGain`; 5 adds `bpm` and track `color`.
+//! 4 adds `masterGain`; 5 adds `bpm` and track `color`; 6 adds track
+//! `category`.
 
 use std::fmt;
 use std::io;
@@ -29,7 +30,7 @@ use crate::eq::EqBand;
 use crate::model::{EnvPoint, FadeCurve, Project, DEFAULT_BPM};
 
 /// The format this build writes, and the newest it reads.
-pub const FORMAT_VERSION: u32 = 5;
+pub const FORMAT_VERSION: u32 = 6;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "dawg";
 /// The `format` tag, so a stray JSON file isn't taken for a project.
@@ -95,6 +96,9 @@ pub struct TrackEntry {
     /// Clip palette index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<u8>,
+    /// A [`crate::category`] id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 /// A clip, in frames at the project's rate. See [`crate::Clip`].
@@ -246,6 +250,7 @@ impl ProjectFile {
                     eq: t.eq.bands().to_vec(),
                     eq_bypass: t.eq.bypass(),
                     color: t.color,
+                    category: t.category.clone(),
                     clips: t
                         .clips
                         .iter()

@@ -2381,6 +2381,40 @@ body.rsizing * {
   color: var(--text-faint);
 }
 
+/* track category picker in the track menu: the category's icon on its colour */
+.cats {
+  display: grid;
+  grid-template-columns: repeat(6, 22px);
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+.cat {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-0);
+  color: var(--c);
+  cursor: pointer;
+}
+.cat:hover {
+  border-color: var(--c);
+}
+.cat.on {
+  background: var(--c);
+  color: #111;
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+/* the category icon in a track's name */
+.th .tn span .li {
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
 /* track colour swatches in the track menu */
 .swatches {
   display: flex;

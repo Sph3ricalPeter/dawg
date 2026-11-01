@@ -7,6 +7,7 @@
 //! the real-time path.
 
 pub mod analysis;
+pub mod category;
 pub mod command;
 pub mod eq;
 pub mod file;

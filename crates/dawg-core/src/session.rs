@@ -241,6 +241,8 @@ pub struct TrackState {
     pub id: u64,
     /// Clip palette index; `None` colours by position.
     pub color: Option<u8>,
+    /// A [`crate::category`] id.
+    pub category: Option<String>,
     pub name: String,
     pub gain_db: f32,
     pub pan: f32,
@@ -303,13 +305,18 @@ pub struct SavePreview {
 }
 
 /// Where added files go.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Placement {
     /// End to end on this track; `None` puts each file on a new track.
     pub track: Option<u64>,
     /// Timeline frame of the first clip.
     pub start: u64,
+    /// Each file's [`crate::category`], from its Browser labels, by position
+    /// in the list of paths. A track without a category takes the first one
+    /// that lands on it.
+    #[serde(default)]
+    pub categories: Vec<Option<String>>,
 }
 
 /// What adding files did.
@@ -601,6 +608,7 @@ impl Session {
                 solo: t.solo,
                 eq: Eq::new(&t.eq, t.eq_bypass, rate),
                 color: t.color,
+                category: t.category.clone(),
             });
         }
         for s in &file.sources {
@@ -776,6 +784,7 @@ impl Session {
                 .map(|t| TrackState {
                     id: t.id,
                     color: t.color,
+                    category: t.category.clone(),
                     name: t.name.clone(),
                     gain_db: gain_to_db(t.gain),
                     pan: t.pan,
@@ -1014,7 +1023,7 @@ impl Session {
             failed: Vec::new(),
         };
         let mut cursor = at.start;
-        for path in paths {
+        for (i, path) in paths.iter().enumerate() {
             let file = match read_file(path) {
                 Ok((file, _)) => file,
                 Err(e) => {
@@ -1044,6 +1053,17 @@ impl Session {
                     t
                 }
             };
+            let category = at.categories.get(i).cloned().flatten();
+            if let Some(c) = category.filter(|c| crate::category::name(c).is_some()) {
+                let t = p
+                    .tracks
+                    .iter()
+                    .position(|t| t.id == track)
+                    .expect("track exists");
+                if p.tracks[t].category.is_none() {
+                    crate::category::set(&mut p.tracks, t, Some(&c));
+                }
+            }
             out.clips.push(p.next_id);
             Command::AddClip {
                 source: id,
@@ -1881,6 +1901,7 @@ mod tests {
                 Placement {
                     track: None,
                     start: 100,
+                    ..Placement::default()
                 },
             )
             .unwrap();
@@ -1893,6 +1914,7 @@ mod tests {
                 Placement {
                     track: Some(s.project().tracks[1].id),
                     start: 0,
+                    ..Placement::default()
                 },
             )
             .unwrap();
@@ -1938,6 +1960,7 @@ mod tests {
             Placement {
                 track: None,
                 start: 2000,
+                ..Placement::default()
             },
         )
         .unwrap();
@@ -2154,6 +2177,48 @@ mod tests {
             )
             .unwrap()
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_track_takes_its_category_from_the_first_labelled_file_once() {
+        let dir = temp_dir("category");
+        let a = dir.join("a.wav");
+        write_wav(&a, 2, 44_100, 441, 0.5);
+        let mut s = Session::new_project();
+        let cats = |c: &[Option<&str>]| c.iter().map(|c| c.map(str::to_string)).collect();
+        // An unlabelled file on a new track sets nothing.
+        s.import(std::slice::from_ref(&a), Placement::default())
+            .unwrap();
+        let t = s.project().tracks[0].id;
+        assert_eq!(s.project().tracks[0].name, "Track 1");
+        assert_eq!(s.project().tracks[0].category, None);
+        // The first labelled one does, in the same undo step.
+        let at = |c: Option<&str>| Placement {
+            track: Some(t),
+            categories: cats(&[c]),
+            ..Placement::default()
+        };
+        s.import(std::slice::from_ref(&a), at(Some("drums")))
+            .unwrap();
+        let tr = &s.project().tracks[0];
+        assert_eq!(
+            (tr.name.as_str(), tr.category.as_deref()),
+            ("Drums", Some("drums"))
+        );
+        // Later files never change it.
+        s.import(std::slice::from_ref(&a), at(Some("fx"))).unwrap();
+        assert_eq!(s.project().tracks[0].category.as_deref(), Some("drums"));
+        // It saves and reopens.
+        let path = dir.join("song.dawg");
+        s.save_project(&path).unwrap();
+        let r = Session::open_project(&path).unwrap();
+        assert_eq!(r.state().tracks[0].category.as_deref(), Some("drums"));
+        // Undoing the labelled drop takes the category back off.
+        assert!(s.undo());
+        assert!(s.undo());
+        assert_eq!(s.project().tracks[0].name, "Track 1");
+        assert_eq!(s.project().tracks[0].category, None);
         let _ = fs::remove_dir_all(&dir);
     }
 

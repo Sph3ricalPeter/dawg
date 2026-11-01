@@ -58,8 +58,10 @@ export interface EqBand {
 /** Mirrors `dawg_core::session::TrackState`. */
 export interface TrackState {
   id: number;
-  /** Clip palette index; null colours by position. */
+  /** Clip palette index; null colours by its category, else by position. */
   color: number | null;
+  /** A `lib/categories.ts` id. */
+  category: string | null;
   name: string;
   gainDb: number;
   pan: number;
@@ -160,6 +162,9 @@ export interface Placement {
   /** End to end on this track; null puts each file on a new track. */
   track: number | null;
   start: number;
+  /** Each file's category, from its Browser labels, by position in the
+   * list of paths. A track without one takes the first that lands on it. */
+  categories?: (string | null)[];
 }
 
 /** Mirrors `dawg_core::session::Imported`. */
@@ -217,6 +222,7 @@ export type Command =
   | { type: "set_tempo"; bpm: number }
   | { type: "move_track"; track: number; index: number }
   | { type: "set_track_color"; track: number; color: number | null }
+  | { type: "set_track_category"; track: number; category: string | null }
   | { type: "batch"; commands: Command[]; label?: string };
 
 /** Errors from the Rust side carry a kind to branch on. */

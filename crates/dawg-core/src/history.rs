@@ -461,6 +461,20 @@ fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
             false,
         );
     }
+    if b.category != a.category {
+        let cat = |c: &Option<String>| {
+            c.as_deref().map_or("None".to_string(), |id| {
+                crate::category::name(id).unwrap_or(id).to_string()
+            })
+        };
+        push(
+            "category",
+            &["Category"],
+            "category",
+            arrow(cat(&b.category), cat(&a.category)),
+            false,
+        );
+    }
     if b.eq.bypass() != a.eq.bypass() {
         push(
             "eq",

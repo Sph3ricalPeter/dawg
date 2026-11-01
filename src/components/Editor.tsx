@@ -14,6 +14,8 @@ import { Knob } from "./Knob";
 import { Volume } from "./Volume";
 import { Lane } from "./Lane";
 import { PanelHead } from "./Dock";
+import { LabelIcon } from "./BrowserLabels";
+import { CATEGORIES, categoryById } from "@/lib/categories";
 import { Playhead } from "./Playhead";
 
 
@@ -254,6 +256,22 @@ function TrackMenu({
       </div>
       {item("Rename…", "Dbl-click", onRename)}
       <div className="menu-sep" />
+      <div className="cats" role="group" aria-label="Track category">
+        {CATEGORIES.map((k) => (
+          <button
+            key={k.id}
+            className={`cat${track.category === k.id ? " on" : ""}`}
+            style={{ ["--c" as string]: COLORS[k.color] }}
+            data-tip={track.category === k.id ? `${k.name} · click to clear` : k.name}
+            onClick={() => {
+              onClose();
+              void store().apply({ type: "set_track_category", track: track.id, category: track.category === k.id ? null : k.id });
+            }}
+          >
+            <LabelIcon icon={k.icon} />
+          </button>
+        ))}
+      </div>
       <div className="swatches" role="group" aria-label="Track colour">
         {COLORS.map((c, i) => (
           <button
@@ -303,6 +321,7 @@ function TrackHeader({
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const eqOpen = useSession((s) => s.eqTrack === track.id);
+  const category = categoryById(track.category);
   if (!session) return <div className="th" />;
   const store = useSession.getState;
   const mix = (m: { gain_db?: number; pan?: number }, done: boolean) => {
@@ -336,7 +355,7 @@ function TrackHeader({
   return (
     <div
       className="th"
-      style={{ ["--c" as string]: trackColor(index, track.color) }}
+      style={{ ["--c" as string]: trackColor(index, track.color, track.category) }}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
@@ -370,7 +389,11 @@ function TrackHeader({
               }}
             />
           ) : (
-            <span onDoubleClick={() => setRenaming(true)} data-hint="Double-click to rename · right-click for track options">
+            <span
+              onDoubleClick={() => setRenaming(true)}
+              data-hint={`${category ? `${category.name} · ` : ""}Double-click to rename · right-click for the category, colour and other track options`}
+            >
+              {category && <LabelIcon icon={category.icon} />}
               {track.name || `Track ${index + 1}`}
             </span>
           )}
