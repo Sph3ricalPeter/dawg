@@ -1,4 +1,7 @@
 import { useEffect, useRef } from "react";
+import { useSession, gridOf } from "@/stores/session-store";
+import { labelFrames } from "@/lib/grid";
+import { clamp } from "@/lib/format";
 import { SmoothScrollTop, smoothScroll, smoothZoom } from "@/lib/smooth-view";
 
 /** Top of the envelope range, as in `dawg_core::ENV_MAX`: 0 dB sits at 80%. */
@@ -24,6 +27,18 @@ export function envY(g: number, h: number): number {
   return (1 - g / ENV_MAX) * (h - 2) + 1;
 }
 
+/** Where Ctrl+wheel zooms around for the mouse at `x` px: the ruler's
+ * labelled step nearest it, so zooming lands on round times or bars. */
+function zoomPivot(x: number): number {
+  const s = useSession.getState();
+  if (!s.session) return x;
+  const { units } = gridOf(s);
+  const { start, fpp } = s.view;
+  const step = labelFrames(units, s.session.rate, s.session.bpm, fpp);
+  const f = Math.round((start + x * fpp) / step) * step;
+  return clamp((f - start) / fpp, 0, s.width);
+}
+
 /** The playlist's wheel: plain scrolls the tracks, Shift (or a sideways
  * wheel) scrolls through time, Ctrl zooms time around the mouse and Alt
  * zooms the track height around the mouse (`onVZoom`). */
@@ -46,7 +61,7 @@ export function useWheel(
         e.preventDefault();
         const lane = (e.target as HTMLElement).closest(".lane, .ruler");
         const r = (lane ?? el).getBoundingClientRect();
-        smoothZoom(e.clientX - r.left, Math.exp(d * 0.0025));
+        smoothZoom(zoomPivot(e.clientX - r.left), Math.exp(d * 0.0025));
         return;
       }
       if (e.altKey) {

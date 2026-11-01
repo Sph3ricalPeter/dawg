@@ -29,6 +29,15 @@ export function barStep(pxPerBeat: number): number {
   return BEAT_STEPS.find((s) => s * pxPerBeat >= 70) ?? 256;
 }
 
+/** Frames between the ruler's labelled steps at zoom `fpp`. */
+export function labelFrames(units: Units, rate: number, bpm: number, fpp: number): number {
+  if (units === "bars") {
+    const beat = beatFrames(rate, bpm);
+    return barStep(beat / fpp) * beat;
+  }
+  return rulerStep(rate / fpp) * rate;
+}
+
 /** Frames between snap points, or null with snap off. */
 export function snapFrames(snap: Snap, units: Units, rate: number, bpm: number, fpp: number): number | null {
   const beat = beatFrames(rate, bpm);
