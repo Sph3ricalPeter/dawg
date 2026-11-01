@@ -62,7 +62,34 @@ function drawClip(
   const half = h / 2 - 2;
   const gain = dbToGain(clip.gainDb);
   const over: number[] = [];
-  if (peaks) {
+  // Zoomed in past one sample a pixel: the samples themselves, joined by a
+  // line (dots too once they're far apart), as other editors draw them.
+  const spp = fpp / clip.stretch;
+  const sA = Math.floor(clip.offset + (f0 - clip.start) / clip.stretch) - 1;
+  const sZ = Math.ceil(clip.offset + (f0 + w * fpp - clip.start) / clip.stretch) + 1;
+  if (peaks && spp < 1 && peaks.sample(Math.max(0, sA + 1)) !== null) {
+    const pts: number[] = [];
+    for (let s = sA; s <= sZ; s++) {
+      const v = peaks.sample(s);
+      if (v === null) continue;
+      const t = clip.start + (s - clip.offset) * clip.stretch;
+      const rel = clamp(t - clip.start, 0, clip.len - 1);
+      const g = v * gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
+      const px = (t - f0) / fpp;
+      if (Math.abs(g) > 1) over.push(Math.round(px));
+      pts.push(px, mid - clamp(g, -1, 1) * half);
+    }
+    x.strokeStyle = "rgba(16,16,16,.85)";
+    x.lineWidth = 1.5;
+    x.lineJoin = "round";
+    x.beginPath();
+    for (let i = 0; i < pts.length; i += 2) (i ? x.lineTo : x.moveTo).call(x, pts[i], pts[i + 1]);
+    x.stroke();
+    if (spp < 1 / 8) {
+      x.fillStyle = "rgba(16,16,16,.85)";
+      for (let i = 0; i < pts.length; i += 2) x.fillRect(pts[i] - 1.5, pts[i + 1] - 1.5, 3, 3);
+    }
+  } else if (peaks) {
     // Zoomed out, a smoothed outline like the mockup; zoomed in, the real
     // min/max so single cycles show.
     const outline = fpp > 24;

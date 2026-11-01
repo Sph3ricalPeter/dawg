@@ -28,6 +28,14 @@ interface Overview {
 
 const overviews = new Map<string, Overview>();
 
+function pow2Ceil(x: number): number {
+  return 2 ** Math.max(0, Math.ceil(Math.log2(Math.max(1, x))));
+}
+
+function pow2Floor(x: number): number {
+  return 2 ** Math.max(0, Math.floor(Math.log2(Math.max(1, x))));
+}
+
 function coarser(l: Level): Level {
   const n = Math.ceil(l.data.length / 2 / REDUCE);
   const data = new Float32Array(2 * n);
@@ -55,11 +63,14 @@ function overview(source: number, rev: number, frames: number, onReady: () => vo
     const entry: Overview = { levels: null, wait: new Set() };
     o = entry;
     overviews.set(key, entry);
-    const n = Math.max(1, Math.min(OVERVIEW_BUCKETS, Math.ceil(frames)));
+    // Whole-frame, power-of-two buckets: every level's bucket edges sit on
+    // the same frames, so swapping levels or windows never shifts the shape.
+    const per = pow2Ceil(frames / OVERVIEW_BUCKETS);
+    const n = Math.max(1, Math.ceil(frames / per));
     void api
-      .peaks(source, 0, frames, n)
+      .peaks(source, 0, n * per, n)
       .then((data) => {
-        const levels: Level[] = [{ from: 0, per: frames / n, data }];
+        const levels: Level[] = [{ from: 0, per, data }];
         while (levels[levels.length - 1].data.length / 2 > 512) levels.push(coarser(levels[levels.length - 1]));
         entry.levels = levels;
         for (const f of entry.wait) f();
@@ -94,6 +105,8 @@ export interface Peaks {
   /** Min and max over source frames `f0..f1` (as the clip counts them),
    * or null where nothing is known. */
   at(f0: number, f1: number): [number, number] | null;
+  /** Source frame `s` when it is loaded sample by sample, else null. */
+  sample(s: number): number | null;
 }
 
 class View implements Peaks {
@@ -111,12 +124,26 @@ class View implements Peaks {
     const [a, z] = this.mirror === null ? [f0, f1] : [this.mirror - f1, this.mirror - f0];
     const span = Math.max(z - a, 1e-9);
     const d = this.detail;
-    if (d && d.per < this.levels[0].per && covers(d, a, z)) return minmax(d, a, z);
-    // The coarsest level with a few buckets to the span, so bucket edges
-    // don't make the shape step as the zoom changes.
+    // A detail window much finer than a pixel costs more than it shows.
+    if (d && d.per < this.levels[0].per && d.per >= span / 64 && covers(d, a, z)) return minmax(d, a, z);
+    // The coarsest level with a few buckets to the span.
     let l = this.levels[0];
     for (const x of this.levels) if (x.per <= span / 4) l = x;
     return minmax(l, a, z);
+  }
+
+  /** Sample `s` (a whole source frame, as the clip counts them), once the
+   * window around it is loaded sample by sample; else null. */
+  sample(s: number): number | null {
+    const d = this.detail;
+    if (!d || d.per !== 1) return null;
+    const r = (this.mirror === null ? s : this.mirror - 1 - s) - d.from;
+    if (r < 0 || r >= d.data.length / 2) return null;
+    // One frame per bucket: min and max are its peak sample either way;
+    // the larger magnitude keeps a stereo file's shape.
+    const lo = d.data[2 * r];
+    const hi = d.data[2 * r + 1];
+    return -lo > hi ? lo : hi;
   }
 }
 
@@ -148,18 +175,24 @@ export function usePeaks(source: number, from: number, to: number, buckets: numb
       if (!ov || busy.current || frames <= 0 || per <= 0) return;
       // The overview is fine enough.
       if (per >= ov[0].per) return;
+      // Whole-frame, power-of-two buckets at about twice the screen's
+      // resolution, so a zoom only refetches at each halving, and the
+      // buckets of one fetch and the next share edges.
+      const step = Math.min(pow2Floor(per / 2), ov[0].per / 2);
       const d = have.current;
-      if (d && covers(d, a, z) && d.per <= per * 1.5 && d.per >= per / 4) return;
-      // A window three screens wide, at twice the screen's resolution.
+      if (d && d.per === step && covers(d, a, z)) return;
+      // A window three screens wide.
       const span = z - a;
-      const wa = Math.max(0, a - span);
-      const wz = Math.min(frames, z + span);
-      const n = Math.max(1, Math.min(OVERVIEW_BUCKETS, Math.ceil((wz - wa) / Math.max(per / 2, 1))));
+      const mid = (a + z) / 2;
+      const half = Math.min(1.5 * span, (OVERVIEW_BUCKETS / 2) * step);
+      const wa = Math.max(0, Math.floor((mid - half) / step) * step);
+      const n = Math.max(1, Math.min(OVERVIEW_BUCKETS, Math.ceil((Math.min(frames, mid + half) - wa) / step)));
+      const wz = wa + n * step;
       busy.current = true;
       void api
         .peaks(source, wa, wz, n)
         .then((data) => {
-          have.current = { key, from: wa, per: (wz - wa) / n, data };
+          have.current = { key, from: wa, per: step, data };
           setDetail(have.current);
         })
         .catch(() => undefined)
