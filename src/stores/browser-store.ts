@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, apiMessage, type PreviewInfo } from "@/lib/api";
+import { Clock } from "@/lib/frame-loop";
 import { setSetting, setting } from "@/lib/settings";
 import { useSession } from "@/stores/session-store";
 
@@ -130,6 +131,10 @@ let searchSeq = 0;
 let searchTimer = 0;
 let pollTimer = 0;
 
+/** The preview's playhead as drawn, in seconds: runs on between polls so
+ * it moves at the display's rate. */
+export const previewClock = new Clock(1, (p) => Math.min(p, useBrowser.getState().info?.seconds ?? p));
+
 export const useBrowser = create<BrowserStore>((set, get) => {
   const save = () => {
     const s = get();
@@ -157,6 +162,8 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       .previewStatus()
       .then((st) => {
         set({ playing: st.playing, at: st.seconds });
+        if (st.playing) previewClock.report(st.seconds);
+        else previewClock.stop();
         if (st.playing) pollTimer = window.setTimeout(poll, 40);
       })
       .catch(() => set({ playing: false }));
@@ -282,6 +289,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       try {
         await api.previewPlay(path, from);
         set({ playing: true, at: from });
+        previewClock.reset(from);
         poll();
       } catch (e) {
         useSession.getState().showToast(apiMessage(e), { error: true });
@@ -290,6 +298,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     stop: () => {
       window.clearTimeout(pollTimer);
       set({ playing: false });
+      previewClock.stop();
       void api.previewStop().catch(() => undefined);
     },
 

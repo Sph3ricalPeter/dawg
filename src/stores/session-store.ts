@@ -9,6 +9,7 @@ import {
   type TrackState,
 } from "@/lib/api";
 import { clamp, shiftEnvelope, srcAt } from "@/lib/format";
+import { Clock } from "@/lib/frame-loop";
 import { SNAPS, snapFrames, type Snap, type Units } from "@/lib/grid";
 import { choice, setSetting, setting } from "@/lib/settings";
 
@@ -170,7 +171,7 @@ interface SessionStore {
   stop: () => Promise<void>;
   /** Called while playing to follow the engine. */
   poll: () => Promise<void>;
-  /** Each track's meter level (linear peak, left and right, with fall-off),
+  /** Each track's meter level (linear peak, left and right, since the last poll),
    * in track order; empty while stopped. */
   levels: [number, number][];
   /** The master output's level, and its loudest peak since playback began. */
@@ -199,8 +200,6 @@ export function enqueue<T>(job: () => Promise<T>): Promise<T> {
 let pending: Command | null = null;
 let lastDrag: Command | null = null;
 let toastSeq = 0;
-/** Meter fall-off per transport poll (about 30 ms). */
-const METER_FALL = 0.75;
 
 /** Shortest clip a trim can leave, in frames (`dawg_core::command::MIN_CLIP`). */
 export const MIN_LEN = 16;
@@ -222,6 +221,25 @@ function bounds(st: { session: SessionState | null; range: Range | null; loop: b
   const end = songEnd(s);
   if (end <= 0) return null;
   return { to: end, loopFrom: st.loop ? 0 : null };
+}
+
+/** The playhead as drawn while playing: it runs on between the engine's
+ * reports at the session's rate and wraps at the loop, so it moves at the
+ * display's refresh rate rather than the poll's. */
+export const playClock = new Clock();
+let clockBounds: { to: number; loopFrom: number | null } | null = null;
+playClock.setWrap((p) => {
+  const b = clockBounds;
+  if (!b) return p;
+  if (b.loopFrom !== null && p >= b.to && b.to > b.loopFrom) return b.loopFrom + ((p - b.loopFrom) % (b.to - b.loopFrom));
+  return Math.min(p, b.to);
+});
+
+/** Restarts the drawn playhead from `from` with the current play bounds. */
+function startClock(st: { session: SessionState | null; range: Range | null; loop: boolean }, from: number) {
+  clockBounds = bounds(st);
+  playClock.rate = st.session?.rate ?? 48_000;
+  playClock.reset(from);
 }
 
 /** Every clip of the session, with its track. */
@@ -610,6 +628,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (from >= b.to || (b.loopFrom !== null && from < b.loopFrom)) from = b.loopFrom ?? 0;
     await api.play(from, b.to, b.loopFrom).catch(() => undefined);
     set({ playhead: from });
+    startClock(get(), from);
   },
 
   retarget: async () => {
@@ -629,7 +648,11 @@ export const useSession = create<SessionStore>((set, get) => ({
     // Playback carries on where it is; seeking on every move of a dragged
     // range restarted the same few milliseconds over and over (a buzz).
     await api.setBounds(b.to, b.loopFrom).catch(() => undefined);
-    if (outside && b.loopFrom !== null) set({ playhead: b.loopFrom });
+    clockBounds = b;
+    if (outside && b.loopFrom !== null) {
+      set({ playhead: b.loopFrom });
+      startClock(get(), b.loopFrom);
+    }
   },
 
   cropToRange: async () => {
@@ -693,6 +716,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     try {
       await api.play(from, b.to, b.loopFrom);
       set({ playing: true, playhead: from, startPoint: from, masterPeak: 0 });
+      startClock(get(), from);
     } catch (e) {
       get().showToast(`Can't play: ${apiMessage(e)}`, { error: true });
     }
@@ -702,7 +726,8 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (!get().playing) return;
     await api.stop().catch(() => undefined);
     // Stop returns to where playback started (UX spec, Space).
-    set({ playing: false, playhead: get().startPoint, levels: [] });
+    playClock.stop();
+    set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0] });
   },
 
   poll: async () => {
@@ -710,19 +735,23 @@ export const useSession = create<SessionStore>((set, get) => ({
     const t = await api.transport();
     if (!get().playing) return;
     if (!t.playing) {
+      playClock.stop();
       set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0] });
       return;
     }
-    // Peaks since the last poll, falling back gently between them.
-    const old = get().levels;
-    const levels = t.levels.map(([l, r], i): [number, number] => [
-      Math.max(l, (old[i]?.[0] ?? 0) * METER_FALL),
-      Math.max(r, (old[i]?.[1] ?? 0) * METER_FALL),
-    ]);
-    const m = get().master;
-    const master: [number, number] = [Math.max(t.master[0], m[0] * METER_FALL), Math.max(t.master[1], m[1] * METER_FALL)];
+    // Peaks since the last poll; the meters fall back between them as they
+    // draw (see Meter and Master).
+    const levels = t.levels;
+    const master = t.master;
     const masterPeak = Math.max(get().masterPeak, t.master[0], t.master[1]);
-    set(get().scrubbing ? { levels, master, masterPeak } : { playhead: t.position, levels, master, masterPeak });
+    if (get().scrubbing) {
+      set({ levels, master, masterPeak });
+      return;
+    }
+    clockBounds = bounds(get());
+    const b = clockBounds;
+    playClock.report(t.position, b && b.loopFrom !== null ? b.to - b.loopFrom : null);
+    set({ playhead: t.position, levels, master, masterPeak });
   },
 
   showToast: (text, opts) => {

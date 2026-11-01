@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clamp, fmtDb, MIN_GAIN_DB } from "@/lib/format";
+import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
 import { useSession } from "@/stores/session-store";
 import { Knob } from "./Knob";
@@ -7,11 +8,39 @@ import { Knob } from "./Knob";
 const VOL_MIN = -48;
 const VOL_MAX = 6;
 
-/** Meter width for a linear peak: -60 dBFS empty, 0 dBFS where red starts. */
-function meterPct(peak: number): number {
-  if (peak <= 0) return 0;
-  const db = 20 * Math.log10(peak);
+/** Meter width for a level in dB: -60 dBFS empty, 0 dBFS where red starts. */
+function meterPct(db: number): number {
   return db >= 0 ? 100 : Math.max(0, ((db + 60) / 60) * 94);
+}
+
+/** The master meter, drawn every frame from the latest peaks. */
+function MasterMeter() {
+  const ref = useRef<HTMLDivElement>(null);
+  const playing = useSession((s) => s.playing);
+  useEffect(() => {
+    const bars = [...(ref.current?.querySelectorAll("b") ?? [])];
+    const shown = [-120, -120];
+    const draw = () => bars.forEach((b, i) => (b.style.width = `${meterPct(shown[i])}%`));
+    if (!playing) {
+      draw();
+      return;
+    }
+    return onFrame((_, dt) => {
+      const m = useSession.getState().master;
+      for (let i = 0; i < 2; i++) shown[i] = meterStep(shown[i], toDb(m[i]), dt, METER_FALL_DB);
+      draw();
+    });
+  }, [playing]);
+  return (
+    <div className="mstr" ref={ref} data-hint="Master output level, after the master volume">
+      <i>
+        <b />
+      </i>
+      <i>
+        <b />
+      </i>
+    </div>
+  );
 }
 
 /** Master volume and the master meter, in the top bar. The readout holds
@@ -20,7 +49,6 @@ function meterPct(peak: number): number {
 export function Master() {
   const session = useSession((s) => s.session);
   const draft = useSession((s) => (s.draft?.kind === "master" ? s.draft.db : null));
-  const level = useSession((s) => (s.playing ? s.master : null));
   const peak = useSession((s) => s.masterPeak);
   const [typing, setTyping] = useState(false);
   if (!session) return null;
@@ -68,14 +96,7 @@ export function Master() {
           {fmtDb(db).replace(" dB", "")}
         </span>
       )}
-      <div className="mstr" data-hint="Master output level, after the master volume">
-        <i>
-          <b style={{ width: `${meterPct(level?.[0] ?? 0)}%` }} />
-        </i>
-        <i>
-          <b style={{ width: `${meterPct(level?.[1] ?? 0)}%` }} />
-        </i>
-      </div>
+      <MasterMeter />
       <button
         className={`mpk${peakDb !== null && peakDb > 0 ? " over" : ""}`}
         onClick={() => store().resetMasterPeak()}

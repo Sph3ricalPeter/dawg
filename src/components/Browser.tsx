@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import { openPath } from "@/lib/actions";
 import { dropTarget, setDropHover } from "@/lib/drop";
 import { fmtSeconds } from "@/lib/format";
-import { baseName, dirName, disambiguate, joinPath, useBrowser } from "@/stores/browser-store";
+import { onFrame, snapPx } from "@/lib/frame-loop";
+import { baseName, dirName, disambiguate, joinPath, previewClock, useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
 
 const FOLDER = (
@@ -381,11 +382,24 @@ function Section({ k, title, drop, onDrop, children }: { k: string; title: strin
   );
 }
 
+/** The preview's playhead, placed every frame from its clock. */
+function PreviewHead({ len, width }: { len: number; width: number }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    return onFrame((now) => {
+      const x = Math.min(1, Math.max(0, previewClock.read(now) / len)) * width;
+      el.style.transform = `translate3d(${snapPx(x)}px,0,0)`;
+    });
+  }, [len, width]);
+  return <i className="pvph" ref={ref} />;
+}
+
 function Preview() {
   const current = useBrowser((s) => s.current);
   const info = useBrowser((s) => s.info);
   const playing = useBrowser((s) => s.playing);
-  const at = useBrowser((s) => s.at);
   const ref = useRef<HTMLCanvasElement>(null);
   // Redraw when the Browser is resized.
   const [cw, setCw] = useState(0);
@@ -445,7 +459,7 @@ function Preview() {
         data-hint="Click to play from there · Esc stops the preview"
       >
         <canvas ref={ref} />
-        {playing && len > 0 && <i className="pvph" style={{ left: `${Math.min(100, (at / len) * 100)}%` }} />}
+        {playing && len > 0 && <PreviewHead len={len} width={cw} />}
         <span className="tl">
           <span className="pvname">{baseName(current)}</span>
           {info && (

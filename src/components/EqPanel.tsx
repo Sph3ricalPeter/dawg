@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { api, type BandKind, type EqBand, type Spectrum, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
@@ -20,6 +20,7 @@ import {
   SLOPES,
 } from "@/lib/eq";
 import { clamp, fmtDb } from "@/lib/format";
+import { everyFrameAtMost, meterStep, onFrame } from "@/lib/frame-loop";
 import { dragKnob } from "@/lib/knob";
 import { trackColor } from "@/lib/timeline";
 import { useSession, useTracks } from "@/stores/session-store";
@@ -48,52 +49,51 @@ const SPECTRUM_FLOOR = 96;
 /** Analyser tilt in dB per octave around 1 kHz, as in Pro-Q, so pink noise
  * reads flat. */
 const TILT = 4.5;
-/** How fast the analyser falls, in dB per poll (about 30 ms). */
-const SPECTRUM_FALL = 1.5;
+/** How fast the analyser falls, in dB per second. */
+const SPECTRUM_FALL = 50;
 
-/** Polls the tapped track's spectrum while the EQ is open, with Pro-Q style
- * hold-and-fall smoothing. */
-function useSpectrum(track: number | null): Spectrum | null {
-  const [spec, setSpec] = useState<Spectrum | null>(null);
+/** The analyser as drawn: what the last poll said (`target`, null when
+ * nothing new played) and where each bin is shown, easing toward it every
+ * frame with Pro-Q style rise-and-fall. */
+interface Analyser {
+  target: Spectrum | null;
+  shown: Spectrum | null;
+}
+
+/** Polls the tapped track's spectrum while the EQ is open, and calls
+ * `draw` every frame the analyser moves. */
+function useSpectrum(track: number | null, an: Analyser, draw: () => void) {
   useEffect(() => {
     if (track === null || !isTauri()) return;
     let live = true;
-    let busy = false;
-    let last = 0;
-    let shown: Spectrum | null = null;
-    let raf = 0;
-    const tick = (t: number) => {
-      raf = requestAnimationFrame(tick);
-      if (busy || t - last < 30) return;
-      last = t;
-      busy = true;
-      void api
+    const stopPoll = everyFrameAtMost(30, () =>
+      api
         .spectrum(track)
         .then((s) => {
-          if (!live) return;
-          if (s) {
-            const prev: Spectrum | null = shown;
-            shown = { ...s, db: prev && prev.db.length === s.db.length ? s.db.map((d, i) => Math.max(d, prev.db[i] - SPECTRUM_FALL)) : s.db };
-          } else if (shown) {
-            const db = shown.db.map((d) => d - SPECTRUM_FALL);
-            shown = db.every((d) => d < -SPECTRUM_FLOOR - 24) ? null : { ...shown, db };
-          }
-          setSpec(shown);
+          if (live) an.target = s;
         })
-        .catch(() => undefined)
-        .finally(() => {
-          busy = false;
-        });
-    };
-    raf = requestAnimationFrame(tick);
+        .catch(() => undefined),
+    );
+    const stopFrame = onFrame((_, dt) => {
+      const { target } = an;
+      let shown = an.shown;
+      if (!shown && !target) return;
+      if (target && (!shown || shown.db.length !== target.db.length)) shown = { ...target, db: target.db.map(() => -SPECTRUM_FLOOR - 48) };
+      if (!shown) return;
+      const db = shown.db.map((d, i) => meterStep(d, target ? target.db[i] : -Infinity, dt, SPECTRUM_FALL, 0.02));
+      an.shown = !target && db.every((d) => d < -SPECTRUM_FLOOR - 24) ? null : { ...(target ?? shown), db };
+      draw();
+    });
     return () => {
       live = false;
-      cancelAnimationFrame(raf);
-      setSpec(null);
+      stopPoll();
+      stopFrame();
+      an.target = null;
+      an.shown = null;
+      draw();
       void api.spectrum(null).catch(() => undefined);
     };
-  }, [track]);
-  return spec;
+  }, [track, an, draw]);
 }
 
 /** A new band where the user double-clicked: cuts at the far ends, a bell
@@ -122,7 +122,13 @@ export function EqPanel() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 600, h: 160 });
   const wheelTimer = useRef<number | undefined>(undefined);
-  const spec = useSpectrum(track ? track.id : null);
+  // The grid and analyser go on a canvas of their own under the curve, so
+  // the analyser redraws every frame without redrawing the bands.
+  const back = useRef<HTMLCanvasElement>(null);
+  const [an] = useState<Analyser>(() => ({ target: null, shown: null }));
+  const drawBack = useRef<() => void>(() => undefined);
+  const redrawBack = useCallback(() => drawBack.current(), []);
+  useSpectrum(track ? track.id : null, an, redrawBack);
 
   useLayoutEffect(() => {
     const el = graph.current;
@@ -136,6 +142,68 @@ export function EqPanel() {
   const top = Math.min(MAX_FREQ, rate / 2);
   const ax = geometry(size.w, size.h, top, range);
   const { y, dbAt } = ax;
+
+  useLayoutEffect(() => {
+    const c = back.current;
+    if (!c || !hasTrack) return;
+    const ax = geometry(size.w, size.h, top, range);
+    const { y } = ax;
+    const dpr = window.devicePixelRatio || 1;
+    const { w, h } = size;
+    c.width = Math.round(w * dpr);
+    c.height = Math.round(h * dpr);
+    c.style.width = `${w}px`;
+    c.style.height = `${h}px`;
+    const x = c.getContext("2d");
+    if (!x) return;
+    drawBack.current = () => {
+      x.setTransform(dpr, 0, 0, dpr, 0, 0);
+      x.clearRect(0, 0, w, h);
+      // Grid.
+      x.font = "9.5px 'Monaspace Argon', Consolas, monospace";
+      x.textBaseline = "top";
+      for (const hz of GRID_HZ) {
+        if (hz > top) continue;
+        const gx = Math.round(ax.x(hz)) + 0.5;
+        x.fillStyle = "#1f1f1f";
+        x.fillRect(gx, 0, 1, h);
+        x.fillStyle = "#5a5a5a";
+        x.fillText(fmtHzShort(hz), gx + 3, h - 12);
+      }
+      const step = range <= 12 ? 6 : 10;
+      for (let db = -range; db <= range; db += step) {
+        const gy = Math.round(y(db)) + 0.5;
+        x.fillStyle = db === 0 ? "#2e2e2e" : "#1a1a1a";
+        x.fillRect(0, gy, w, 1);
+        if (db !== -range && db !== range) {
+          x.fillStyle = "#5a5a5a";
+          x.fillText(`${db > 0 ? "+" : ""}${db}`, w - 22, gy + 2);
+        }
+      }
+      // What the track sounds like after the EQ.
+      const spec = an.shown;
+      if (spec) {
+        const n = spec.db.length;
+        const ratio = spec.toHz / spec.fromHz;
+        x.beginPath();
+        x.moveTo(0, h);
+        for (let i = 0; i < n; i++) {
+          const hz = spec.fromHz * Math.pow(ratio, i / (n - 1));
+          if (hz > top) break;
+          const db = spec.db[i] + TILT * Math.log2(hz / 1000);
+          x.lineTo(ax.x(hz), clamp((-db / SPECTRUM_FLOOR) * h, 0, h));
+        }
+        x.lineTo(w, h);
+        x.closePath();
+        x.fillStyle = "rgba(255,255,255,.07)";
+        x.fill();
+        x.strokeStyle = "rgba(255,255,255,.16)";
+        x.lineWidth = 1;
+        x.stroke();
+      }
+    };
+    drawBack.current();
+  }, [hasTrack, size, range, top, an]);
 
   useEffect(() => {
     const c = canvas.current;
@@ -152,47 +220,6 @@ export function EqPanel() {
     if (!x) return;
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
     x.clearRect(0, 0, w, h);
-    // Grid.
-    x.font = "9.5px 'Monaspace Argon', Consolas, monospace";
-    x.textBaseline = "top";
-    for (const hz of GRID_HZ) {
-      if (hz > top) continue;
-      const gx = Math.round(ax.x(hz)) + 0.5;
-      x.fillStyle = "#1f1f1f";
-      x.fillRect(gx, 0, 1, h);
-      x.fillStyle = "#5a5a5a";
-      x.fillText(fmtHzShort(hz), gx + 3, h - 12);
-    }
-    const step = range <= 12 ? 6 : 10;
-    for (let db = -range; db <= range; db += step) {
-      const gy = Math.round(y(db)) + 0.5;
-      x.fillStyle = db === 0 ? "#2e2e2e" : "#1a1a1a";
-      x.fillRect(0, gy, w, 1);
-      if (db !== -range && db !== range) {
-        x.fillStyle = "#5a5a5a";
-        x.fillText(`${db > 0 ? "+" : ""}${db}`, w - 22, gy + 2);
-      }
-    }
-    // What the track sounds like after the EQ.
-    if (spec) {
-      const n = spec.db.length;
-      const ratio = spec.toHz / spec.fromHz;
-      x.beginPath();
-      x.moveTo(0, h);
-      for (let i = 0; i < n; i++) {
-        const hz = spec.fromHz * Math.pow(ratio, i / (n - 1));
-        if (hz > top) break;
-        const db = spec.db[i] + TILT * Math.log2(hz / 1000);
-        x.lineTo(ax.x(hz), clamp((-db / SPECTRUM_FLOOR) * h, 0, h));
-      }
-      x.lineTo(w, h);
-      x.closePath();
-      x.fillStyle = "rgba(255,255,255,.07)";
-      x.fill();
-      x.strokeStyle = "rgba(255,255,255,.16)";
-      x.lineWidth = 1;
-      x.stroke();
-    }
     // Each band faintly, then the sum.
     const live = track.eqBypass ? [] : track.eq.filter((b) => b.on);
     const fns = live.map((b) => bandResponse(b, rate));
@@ -224,7 +251,7 @@ export function EqPanel() {
     x.strokeStyle = track.eqBypass ? "#6b6b6b" : color;
     x.lineWidth = 2;
     x.stroke();
-  }, [track, size, range, rate, sel, color, top, spec]);
+  }, [track, size, range, rate, sel, color, top]);
 
   if (!track) return null;
   const store = useSession.getState;
@@ -349,6 +376,7 @@ export function EqPanel() {
           }}
           data-hint="Double-click to add a band (a cut at either end, a bell between) · drag a band to move it · wheel over a band for its width"
         >
+          <canvas ref={back} />
           <canvas ref={canvas} />
           {bands.map((b, i) => {
             const nx = ax.x(Math.min(b.freq, top));

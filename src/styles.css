@@ -721,12 +721,17 @@ button.upd {
 .ruler .ph {
   position: absolute;
   top: 16px;
-  width: 0;
+  left: 0;
+  /* 11 px wide with a 1 px tip, centred on the lanes' 1 px line: both are
+     placed by transform at the same snapped x (Playhead.tsx). */
+  margin-left: -5px;
+  box-sizing: content-box;
+  width: 1px;
   height: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
   border-top: 8px solid var(--playhead);
-  transform: translateX(-5px);
+  will-change: transform;
   pointer-events: none;
 }
 
@@ -1242,7 +1247,9 @@ body.rsizing * {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
   width: 1px;
+  will-change: transform;
   background: var(--playhead);
   opacity: 0.85;
   pointer-events: none;
@@ -2575,6 +2582,8 @@ body.secdrag * {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
+  will-change: transform;
   width: 1px;
   background: var(--text);
   pointer-events: none;

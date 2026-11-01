@@ -3,19 +3,20 @@ import type { TrackState } from "@/lib/api";
 import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime, MIN_GAIN_DB } from "@/lib/format";
+import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
+import { Playhead } from "./Playhead";
 
 
 function Ruler() {
   const session = useSession((s) => s.session);
   const view = useSession((s) => s.view);
   const width = useSession((s) => s.width);
-  const playhead = useSession((s) => s.playhead);
   const range = useSession((s) => s.range);
   const units = useSession((s) => gridOf(s).units);
   const ref = useRef<HTMLDivElement>(null);
@@ -142,7 +143,7 @@ function Ruler() {
       {range && (
         <div className="rr" style={{ left: px(range.a), width: Math.max(1, (range.b - range.a) / view.fpp) }} />
       )}
-      <div className="ph" style={{ left: px(playhead) }} />
+      <Playhead className="ph" />
     </div>
   );
 }
@@ -179,24 +180,38 @@ function TypeIn({ value, onDone }: { value: string; onDone: (text: string | null
   );
 }
 
-/** Meter height for a linear peak: -60 dBFS at the bottom, 0 dBFS where the
- * red starts (15 of 16 px), anything over fills it. */
-function meterPct(peak: number): number {
-  if (peak <= 0) return 0;
-  const db = 20 * Math.log10(peak);
+/** Meter height for a level in dB: -60 dBFS at the bottom, 0 dBFS where
+ * the red starts (15 of 16 px), anything over fills it. */
+function meterPct(db: number): number {
   return db >= 0 ? 100 : Math.max(0, ((db + 60) / 60) * (15 / 16) * 100);
 }
 
-/** The track's stereo level meter, live while playing. */
+/** The track's stereo level meter, live while playing, drawn every frame
+ * from the latest peaks so it rises and falls smoothly. */
 function Meter({ index }: { index: number }) {
-  const level = useSession((s) => (s.playing ? s.levels[index] : undefined));
+  const ref = useRef<HTMLSpanElement>(null);
+  const playing = useSession((s) => s.playing);
+  useEffect(() => {
+    const bars = [...(ref.current?.querySelectorAll("b") ?? [])];
+    const shown = [-120, -120];
+    const draw = () => bars.forEach((b, i) => (b.style.height = `${meterPct(shown[i])}%`));
+    if (!playing) {
+      draw();
+      return;
+    }
+    return onFrame((_, dt) => {
+      const level = useSession.getState().levels[index];
+      for (let i = 0; i < 2; i++) shown[i] = meterStep(shown[i], toDb(level?.[i] ?? 0), dt, METER_FALL_DB);
+      draw();
+    });
+  }, [playing, index]);
   return (
-    <span className="tm">
+    <span className="tm" ref={ref}>
       <i>
-        <b style={{ height: `${meterPct(level?.[0] ?? 0)}%` }} />
+        <b />
       </i>
       <i>
-        <b style={{ height: `${meterPct(level?.[1] ?? 0)}%` }} />
+        <b />
       </i>
     </span>
   );

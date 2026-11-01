@@ -32,6 +32,7 @@ import { getAppInfo, type AppInfo } from "@/lib/app-info";
 import { dropTarget, setDropHover } from "@/lib/drop";
 import { DropGhost } from "@/components/DropGhost";
 import { fmtFormat } from "@/lib/format";
+import { everyFrameAtMost } from "@/lib/frame-loop";
 import { useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
 import { CHECK_INTERVAL_MS, DEV_CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
@@ -229,22 +230,13 @@ function useShortcuts() {
   }, []);
 }
 
-/** Follows the engine's playhead while playing. */
+/** Follows the engine while playing: position and meter peaks, about 30
+ * times a second. What's drawn runs on between polls (see Playhead). */
 function usePlayheadPolling() {
   const playing = useSession((s) => s.playing);
   useEffect(() => {
     if (!playing) return;
-    let raf = 0;
-    let last = 0;
-    const tick = (t: number) => {
-      if (t - last > 30) {
-        last = t;
-        void useSession.getState().poll();
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return everyFrameAtMost(30, () => useSession.getState().poll());
   }, [playing]);
 }
 

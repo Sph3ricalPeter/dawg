@@ -7,6 +7,7 @@ import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
 import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/stores/session-store";
 import { gridLines, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
+import { Playhead } from "./Playhead";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
@@ -820,9 +821,7 @@ function Grid({ view, width }: { view: View; width: number }) {
 export function Lane({ track, index }: { track: TrackState; index: number }) {
   const view = useSession((s) => s.view);
   const width = useSession((s) => s.width);
-  const playhead = useSession((s) => s.playhead);
   const range = useSession((s) => s.range);
-  const playing = useSession((s) => s.playing);
   const selected = useSession((s) => s.selected);
   const draft = useSession((s) => s.draft);
   const ref = useRef<HTMLDivElement>(null);
@@ -854,7 +853,6 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
   };
 
   const px = (f: number) => (f - view.start) / view.fpp;
-  const phX = px(playhead);
   const ghost = draft?.kind === "clip" && draft.ghost && draft.track === track.id ? draft.clip : null;
   const color = trackColor(index, track.color);
 
@@ -884,7 +882,7 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
       {range && (
         <div className="rangeov" style={{ left: px(range.a), width: Math.max(1, (range.b - range.a) / view.fpp) }} />
       )}
-      {(playing || phX > 0) && phX >= 0 && phX <= width && <div className="playhead" style={{ left: phX }} />}
+      <Playhead className="playhead" lane />
     </div>
   );
 }
