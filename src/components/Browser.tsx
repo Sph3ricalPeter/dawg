@@ -120,10 +120,9 @@ function FileRow({
       style={{ paddingLeft: 10 + depth * 12 }}
       onPointerDown={onDown}
       onClick={() => void useBrowser.getState().pick(path)}
-      onDoubleClick={() => place(path, null, Math.round(useSession.getState().playhead))}
       onContextMenu={(e) => onMenu(e, path, false)}
       data-tip={path}
-      data-hint="Click to preview · drag onto a track or the empty lane below · double-click adds it on a new track at the playhead · right-click for more"
+      data-hint="Click to preview · drag onto a track or the empty lane below · right-click to add it on a new track and more"
     >
       <span className="ic">
         <span className={`ft ft-${ext(path)}`}>{ext(path).toUpperCase()}</span>
@@ -414,7 +413,7 @@ export function Browser() {
     const dir = dirName(path);
     const items: MenuEntry[] = [
       { label: "Preview", keys: "Click", run: () => void b().pick(path, true) },
-      { label: "Add on a new track", keys: "Dbl-click", run: () => place(path, null, at) },
+      { label: "Add on a new track", run: () => place(path, null, at) },
       ...(sel ? [{ label: `Add to ${sel.name || "the selected track"}`, run: () => place(path, sel.id, at) }] : []),
       { label: s.session ? "Open on its own…" : "Open", run: () => openPath(path) },
       "-",
