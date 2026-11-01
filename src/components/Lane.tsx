@@ -11,6 +11,8 @@ import { Knob } from "./Knob";
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
 const EDGE = 6;
+/** Side of a fade handle's square, px. */
+const FH = 7;
 /** A moved clip snaps to other clips' edges, 0 and the playhead within this
  * many pixels (Alt skips it). */
 const SNAP_PX = 8;
@@ -593,8 +595,11 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   };
   const stretchHint = `Stretch ${fmtStretch(clip.stretch)} · drag to stretch in time, keeping the pitch (snaps to clip edges, the playhead and the original length, Alt skips) · double-click or right-click resets`;
 
-  const fadeInX = clamp(px(clip.start + clip.fadeIn) - left, 0, w - 7);
-  const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left - 7, 0, w - 7);
+  // The fade-in square ends where the fade in ends and the fade-out square
+  // starts where the fade out starts. A fade in always ends at or before the
+  // fade out starts, so the squares can touch but never swap sides.
+  const fadeInX = clamp(px(clip.start + clip.fadeIn) - left - FH, 0, Math.max(0, w - 2 * FH));
+  const fadeOutX = clamp(px(clip.start + clip.len - clip.fadeOut) - left, fadeInX + FH, Math.max(fadeInX + FH, w - FH));
   const points = envEdit
     ? clip.envelope
         .map((p, i) => ({ p, i, x: px(clip.start + (p.at - clip.offset) * clip.stretch) - left }))
@@ -654,7 +659,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
       {x0 >= -EDGE && <div className="edge l" onPointerDown={onEdge("l")} data-hint="Drag to trim the start · snaps to the grid, hold Alt for free" />}
       {x1 <= width + EDGE && <div className="edge r" onPointerDown={onEdge("r")} data-hint="Drag to trim the end · snaps to the grid, hold Alt for free" />}
       <div
-        className={`fh${clip.fadeIn > 0 ? " on" : ""}`}
+        className={`fh in${clip.fadeIn > 0 ? " on" : ""}`}
         style={{ left: fadeInX }}
         onPointerDown={onFade("in")}
         onDoubleClick={() => void store().apply(fades(0, clip.fadeOut))}
@@ -666,7 +671,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         data-hint={`Fade in ${fmtMs(clip.fadeIn, rate)} · drag to change, double-click or right-click to remove`}
       />
       <div
-        className={`fh${clip.fadeOut > 0 ? " on" : ""}`}
+        className={`fh out${clip.fadeOut > 0 ? " on" : ""}`}
         style={{ left: fadeOutX }}
         onPointerDown={onFade("out")}
         onDoubleClick={() => void store().apply(fades(clip.fadeIn, 0))}

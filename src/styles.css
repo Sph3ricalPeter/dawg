@@ -1069,28 +1069,38 @@ body.rsizing * {
 .clip .edge:hover {
   background: rgba(255, 255, 255, 0.18);
 }
-/* Fade handles: a 7 px square at the top corner with an 18 px hit area
-   around it, above the trim zones, so a handle at the clip's edge wins
-   (the mockup's order: point > fade handle > gain > trim). */
+/* Fade handles: a 7 px square at the top corner, above the trim zones, so a
+   handle at the clip's edge wins (the mockup's order: point > fade handle >
+   gain > trim). The fade-in square's right edge sits on the fade's end and
+   the fade-out square's left edge on its start, so they never cross. Each
+   hit area grows outward only (6 px past the outer side), so two touching
+   handles never fight over the same pixels. */
 .clip .fh {
   position: absolute;
   top: 14px;
-  width: 18px;
+  width: 13px;
   height: 18px;
-  margin-left: -6px;
   pointer-events: auto;
   cursor: ew-resize;
   z-index: 3;
 }
+.clip .fh.in {
+  margin-left: -6px;
+}
 .clip .fh::before {
   content: "";
   position: absolute;
-  left: 6px;
   top: 0;
   width: 7px;
   height: 7px;
   background: #121212;
   opacity: 0.35;
+}
+.clip .fh.in::before {
+  left: 6px;
+}
+.clip .fh.out::before {
+  left: 0;
 }
 .clip .fh.on::before {
   opacity: 0.85;
