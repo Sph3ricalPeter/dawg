@@ -424,7 +424,12 @@ mod joins {
             let y = tone_in_pieces(stretch);
             // Crossfading two copies of the tone a little out of phase dips
             // it slightly; fading out at each piece's end dipped it 7 dB.
-            for (k, b) in y[2048..y.len() - 2048].chunks_exact(160).enumerate() {
+            for (k, b) in y[2048..y.len() - 2048]
+                .as_chunks::<160>()
+                .0
+                .iter()
+                .enumerate()
+            {
                 let rms = (b.iter().map(|v| v * v).sum::<f32>() / 160.0).sqrt();
                 let db = 20.0 * (rms / 0.3536).log10();
                 assert!(db.abs() < 3.0, "{stretch}: {db:.1} dB at block {k}");
