@@ -1,10 +1,11 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
-import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, shiftEnvelope, srcAt, stem } from "@/lib/format";
+import { clamp, envelopeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, shiftEnvelope, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
-import { usePeaks, type Peaks } from "@/lib/peak-cache";
+import { usePeaks } from "@/lib/peak-cache";
+import { onWaveReady, paintWave, type WaveSource } from "@/lib/wave-tiles";
 import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/stores/session-store";
 import { gridLines, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
@@ -32,6 +33,27 @@ function shade(hex: string, k: number): string {
   return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`;
 }
 
+/** A clip's canvas grows and shrinks in steps this wide, so a zoom doesn't
+ * make the browser allocate it again on every frame. */
+const CANVAS_STEP = 256;
+
+/** `canvas` at `w` by `h` CSS px, cleared, drawing in CSS px; only
+ * reallocated when its size changes. */
+function fitCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
+  const dpr = window.devicePixelRatio || 1;
+  const cw = Math.max(1, Math.round(w * dpr));
+  const ch = Math.max(1, Math.round(h * dpr));
+  if (canvas.width !== cw) canvas.width = cw;
+  if (canvas.height !== ch) canvas.height = ch;
+  if (canvas.style.width !== `${w}px`) canvas.style.width = `${w}px`;
+  if (canvas.style.height !== `${h}px`) canvas.style.height = `${h}px`;
+  const x = canvas.getContext("2d");
+  x?.setTransform(1, 0, 0, 1, 0, 0);
+  x?.clearRect(0, 0, cw, ch);
+  x?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return x;
+}
+
 function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.round(w * dpr));
@@ -46,84 +68,20 @@ function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
 
 /** Waveform, fades and envelope of one clip, `w` px wide starting at timeline
  * frame `f0`. */
-function paintWave(x: CanvasRenderingContext2D, w: number, h: number, clip: ClipState, f0: number, fpp: number, peaks: Peaks | null) {
-  const mid = h / 2;
-  const half = h / 2 - 2;
-  const gain = dbToGain(clip.gainDb);
-  const over: number[] = [];
-  // Zoomed in past one sample a pixel: the samples themselves, joined by a
-  // line (dots too once they're far apart), as other editors draw them.
-  const spp = fpp / clip.stretch;
-  const sA = Math.floor(clip.offset + (f0 - clip.start) / clip.stretch) - 1;
-  const sZ = Math.ceil(clip.offset + (f0 + w * fpp - clip.start) / clip.stretch) + 1;
-  if (peaks && spp < 1 && peaks.sample(Math.max(0, sA + 1)) !== null) {
-    const pts: number[] = [];
-    for (let s = sA; s <= sZ; s++) {
-      const v = peaks.sample(s);
-      if (v === null) continue;
-      const t = clip.start + (s - clip.offset) * clip.stretch;
-      const rel = clamp(t - clip.start, 0, clip.len - 1);
-      const g = v * gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
-      const px = (t - f0) / fpp;
-      if (Math.abs(g) > 1) over.push(Math.round(px));
-      pts.push(px, mid - clamp(g, -1, 1) * half);
-    }
-    x.strokeStyle = "rgba(16,16,16,.85)";
-    x.lineWidth = 1.5;
-    x.lineJoin = "round";
-    x.beginPath();
-    for (let i = 0; i < pts.length; i += 2) (i ? x.lineTo : x.moveTo).call(x, pts[i], pts[i + 1]);
-    x.stroke();
-    if (spp < 1 / 8) {
-      x.fillStyle = "rgba(16,16,16,.85)";
-      for (let i = 0; i < pts.length; i += 2) x.fillRect(pts[i] - 1.5, pts[i + 1] - 1.5, 3, 3);
-    }
-  } else if (peaks) {
-    // Points fixed in time (bucket centres), joined into one filled shape:
-    // while the view zooms they only slide, nothing is re-sampled per pixel.
-    const pts = peaks.points(spp, clip.offset + (f0 - clip.start) / clip.stretch - spp, clip.offset + (f0 + w * fpp - clip.start) / clip.stretch + spp);
-    if (pts && pts.s.length) {
-      const m = pts.s.length;
-      const xs = new Float32Array(m);
-      const gs = new Float32Array(m);
-      for (let i = 0; i < m; i++) {
-        const t = clip.start + (pts.s[i] - clip.offset) * clip.stretch;
-        xs[i] = (t - f0) / fpp;
-        const rel = clamp(t - clip.start, 0, clip.len - 1);
-        gs[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
-      }
-      const shape = (g: (i: number) => number, cap: boolean) => {
-        const yt = (i: number) => mid - (cap ? Math.min(1, pts.hi[i] * g(i)) : pts.hi[i] * g(i)) * half;
-        const yb = (i: number) => mid - (cap ? Math.max(-1, pts.lo[i] * g(i)) : pts.lo[i] * g(i)) * half;
-        x.beginPath();
-        x.moveTo(xs[0], yt(0));
-        for (let i = 1; i < m; i++) x.lineTo(xs[i], yt(i));
-        // Keep at least a hairline where it's silent.
-        for (let i = m - 1; i >= 0; i--) x.lineTo(xs[i], Math.max(yb(i), yt(i) + 0.75));
-        x.closePath();
-        x.fill();
-      };
-      x.fillStyle = "rgba(16,16,16,.2)";
-      shape(() => 1, false);
-      x.fillStyle = "rgba(16,16,16,.8)";
-      shape((i) => gs[i], true);
-      for (let i = 0; i < m; i++) if (pts.hi[i] * gs[i] > 1 || pts.lo[i] * gs[i] < -1) over.push(Math.round(xs[i]));
-    }
-  }
-  // Anything over full scale.
-  x.fillStyle = "#ff4d4d";
-  for (const i of over) {
-    x.fillRect(i, 1, 1, 2);
-    x.fillRect(i, h - 3, 1, 2);
-  }
-}
-
-/** Waveform, fades and envelope of one clip, `w` px wide starting at timeline
- * frame `f0`. */
-function drawClip(canvas: HTMLCanvasElement, w: number, h: number, clip: ClipState, f0: number, fpp: number, peaks: Peaks | null, showEnv: boolean) {
-  const x = setupCanvas(canvas, w, h);
+function drawClip(
+  canvas: HTMLCanvasElement,
+  w: number,
+  h: number,
+  clip: ClipState,
+  f0: number,
+  fpp: number,
+  ws: WaveSource,
+  showEnv: boolean,
+  again: () => void,
+) {
+  const x = fitCanvas(canvas, Math.ceil(w / CANVAS_STEP) * CANVAS_STEP, h);
   if (!x) return;
-  paintWave(x, w, h, clip, f0, fpp, peaks);
+  paintWave(x, w, h, clip, f0, fpp, ws, again);
 
   // Fades: shade outside the diagonal.
   const px = (f: number) => (f - f0) / fpp;
@@ -287,14 +245,25 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const w = Math.max(0, Math.round(right - left));
   const f0 = view.start + left * view.fpp;
   const waveH = Math.max(8, height - TITLE_H - 5);
-  const s0 = clip.offset + (f0 - clip.start) / clip.stretch;
-  const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w, clip.reversed ? sourceFrames : null);
+  const tab = useSession((s) => s.activeTab);
+  const rev = useSession((s) => s.fileRev);
+  const audioFrames = useSession((s) => s.session?.sources.find((x) => x.id === clip.source)?.frames ?? 0);
 
+  // Draws with what it was last rendered with; peaks landing, or a tile
+  // that had to wait a frame, draw it again.
+  const paint = useRef<() => void>(() => undefined);
+  const [again] = useState(() => () => paint.current());
+  useEffect(() => onWaveReady(again), [again]);
   // Before paint: drawn in a passive effect, the waveform trailed the clip's
   // box by a frame and slid inside it while zooming.
   useLayoutEffect(() => {
-    if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
-  }, [w, waveH, clip, f0, view.fpp, peaks, envEdit]);
+    paint.current = () => {
+      if (!canvas.current || w <= 0) return;
+      const ws: WaveSource = { tab, id: clip.source, rev, frames: missing ? 0 : audioFrames };
+      drawClip(canvas.current, w, waveH, clip, f0, view.fpp, ws, envEdit || clip.envelope.length > 0, again);
+    };
+    paint.current();
+  }, [w, waveH, clip, f0, view.fpp, envEdit, tab, rev, audioFrames, missing, again]);
 
   if (w <= 0) return null;
   const store = useSession.getState;
@@ -609,7 +578,9 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         {(clip.pitch !== 0 || selected) && <PitchReadout clip={clip} track={track.id} />}
         <GainReadout clip={clip} track={track.id} className="gain" />
       </div>
-      <canvas ref={canvas} className="clipcv" />
+      <div className="clipcv" style={{ width: w, height: waveH }}>
+        <canvas ref={canvas} />
+      </div>
       {x0 >= -EDGE && <div className="edge l" onPointerDown={onEdge("l")} data-hint="Drag to trim the start · snaps to the grid, hold Alt for free" />}
       {x1 <= width + EDGE && <div className="edge r" onPointerDown={onEdge("r")} data-hint="Drag to trim the end · snaps to the grid, hold Alt for free" />}
       <div
