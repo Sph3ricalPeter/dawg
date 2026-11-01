@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import { clamp, dbToGain, envelopeAt, fadeAt, srcAt } from "@/lib/format";
 import { type ClipState } from "@/lib/api";
 import { useSession } from "@/stores/session-store";
+import { drawTile, TILE_W, type TileJob } from "@/lib/wave-draw";
 
 /* Clip waveforms in the playlist, drawn the way DAWs draw them: from
  * precomputed min/max peaks at power-of-two zoom levels, rendered once into
@@ -19,16 +20,15 @@ import { useSession } from "@/stores/session-store";
  * Zoomed in past one source frame a device pixel, the samples themselves
  * are drawn as a line, straight from the finest peaks. */
 
-/** Tile width in device pixels (plus a pixel of the neighbours each side,
- * so scaled tiles join without seams). */
-const W = 256;
+/** Tile width in device pixels (see `wave-draw`). */
+const W = TILE_W;
 /** Peaks fetched from the engine per call, at levels finer than the
  * overview. */
 const CHUNK = 4096;
 /** Most overview buckets the engine gives in one call. */
 const OVERVIEW_BUCKETS = 1 << 16;
 /** Image memory the tiles may use. */
-const TILE_BYTES = 96 << 20;
+const TILE_BYTES = 160 << 20;
 /** Peak chunks kept (32 KB each). */
 const MAX_CHUNKS = 512;
 /** Time a frame may spend rendering new tiles; the rest wait a frame and
@@ -225,8 +225,6 @@ function getTile(key: string): Tile | undefined {
   return t;
 }
 
-let scratch: OffscreenCanvas | null = null;
-
 /** What changes how a clip's tiles look. Where it has no fades or envelope
  * its position and trim don't, so moving or trimming it keeps its tiles. */
 function shapeOf(clip: ClipState, src: Source): string {
@@ -243,60 +241,150 @@ function gainAt(clip: ClipState, gain: number, plain: boolean, u: number): numbe
   return gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
 }
 
-/** Tile `k` of level `lv`, `H` device pixels tall, or null until its peaks
- * are loaded. */
-function renderTile(clip: ClipState, src: Source, lv: number, k: number, H: number, dpr: number): ImageBitmap | null {
+/** The peaks and levels tile `k` of level `lv` is drawn from, or null
+ * until its peaks are loaded (they're asked for). */
+function jobFor(clip: ClipState, src: Source, lv: number, k: number, H: number, dpr: number, lag: number): TileJob | null {
   const per = 2 ** lv;
   // One bucket each side for the seam gutters, one more for the outline's
   // slope into them.
   const b0 = k * W - 2;
   const n = W + 4;
-  const d = buckets(src, lv, b0, n);
+  const d = buckets(src, lv, b0, n, lag);
   if (!d) return null;
-  if (!scratch) scratch = new OffscreenCanvas(W + 2, H);
-  if (scratch.height !== H) scratch.height = H;
-  const x = scratch.getContext("2d")!;
-  x.clearRect(0, 0, W + 2, H);
-  const mid = H / 2;
-  const half = H / 2 - 2 * dpr;
   const mirror = clip.reversed ? src.frames : null;
   const plain = clip.fadeIn === 0 && clip.fadeOut === 0 && clip.envelope.length === 0;
   const gain = dbToGain(clip.gainDb);
-  const xs = new Float32Array(n);
   const gs = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    // Pixel 0 of the tile is bucket `k * W - 1`, at its centre.
-    xs[i] = i - 1 + 0.5;
     const rc = (b0 + i + 0.5) * per;
     gs[i] = gainAt(clip, gain, plain, mirror === null ? rc : mirror - rc);
   }
-  // Zoomed in, the outline is about as thick as the sample line it gives
-  // way to; further out, a hairline.
-  const hair = (lv <= 1 ? 1.4 : lv === 2 ? 1.05 : 0.75) * dpr;
-  const shape = (g: (i: number) => number, cap: boolean) => {
-    const yt = (i: number) => mid - (cap ? Math.min(1, d[2 * i + 1] * g(i)) : d[2 * i + 1] * g(i)) * half;
-    const yb = (i: number) => mid - (cap ? Math.max(-1, d[2 * i] * g(i)) : d[2 * i] * g(i)) * half;
-    x.beginPath();
-    x.moveTo(xs[0], yt(0));
-    for (let i = 1; i < n; i++) x.lineTo(xs[i], yt(i));
-    // At least a hairline where it's silent.
-    for (let i = n - 1; i >= 0; i--) x.lineTo(xs[i], Math.max(yb(i), yt(i) + hair));
-    x.closePath();
-    x.fill();
-  };
-  x.fillStyle = "rgba(16,16,16,.2)";
-  shape(() => 1, false);
-  x.fillStyle = "rgba(16,16,16,.8)";
-  shape((i) => gs[i], true);
-  // Anything over full scale.
-  x.fillStyle = "#ff4d4d";
-  for (let i = 1; i < n - 1; i++) {
-    if (d[2 * i + 1] * gs[i] > 1 || d[2 * i] * gs[i] < -1) {
-      x.fillRect(i - 1, dpr, 1, 2 * dpr);
-      x.fillRect(i - 1, H - 3 * dpr, 1, 2 * dpr);
+  return { lv, h: H, dpr, d, gs };
+}
+
+/* Tiles are drawn by a few workers; until one lands, the clip shows what it
+ * has (the tile's old look, or part of a coarser or finer tile). Where
+ * workers can't draw on a canvas, the main thread does, a few ms a frame. */
+
+const WORKERS = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2));
+/** Tiles being drawn at once, per worker. */
+const PER_WORKER = 3;
+let workers: Worker[] | null = null;
+let noWorkers = typeof OffscreenCanvas === "undefined" || typeof Worker === "undefined";
+interface Job {
+  key: string;
+  stamp: string;
+  shape: string;
+  h: number;
+  at: number;
+  job: TileJob;
+}
+/** Tiles waiting for a worker, by key; the latest ask for a key wins. */
+const jobs = new Map<string, Job>();
+/** Tiles a worker is drawing, by id. */
+const drawing = new Map<number, Job & { worker: number }>();
+/** What's being drawn per tile key, so it isn't asked for twice. */
+const drawingStamp = new Map<string, string>();
+const busy: number[] = [];
+let jobSeq = 0;
+
+function startWorkers(): Worker[] | null {
+  if (workers || noWorkers) return workers;
+  try {
+    workers = [];
+    for (let i = 0; i < WORKERS; i++) {
+      const wk = new Worker(new URL("./wave-worker.ts", import.meta.url), { type: "module" });
+      const idx = i;
+      wk.onmessage = (e: MessageEvent<{ id: number; bmp: ImageBitmap }>) => {
+        const j = drawing.get(e.data.id);
+        drawing.delete(e.data.id);
+        busy[idx]--;
+        if (j) {
+          if (drawingStamp.get(j.key) === j.stamp) drawingStamp.delete(j.key);
+          putTile(j.key, { bmp: e.data.bmp, shape: j.shape, h: j.h });
+          redrawAll();
+        } else e.data.bmp.close();
+        dispatch();
+      };
+      wk.onerror = () => {
+        // No canvas in workers here: the main thread draws from now on.
+        noWorkers = true;
+        for (const w of workers ?? []) w.terminate();
+        workers = null;
+        drawing.clear();
+        drawingStamp.clear();
+        jobs.clear();
+        redrawAll();
+      };
+      workers.push(wk);
+      busy.push(0);
     }
+  } catch {
+    noWorkers = true;
+    workers = null;
   }
+  return workers;
+}
+
+function dispatch() {
+  const ws = workers;
+  if (!ws) return;
+  const now = performance.now();
+  for (;;) {
+    let wi = -1;
+    for (let i = 0; i < ws.length; i++) if (busy[i] < PER_WORKER && (wi < 0 || busy[i] < busy[wi])) wi = i;
+    if (wi < 0) return;
+    let best: Job | null = null;
+    for (const j of jobs.values()) {
+      // Asked for a while ago and not since: off screen by now.
+      if (now - j.at > 1500) jobs.delete(j.key);
+      else if (!best || j.at > best.at) best = j;
+    }
+    if (!best) return;
+    jobs.delete(best.key);
+    const id = ++jobSeq;
+    drawing.set(id, { ...best, worker: wi });
+    drawingStamp.set(best.key, best.stamp);
+    busy[wi]++;
+    ws[wi].postMessage({ ...best.job, id }, [best.job.d.buffer, best.job.gs.buffer]);
+  }
+}
+
+let scratch: OffscreenCanvas | null = null;
+
+/** Draws a tile on the main thread, for where workers can't. */
+function drawHere(job: TileJob): ImageBitmap {
+  scratch ??= new OffscreenCanvas(W + 2, job.h);
+  if (scratch.height !== job.h) scratch.height = job.h;
+  drawTile(scratch.getContext("2d")!, job);
   return scratch.transferToImageBitmap();
+}
+
+/** Asks for tile `key` (tile `k` of level `lv`) to be drawn as `shape`, `H`
+ * device pixels tall; `lag` ms behind what's on screen, for one that's only
+ * likely to be needed soon. On the main thread, it may be drawn at once
+ * (true). */
+function want(key: string, clip: ClipState, src: Source, lv: number, k: number, H: number, dpr: number, shape: string, lag: number): boolean {
+  const stamp = `${shape}|${H}`;
+  if (drawingStamp.get(key) === stamp) return false;
+  const queued = jobs.get(key);
+  if (queued && queued.stamp === stamp) {
+    queued.at = Math.max(queued.at, performance.now() - lag);
+    return false;
+  }
+  if (startWorkers()) {
+    const job = jobFor(clip, src, lv, k, H, dpr, lag);
+    if (!job) return false;
+    jobs.set(key, { key, stamp, shape, h: H, at: performance.now() - lag, job });
+    dispatch();
+    return false;
+  }
+  if (lag > 0 || spent >= BUDGET_MS) return false;
+  const t0 = performance.now();
+  const job = jobFor(clip, src, lv, k, H, dpr, 0);
+  if (job) putTile(key, { bmp: drawHere(job), shape, h: H });
+  spent += performance.now() - t0;
+  return !!job;
 }
 
 /* ---------- Drawing ---------- */
@@ -378,9 +466,9 @@ export function paintWave(
   x.beginPath();
   x.rect(cx0, 0, cx1 - cx0, h);
   x.clip();
-  // Over this frame's budget: the rest on the next. (Peaks still loading
-  // redraw every clip when they land.)
-  let waited = false;
+  // Drawn on the main thread over this frame's budget: the rest on the
+  // next. (Tiles from workers and peaks landing redraw every clip.)
+  let waiting = false;
 
   // Source frames a device pixel.
   const sppd = 1 / (k * dpr);
@@ -429,33 +517,45 @@ export function paintWave(
       const key = `${ws.tab}:${clip.id}|${lv}|${tk}`;
       let tile = getTile(key);
       if (!tile || tile.shape !== shape || tile.h !== H) {
-        let bmp: ImageBitmap | null = null;
-        if (spent < BUDGET_MS) {
-          const t0 = performance.now();
-          bmp = renderTile(clip, src, lv, tk, H, dpr);
-          spent += performance.now() - t0;
-        } else waited = true;
-        if (bmp) {
-          tile = { bmp, shape, h: H };
-          putTile(key, tile);
-        } else {
-          // Meanwhile: the old look of this tile, or a coarser tile's part.
-          if (tile) {
-            blit(tile.bmp, 1, W);
-            continue;
-          }
-          for (let j = 1; j <= 6; j++) {
-            const c = getTile(`${ws.tab}:${clip.id}|${lv + j}|${Math.floor(tk / 2 ** j)}`);
-            if (c) {
-              const part = W / 2 ** j;
-              blit(c.bmp, 1 + (tk - Math.floor(tk / 2 ** j) * 2 ** j) * part, part);
-              break;
-            }
-          }
-          continue;
+        if (want(key, clip, src, lv, tk, H, dpr, shape, 0)) tile = getTile(key);
+        else waiting = true;
+      }
+      if (tile) {
+        // Up to date, or its old look until the new one lands.
+        blit(tile.bmp, 1, W);
+        continue;
+      }
+      // Meanwhile: part of a coarser tile, or the two finer ones it covers.
+      let shown = false;
+      for (let j = 1; j <= 6 && !shown; j++) {
+        const c = getTile(`${ws.tab}:${clip.id}|${lv + j}|${Math.floor(tk / 2 ** j)}`);
+        if (c) {
+          const part = W / 2 ** j;
+          blit(c.bmp, 1 + (tk - Math.floor(tk / 2 ** j) * 2 ** j) * part, part);
+          shown = true;
         }
       }
-      blit(tile.bmp, 1, W);
+      if (!shown && lv > 0) {
+        const a = getTile(`${ws.tab}:${clip.id}|${lv - 1}|${2 * tk}`);
+        const b = getTile(`${ws.tab}:${clip.id}|${lv - 1}|${2 * tk + 1}`);
+        if (a && b) {
+          const xm = (xa + xb) / 2;
+          const [l, r] = mirror === null ? [a, b] : [b, a];
+          const blitTo = (bmp: ImageBitmap, from: number, to: number) => {
+            if (mirror === null) x.drawImage(bmp, 1, 0, W, bmp.height, from, 0, to - from, h);
+            else {
+              x.save();
+              x.translate(from + to, 0);
+              x.scale(-1, 1);
+              x.drawImage(bmp, 1, 0, W, bmp.height, from, 0, to - from, h);
+              x.restore();
+            }
+          };
+          blitTo(l.bmp, xa, xm);
+          blitTo(r.bmp, xm, xb);
+        }
+      }
+      continue;
     }
   };
 
@@ -465,10 +565,26 @@ export function paintWave(
   drawLevel(Math.min(top, L + 1), t);
   x.globalCompositeOperation = "source-over";
   x.globalAlpha = 1;
-  // The next level in, so a zoom in finds it loaded.
-  if (L > 0) buckets(src, L - 1, Math.floor(rA / 2 ** (L - 1)), Math.ceil((rZ - rA) / 2 ** (L - 1)) + 2, 500);
   x.restore();
-  if (waited) later(again);
+  // Drawn ahead, behind what's on screen: the level a zoom in or out goes
+  // to next, and a tile past each edge for a scroll.
+  if (!noWorkers && tileBytes < TILE_BYTES * 0.6) {
+    const ahead = (lv: number, extra: number) => {
+      if (lv < 0 || lv > top) return;
+      const span = W * 2 ** lv;
+      for (let tk = Math.floor(rA / span) - extra; tk <= Math.floor((rZ - 1e-9) / span) + extra; tk++) {
+        if (tk < 0 || tk * span >= src.frames) continue;
+        const key = `${ws.tab}:${clip.id}|${lv}|${tk}`;
+        const tile = tiles.get(key);
+        if (!tile || tile.shape !== shape || tile.h !== H) want(key, clip, src, lv, tk, H, dpr, shape, 300);
+      }
+    };
+    ahead(L, 1);
+    ahead(L + 1, 1);
+    ahead(L - 1, 0);
+    ahead(L + 2, 0);
+  }
+  if (waiting && noWorkers) later(again);
 }
 
 /** Zoomed in past a frame a device pixel: the samples, joined by a line

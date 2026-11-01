@@ -73,7 +73,8 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   was left showing (view, playhead, selection, EQ), and the waveform cache
   is keyed by tab, since source ids repeat between sessions.
   Waveforms: `lib/wave-tiles.ts` draws clip waveforms from power-of-two
-  peak levels rendered once into cached tiles fixed in time; a zoom only
+  peak levels rendered once into cached tiles fixed in time, drawn by
+  workers (`lib/wave-worker.ts`, shared drawing in `lib/wave-draw.ts`); a zoom only
   scales and cross-fades two levels' tiles, so draw nothing per pixel per
   frame there, and don't resize a canvas on every frame (it reallocates).
   Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
