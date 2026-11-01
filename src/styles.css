@@ -844,28 +844,43 @@ body.rsizing * {
   background: #47a6f2;
   color: #08121d;
 }
-.vk {
-  flex: 1;
-  min-width: 0;
+/* The shared volume control (components/Volume.tsx): knob, value, meter. */
+.vol {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 20px;
-  padding: 0 4px 0 2px;
+  padding: 0 3px 0 2px;
   border-radius: 4px;
   cursor: ns-resize;
+  flex: none;
 }
-.vk:hover {
+.vol:hover {
   background: var(--bg-4);
 }
-.vk svg,
+.vol.trk {
+  flex: 1;
+  min-width: 0;
+}
+.vol svg,
 .pan svg {
   display: block;
   overflow: visible;
   flex: none;
   pointer-events: none;
 }
-.vk .tm {
+.vol .vv {
+  font: 10px var(--mono);
+  color: var(--text-dim);
+  width: 42px;
+  white-space: nowrap;
+  cursor: text;
+}
+.vol.trk .vv {
+  flex: 1;
+  min-width: 0;
+}
+.vol .tm {
   width: 7px;
   height: 16px;
   flex: none;
@@ -875,12 +890,12 @@ body.rsizing * {
   border-radius: 1px;
   overflow: hidden;
 }
-.vk .tm i {
+.vol .tm i {
   flex: 1;
   position: relative;
   display: block;
 }
-.vk .tm i b {
+.vol .tm i b {
   position: absolute;
   left: 0;
   right: 0;
@@ -891,15 +906,8 @@ body.rsizing * {
   background-position: bottom;
   display: block;
 }
-.vk .vv {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text);
-  white-space: nowrap;
-  cursor: text;
-}
 .ktype {
-  width: 44px;
+  width: 42px;
   min-width: 0;
   font: 10px var(--mono);
   background: var(--bg-0);
@@ -1989,19 +1997,9 @@ body.rsizing * {
 .tg.master {
   gap: 5px;
 }
-.master .mvk {
-  width: 20px;
-  height: 20px;
-  cursor: ns-resize;
-}
-.master .mv,
 .master .mpk {
   font: 10px var(--mono);
   color: var(--text-dim);
-  width: 34px;
-  text-align: right;
-}
-.master .mtype {
   width: 34px;
 }
 .master .mstr {

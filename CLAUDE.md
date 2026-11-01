@@ -59,6 +59,8 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   `components/Dock.tsx` renders it). Each panel renders once, through a
   portal, into a host element that moves between slots, so docking never
   remounts it; give a new panel a `PanelHead` and an entry in `PANELS`.
+  Volume: `components/Volume.tsx` is the one volume control (knob, value
+  with dB, meter) for the master and every track; use it for any new one.
   Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
   is the one styled tooltip (a stray `title` is converted on hover). `data-hint`
   is the status bar's longer hint.

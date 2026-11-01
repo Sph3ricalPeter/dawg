@@ -2,14 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TrackState } from "@/lib/api";
 import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
-import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime, MIN_GAIN_DB } from "@/lib/format";
+import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime } from "@/lib/format";
 import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
-import { knobControl, parseDb, volKnobFrac } from "@/lib/knob";
+import { knobControl } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
 import { ease } from "@/lib/smooth-view";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
+import { Volume } from "./Volume";
 import { Lane } from "./Lane";
 import { PanelHead } from "./Dock";
 import { Playhead } from "./Playhead";
@@ -160,28 +161,6 @@ function fmtPan(p: number): string {
   return v === 0 ? "C" : v < 0 ? `L${v * -1}` : `R${v}`;
 }
 
-/** Track volume knob range, as in the mockup. */
-const VOL_MIN = -48;
-const VOL_MAX = 6;
-
-/** A number typed in place of a knob's readout. */
-function TypeIn({ value, onDone }: { value: string; onDone: (text: string | null) => void }) {
-  return (
-    <input
-      className="ktype"
-      autoFocus
-      defaultValue={value}
-      onFocus={(e) => e.target.select()}
-      onBlur={(e) => onDone(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") onDone(null);
-        e.stopPropagation();
-      }}
-    />
-  );
-}
-
 /** Meter height for a level in dB: -60 dBFS at the bottom, 0 dBFS where
  * the red starts (15 of 16 px), anything over fills it. */
 function meterPct(db: number): number {
@@ -321,7 +300,6 @@ function TrackHeader({
   const session = useSession((s) => s.session);
   const selected = useSession((s) => s.selected);
   const [renaming, setRenaming] = useState(false);
-  const [typing, setTyping] = useState(false);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const eqOpen = useSession((s) => s.eqTrack === track.id);
   if (!session) return <div className="th" />;
@@ -345,13 +323,7 @@ function TrackHeader({
   };
   const setMix = (m: { gain_db?: number; pan?: number; muted?: boolean; solo?: boolean }) =>
     void store().apply({ type: "set_track_mix", track: track.id, ...m });
-  const vol = track.gainDb <= MIN_GAIN_DB ? VOL_MIN : track.gainDb;
   const pan = Math.round(track.pan * 100);
-  const { ref: volRef, onPointerDown: volDown } = knobControl(
-    vol,
-    { rate: 0.25, min: VOL_MIN, max: VOL_MAX, step: 1, res: 0.1, detent: 0.3 },
-    (v, done) => mix({ gain_db: v }, done),
-  );
   const panKnob = knobControl(pan, { rate: 1, min: -100, max: 100, step: 10, res: 1, detent: 4 }, (v, done) => mix({ pan: v / 100 }, done));
   const rate = session.rate;
   // In a tall track, details of its selected clip (the scratch session's view).
@@ -420,37 +392,14 @@ function TrackHeader({
           <button className={`ms s${track.solo ? " on" : ""}`} onClick={() => setMix({ solo: !track.solo })} data-hint="Solo">
             S
           </button>
-          <div
-            className="vk"
-            data-hint="Track volume · drag up/down (Shift fine, Ctrl 1 dB steps) · double-click the number to type, the knob to reset"
-            ref={volRef}
-            onPointerDown={(e) => {
-              if ((e.target as HTMLElement).closest(".vv, .ktype")) return;
-              volDown(e);
-            }}
-            onDoubleClick={(e) => {
-              if (!(e.target as HTMLElement).closest(".vv, .ktype")) setMix({ gain_db: 0 });
-            }}
-          >
-            <Meter index={index} />
-            <Knob f={volKnobFrac(track.gainDb)} />
-            {typing ? (
-              <TypeIn
-                value={fmtDb(track.gainDb, false).replace("dB", "")}
-                onDone={(t) => {
-                  setTyping(false);
-                  if (t === null) return;
-                  const db = parseDb(t);
-                  if (db === -Infinity) setMix({ gain_db: MIN_GAIN_DB });
-                  else if (Number.isFinite(db)) setMix({ gain_db: clamp(db, VOL_MIN, 12) });
-                }}
-              />
-            ) : (
-              <span className="vv" onDoubleClick={() => setTyping(true)}>
-                {fmtDb(track.gainDb).replace(" dB", "")}
-              </span>
-            )}
-          </div>
+          <Volume
+            className="trk"
+            db={track.gainDb}
+            hint="Track volume"
+            onDrag={(gain_db, done) => mix({ gain_db }, done)}
+            onSet={(gain_db) => setMix({ gain_db })}
+            before={<Meter index={index} />}
+          />
           <div
             className="pan"
             data-hint={`Pan ${fmtPan(track.pan)} · drag up/down (Shift fine, Ctrl 10% steps) · double-click centres`}

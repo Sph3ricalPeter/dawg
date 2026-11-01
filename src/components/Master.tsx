@@ -1,12 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { clamp, fmtDb, MIN_GAIN_DB } from "@/lib/format";
+import { useEffect, useRef } from "react";
 import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
-import { knobControl, parseDb, volKnobFrac } from "@/lib/knob";
 import { useSession } from "@/stores/session-store";
-import { Knob } from "./Knob";
-
-const VOL_MIN = -48;
-const VOL_MAX = 6;
+import { Volume } from "./Volume";
 
 /** Meter width for a level in dB: -60 dBFS empty, 0 dBFS where red starts. */
 function meterPct(db: number): number {
@@ -43,14 +38,14 @@ function MasterMeter() {
   );
 }
 
-/** Master volume and the master meter, in the top bar. The readout holds
+/** Master volume and the master meter, in the top bar: the shared volume
+ * control with the wide meter after it. The readout holds
  * the loudest peak since playback began and turns red past 0 dBFS; click it
  * to reset. */
 export function Master() {
   const session = useSession((s) => s.session);
   const draft = useSession((s) => (s.draft?.kind === "master" ? s.draft.db : null));
   const peak = useSession((s) => s.masterPeak);
-  const [typing, setTyping] = useState(false);
   if (!session) return null;
   const store = useSession.getState;
   const db = draft ?? session.masterDb;
@@ -61,40 +56,13 @@ export function Master() {
   const peakDb = peak > 0 ? 20 * Math.log10(peak) : null;
   return (
     <div className="tg master">
-      <div
-        className="mvk"
-        data-hint="Master volume · drag up/down (Shift fine, Ctrl 1 dB steps) · double-click resets to 0 dB"
-        {...knobControl(db <= MIN_GAIN_DB ? VOL_MIN : db, { rate: 0.25, min: VOL_MIN, max: VOL_MAX, step: 1, res: 0.1, detent: 0.3 }, (v, done) =>
-          set(v <= VOL_MIN ? MIN_GAIN_DB : v, done),
-        )}
-        onDoubleClick={() => void store().apply({ type: "set_master_gain", gain_db: 0 })}
-      >
-        <Knob f={volKnobFrac(db)} />
-      </div>
-      {typing ? (
-        <input
-          className="ktype mtype"
-          autoFocus
-          defaultValue={fmtDb(db, false).replace("dB", "")}
-          onFocus={(e) => e.target.select()}
-          onBlur={(e) => {
-            setTyping(false);
-            const v = parseDb(e.target.value);
-            if (v === -Infinity) void store().apply({ type: "set_master_gain", gain_db: MIN_GAIN_DB });
-            else if (Number.isFinite(v)) void store().apply({ type: "set_master_gain", gain_db: clamp(v, VOL_MIN, 12) });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") setTyping(false);
-            e.stopPropagation();
-          }}
-        />
-      ) : (
-        <span className="mv" onDoubleClick={() => setTyping(true)} data-hint="Master volume · double-click to type">
-          {fmtDb(db).replace(" dB", "")}
-        </span>
-      )}
-      <MasterMeter />
+      <Volume
+        db={db}
+        hint="Master volume"
+        onDrag={set}
+        onSet={(gain_db) => void store().apply({ type: "set_master_gain", gain_db })}
+        after={<MasterMeter />}
+      />
       <button
         className={`mpk${peakDb !== null && peakDb > 0 ? " over" : ""}`}
         onClick={() => store().resetMasterPeak()}
