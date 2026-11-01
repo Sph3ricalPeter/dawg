@@ -133,6 +133,7 @@ pub fn run() {
             commands::peaks,
             commands::play,
             commands::stop,
+            commands::set_bounds,
             commands::transport,
             commands::spectrum,
             commands::save_preview,

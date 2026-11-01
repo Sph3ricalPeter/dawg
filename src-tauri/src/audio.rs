@@ -55,6 +55,17 @@ impl Audio {
         Ok(())
     }
 
+    /// Moves where the session's playback stops or loops back without
+    /// seeking. Does nothing while stopped or previewing.
+    pub fn set_bounds(&mut self, to: u64, looping: Option<u64>) {
+        if self.previewing {
+            return;
+        }
+        if let Some(out) = &mut self.output {
+            out.handle.send(PlayerMsg::Bounds { to, looping });
+        }
+    }
+
     /// The open output, opened (or reopened) with `project` if need be.
     fn ready(&mut self, project: Arc<Project>) -> Result<&mut Output, String> {
         let dead = self

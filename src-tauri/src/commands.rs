@@ -402,6 +402,12 @@ pub fn play(state: State<AppState>, from: u64, to: u64, looping: Option<u64>) ->
         .map_err(|e| Error::new("audio", e))
 }
 
+/// Moves the loop or stop point of the playback in progress, without seeking.
+#[tauri::command]
+pub fn set_bounds(state: State<AppState>, to: u64, looping: Option<u64>) {
+    state.lock().audio.set_bounds(to, looping);
+}
+
 #[tauri::command]
 pub fn stop(state: State<AppState>) {
     state.lock().audio.stop();

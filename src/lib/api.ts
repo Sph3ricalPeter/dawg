@@ -303,6 +303,9 @@ export const api = {
     new Float32Array(await invoke<ArrayBuffer>("peaks", { source, from, to, buckets })),
   /** Plays `from..to`; with `looping`, jumps back there at `to` until stopped. */
   play: (from: number, to: number, looping: number | null) => invoke<void>("play", { from, to, looping }),
+  /** Moves where the playback in progress stops or loops back, without seeking
+   * (it jumps to `looping` only if the playhead is outside the loop). */
+  setBounds: (to: number, looping: number | null) => invoke<void>("set_bounds", { to, looping }),
   stop: () => invoke<void>("stop"),
   transport: () =>
     invoke<{ playing: boolean; position: number; levels: [number, number][]; master: [number, number] }>("transport"),
