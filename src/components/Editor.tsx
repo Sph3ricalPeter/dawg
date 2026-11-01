@@ -647,21 +647,30 @@ export function Editor() {
             <Lane track={t} index={i} />
           </div>
         ))}
-        <div className="trow add">
-          <div className="th">
+        {/* The ghost track: one dashed drop box over header and lane, like
+            the empty project's. The lane under it is the drop target. */}
+        <div className="trow add" data-hint="Drop WAV or MP3 files here, each gets a new track">
+          <div className="th" />
+          <div className="lane addlane" />
+          <div className="addbox">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3" />
+            </svg>
+            <div className="addmsg">
+              <strong>Drop WAV or MP3 files here for new tracks</strong>
+              <span>or drop onto a track to add it there</span>
+            </div>
+            <div className="addsep" />
             <button
               className="btn addbtn"
               onClick={() => void addFilesDialog()}
               data-hint="Add WAV or MP3 files, each on a new track at the playhead (Ctrl+Shift+O)"
             >
-              + Add files…
+              + Add files… <kbd>Ctrl+Shift+O</kbd>
             </button>
             <button className="btn ghost addbtn" onClick={() => void useSession.getState().addTrack()} data-hint="Add an empty track">
               + Track
             </button>
-          </div>
-          <div className="lane addlane" data-hint="Drop WAV or MP3 files here, each gets a new track">
-            <span className="lhint">Drop files here for new tracks · drop onto a track to add there</span>
           </div>
         </div>
       </div>
