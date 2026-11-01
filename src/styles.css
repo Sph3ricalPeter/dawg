@@ -2109,6 +2109,31 @@ body.rsizing * {
   font-size: 8px;
   color: var(--text-faint);
 }
+.bopts {
+  position: relative;
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.bopts .tb.tlset {
+  gap: 3px;
+  padding: 0 4px;
+}
+.bopts .tb.tlset.manual {
+  color: var(--warn);
+}
+.menu.bmenu {
+  top: 24px;
+  left: auto;
+  right: 0;
+  min-width: 200px;
+}
+.menu-note {
+  padding: 2px 8px 4px 24px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
 .menu.tlmenu {
   top: 26px;
   left: 0;
@@ -2430,6 +2455,7 @@ body.secdrag * {
   white-space: nowrap;
 }
 .bi {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -2437,6 +2463,15 @@ body.secdrag * {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
+}
+/* Indent guides in the folder tree. */
+.bi .guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.14);
+  pointer-events: none;
 }
 .bi:hover {
   background: var(--bg-3);

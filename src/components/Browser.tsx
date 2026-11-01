@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { openPath } from "@/lib/actions";
 import { dropTarget, setDropHover } from "@/lib/drop";
 import { fmtSeconds } from "@/lib/format";
-import { baseName, dirName, joinPath, useBrowser } from "@/stores/browser-store";
+import { baseName, dirName, disambiguate, joinPath, useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
 
 const FOLDER = (
@@ -18,6 +18,83 @@ const CHEV = (
     <path d="M1 2.5h6L4 6z" />
   </svg>
 );
+
+const SPEAKER = <path d="M2 6h2.5L8 3v10L4.5 10H2z" />;
+
+/** The Browser's settings dropdown (the speaker in its header): auto-preview
+ * and file type icons. The speaker shows a cross while auto-preview is off. */
+function BrowserOptions() {
+  const autoPreview = useBrowser((s) => s.autoPreview);
+  const typeIcons = useBrowser((s) => s.typeIcons);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+      } else if (ref.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close, true);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close, true);
+    };
+  }, [open]);
+  const b = useBrowser.getState;
+  const item = (text: string, on: boolean, run: () => void) => (
+    <button key={text} className={`menu-item check${on ? " on" : ""}`} role="menuitemcheckbox" aria-checked={on} onClick={run}>
+      <span>
+        <i className="tick">{on ? "✓" : ""}</i>
+        {text}
+      </span>
+    </button>
+  );
+  return (
+    <div className="bopts" ref={ref}>
+      <button
+        className={`tb tlset${open ? " on" : ""}${autoPreview ? "" : " manual"}`}
+        aria-label="Browser settings"
+        onClick={() => setOpen(!open)}
+        data-tip={`Browser settings · auto-preview ${autoPreview ? "on" : "off"}`}
+      >
+        <svg viewBox="0 0 16 16">
+          {SPEAKER}
+          {autoPreview ? (
+            <path d="M10.3 5.6a3.4 3.4 0 0 1 0 4.8M12 4a5.6 5.6 0 0 1 0 8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          ) : (
+            <path d="M10.5 6l4 4m0-4-4 4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          )}
+        </svg>
+        <span className="car">▾</span>
+      </button>
+      {open && (
+        <div className="menu bmenu" role="menu">
+          <div className="menu-h">Preview</div>
+          {item("Auto-preview on click", autoPreview, () => b().setAutoPreview(!autoPreview))}
+          <div className="menu-note">{autoPreview ? "Clicking a file plays it" : "Clicking a file only selects it"}</div>
+          <div className="menu-sep" />
+          <div className="menu-h">Files</div>
+          {item("Show file type icons", typeIcons, () => b().setTypeIcons(!typeIcons))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The tree's indent guides: one vertical line per ancestor folder, under its chevron. */
+function Guides({ depth }: { depth: number }) {
+  return (
+    <>
+      {Array.from({ length: depth }, (_, i) => (
+        <i key={i} className="guide" style={{ left: 15 + i * 12 }} />
+      ))}
+    </>
+  );
+}
 
 function ext(p: string): string {
   const m = /\.([a-z0-9]+)$/i.exec(p);
@@ -90,7 +167,9 @@ function FileRow({
   showDir?: boolean;
 }) {
   const current = useBrowser((s) => s.current === path);
-  const name = baseName(path);
+  // With type icons on, the badge already says WAV or MP3.
+  const typeIcons = useBrowser((s) => s.typeIcons);
+  const name = typeIcons ? baseName(path).replace(/\.[a-z0-9]+$/i, "") : baseName(path);
   const onDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const x0 = e.clientX;
@@ -127,9 +206,12 @@ function FileRow({
       data-tip={path}
       data-hint="Click to preview · drag onto a track or the empty lane below · right-click to add it on a new track and more"
     >
-      <span className="ic">
-        <span className={`ft ft-${ext(path)}`}>{ext(path).toUpperCase()}</span>
-      </span>
+      <Guides depth={depth} />
+      {typeIcons && (
+        <span className="ic">
+          <span className={`ft ft-${ext(path)}`}>{ext(path).toUpperCase()}</span>
+        </span>
+      )}
       <span className="nm">{name}</span>
       {showDir && <span className="rp">{baseName(dirName(path))}</span>}
     </div>
@@ -140,12 +222,15 @@ function FolderRow({
   path,
   depth,
   root,
+  hint,
   onMenu,
   onDrag,
 }: {
   path: string;
   depth: number;
   root?: boolean;
+  /** Parent folders that tell this root apart from another of the same name. */
+  hint?: string;
   onMenu: (e: React.MouseEvent, path: string, root: boolean) => void;
   onDrag: (d: Drag | null) => void;
 }) {
@@ -167,11 +252,12 @@ function FolderRow({
         onClick={() => b().toggleFolder(path)}
         onContextMenu={(e) => onMenu(e, path, !!root)}
       >
+        <Guides depth={depth} />
         <span className="tw">{CHEV}</span>
         <span className="ic">{FOLDER}</span>
         <span className="nm">
           {name}
-          {root && <span className="rp"> {dirName(path) === path ? "" : dirName(path)}</span>}
+          {hint && <span className="rp"> {hint}</span>}
         </span>
         {pinned && (
           <span className="pinm" data-tip="Pinned">
@@ -196,12 +282,14 @@ function FolderRow({
             ))}
             {listing.error ? (
               <div className="bi bnote" style={{ paddingLeft: pad + 22 }}>
+                <Guides depth={depth + 1} />
                 Can't read this folder
               </div>
             ) : (
               !listing.dirs.length &&
               !listing.files.length && (
                 <div className="bi bnote" style={{ paddingLeft: pad + 22 }}>
+                  <Guides depth={depth + 1} />
                   No WAV or MP3 files
                 </div>
               )
@@ -209,6 +297,7 @@ function FolderRow({
           </>
         ) : (
           <div className="bi bnote" style={{ paddingLeft: pad + 22 }}>
+            <Guides depth={depth + 1} />
             Reading…
           </div>
         ))}
@@ -440,7 +529,6 @@ export function Browser() {
   const recent = useBrowser((s) => s.recent);
   const query = useBrowser((s) => s.query);
   const results = useBrowser((s) => s.results);
-  const autoPreview = useBrowser((s) => s.autoPreview);
   const width = useBrowser((s) => s.width);
   const order = useBrowser((s) => s.order);
   const shutSecs = useBrowser((s) => s.shut);
@@ -508,6 +596,8 @@ export function Browser() {
     setMenu({ x: e.clientX, y: e.clientY, title: baseName(path), path, items });
   };
 
+  const rootHints = disambiguate(roots);
+  const pinHints = disambiguate(pins);
   const sections: Record<string, { title: string; body: React.ReactNode }> = {
     pins: {
       title: "Pinned folders",
@@ -525,7 +615,10 @@ export function Browser() {
               onContextMenu={(e) => folderMenu(e, p, false)}
             >
               <span className="ic">{FOLDER}</span>
-              <span className="nm">{baseName(p)}</span>
+              <span className="nm">
+                {baseName(p)}
+                {pinHints[p] && <span className="rp"> {pinHints[p]}</span>}
+              </span>
             </div>
           ))}
           {pins.length === 0 && <div className="bi bnote">Right-click any folder to pin it here</div>}
@@ -548,7 +641,7 @@ export function Browser() {
       body: (
         <>
           {roots.map((r) => (
-            <FolderRow key={r} path={r} depth={0} root onMenu={folderMenu} onDrag={setDrag} />
+            <FolderRow key={r} path={r} depth={0} root hint={rootHints[r]} onMenu={folderMenu} onDrag={setDrag} />
           ))}
           <div className="bi badd" onClick={() => void addFolder()} data-tip="Add a folder to browse (or drop one here from Explorer)">
             <span className="ic">+</span>
@@ -572,11 +665,7 @@ export function Browser() {
           ‹
         </button>
         <span className="pht">Browser</span>
-        <label className={`chk bauto${autoPreview ? " on" : ""}`} data-hint="Clicking a file plays it; off, clicking only shows it">
-          <input type="checkbox" checked={autoPreview} onChange={(e) => b().setAutoPreview(e.target.checked)} />
-          <i />
-          Auto-preview
-        </label>
+        <BrowserOptions />
       </div>
       <label className="search">
         <svg width="11" height="11" viewBox="0 0 16 16">

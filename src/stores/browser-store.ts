@@ -18,6 +18,8 @@ interface Saved {
   /** Section order, top to bottom; collapsed ones sit at the bottom in this order. */
   order: string[];
   autoPreview: boolean;
+  /** WAV / MP3 badges on files (names then drop the extension). */
+  typeIcons: boolean;
   /** Width the user dragged it to; null follows the layout (208, or 176 below 1320 px). */
   width: number | null;
 }
@@ -25,7 +27,7 @@ interface Saved {
 /** The Browser's sections, in their default order. */
 export const SECTIONS = ["pins", "recent", "folders"];
 
-const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], order: SECTIONS, autoPreview: true, width: null };
+const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], order: SECTIONS, autoPreview: true, typeIcons: true, width: null };
 /** The Browser's resize range, from the mockup. */
 export const BROWSER_MIN_W = 150;
 export const BROWSER_MAX_W = 380;
@@ -76,6 +78,7 @@ interface BrowserStore extends Saved {
   noteRecent: (paths: string[]) => void;
   forgetRecent: (path: string) => void;
   setAutoPreview: (on: boolean) => void;
+  setTypeIcons: (on: boolean) => void;
   /** Null resets to the layout's width; `keep` false skips saving (mid-drag). */
   setWidth: (w: number | null, keep?: boolean) => void;
 }
@@ -83,6 +86,34 @@ interface BrowserStore extends Saved {
 /** "C:\\a\\b" → "b". */
 export function baseName(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+}
+
+/**
+ * For each path, the trailing parent folders needed to tell it apart from the
+ * others with the same name, VS Code style: "" when its name is unique, else
+ * e.g. "Editor/Audio" for "…\\Editor\\Audio\\Download". Case-insensitive, as on Windows.
+ */
+export function disambiguate(paths: string[]): Record<string, string> {
+  const segs = paths.map((p) => p.split(/[\\/]/).filter(Boolean));
+  const depth = paths.map(() => 1);
+  const label = (i: number) => segs[i].slice(-depth[i]).join("/").toLowerCase();
+  for (let changed = true; changed; ) {
+    changed = false;
+    const groups = new Map<string, number[]>();
+    paths.forEach((_, i) => groups.set(label(i), [...(groups.get(label(i)) ?? []), i]));
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      for (const i of g) {
+        if (depth[i] < segs[i].length) {
+          depth[i]++;
+          changed = true;
+        }
+      }
+    }
+  }
+  const out: Record<string, string> = {};
+  paths.forEach((p, i) => (out[p] = segs[i].slice(-depth[i], -1).join("/")));
+  return out;
 }
 
 export function dirName(p: string): string {
@@ -111,6 +142,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       shut: s.shut,
       order: s.order,
       autoPreview: s.autoPreview,
+      typeIcons: s.typeIcons,
       width: s.width,
     };
     setSetting("browser", keep);
@@ -268,6 +300,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     },
     forgetRecent: (path) => update({ recent: get().recent.filter((p) => p !== path) }),
     setAutoPreview: (on) => update({ autoPreview: on }),
+    setTypeIcons: (on) => update({ typeIcons: on }),
   };
 });
 
