@@ -428,6 +428,9 @@ impl Player {
     }
 
     fn start(&mut self, from: u64, to: u64, looping: Option<u64>) {
+        // From silence: the first block is at the project's values, not
+        // ramping from whatever played last.
+        self.renderer.settle();
         self.renderer.seek(from);
         self.block_pos = 0;
         self.block_len = 0;

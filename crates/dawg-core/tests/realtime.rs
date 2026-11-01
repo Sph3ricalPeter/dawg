@@ -134,3 +134,53 @@ fn player_fill_does_not_allocate_or_free() {
         }
     }
 }
+
+#[test]
+fn ramps_and_eq_crossfades_do_not_allocate() {
+    use dawg_core::{BandKind, Eq, EqBand};
+
+    for scene in common::scenes() {
+        // Every live value changed at once: volume, pan, mute, clip gain,
+        // master and the EQ (on where it was off, bypassed where it was on).
+        let mut next = (*scene.project).clone();
+        next.master_gain *= 0.5;
+        for (i, t) in next.tracks.iter_mut().enumerate() {
+            t.gain *= 0.5;
+            t.pan = if t.pan > 0.0 { -1.0 } else { 1.0 };
+            t.muted = i % 2 == 1;
+            for c in &mut t.clips {
+                c.gain *= 0.5;
+            }
+            t.eq = if t.eq.active() {
+                Eq::new(t.eq.bands(), true, next.sample_rate)
+            } else {
+                let band = EqBand {
+                    kind: BandKind::Bell,
+                    freq: 1000.0,
+                    gain_db: 6.0,
+                    q: 1.0,
+                    slope: 12,
+                    on: true,
+                };
+                Eq::new(&[band], false, next.sample_rate)
+            };
+        }
+        let next = std::sync::Arc::new(next);
+        let mut renderer = Renderer::new(scene.project.clone(), 0);
+        let mut buf = vec![0.0f32; 128 * OUT_CHANNELS];
+        renderer.process(&mut buf);
+        let old = renderer.swap_project(next.clone());
+        assert_no_alloc(scene.name, || {
+            for _ in 0..20 {
+                renderer.process(&mut buf);
+            }
+        });
+        // And straight back, mid-ramp.
+        let _next = renderer.swap_project(old);
+        assert_no_alloc(scene.name, || {
+            for _ in 0..20 {
+                renderer.process(&mut buf);
+            }
+        });
+    }
+}

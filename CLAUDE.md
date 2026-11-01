@@ -80,6 +80,11 @@ npm run build:dev   # local installable "dawg dev" build
 - **Real-time path**: `Renderer::process` and anything the audio callback
   calls never allocates, locks or blocks. `crates/dawg-core/tests/realtime.rs`
   enforces no allocation; extend it when you add to the path.
+- **No clicks from live changes**: a new project snapshot never steps the
+  sound. `Renderer` ramps volume, pan, mute/solo, clip gain and master over
+  `RAMP_SECONDS` and crossfades a changed EQ over `EQ_FADE_SECONDS`; a jump
+  fades out and in (`SEEK_FADE_SECONDS`). A new live value goes through the
+  same ramps, and values holding still must render exactly as before.
 - **One render path**: playback and mixdown export both go through
   `Renderer::process`, so what you hear is what you export. The one
   exception is saving an edited WAV (`wav::WavFile::render_clip`): it keeps
