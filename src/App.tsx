@@ -210,7 +210,14 @@ function useShortcuts() {
         void s.stop();
         s.setPlayhead(0);
       } else if (!ctrl && e.key === "Escape") {
-        // As in the mockup: clears the range and the selection.
+        const browser = useBrowser.getState();
+        // A playing Browser preview stops first (unless Esc is closing a menu);
+        // the next Esc clears the range and the selection, as in the mockup.
+        if (browser.playing) {
+          if (!document.querySelector(".menu")) browser.stop();
+          e.preventDefault();
+          return;
+        }
         s.setRange(null);
         s.select(null);
       } else handled = false;

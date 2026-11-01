@@ -352,7 +352,7 @@ function Preview() {
           const r = e.currentTarget.getBoundingClientRect();
           void b().play(len * ((e.clientX - r.left) / r.width));
         }}
-        data-hint="Click to play from there"
+        data-hint="Click to play from there · Esc stops the preview"
       >
         <canvas ref={ref} />
         {playing && len > 0 && <i className="pvph" style={{ left: `${Math.min(100, (at / len) * 100)}%` }} />}
