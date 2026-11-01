@@ -2113,6 +2113,7 @@ body.rsizing * {
 .browser {
   position: relative;
   width: 208px;
+  min-width: 0;
   flex: none;
   background: var(--bg-1);
   border-right: 1px solid var(--line-strong);
@@ -2120,6 +2121,41 @@ body.rsizing * {
   flex-direction: column;
   min-height: 0;
   font-size: 12px;
+}
+@media (max-width: 1320px) {
+  .browser {
+    width: 176px;
+  }
+}
+/* The resize handle straddles the Browser's right border. */
+.browser .sizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 7px;
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+}
+.browser .sizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.1s;
+}
+.browser .sizer:hover::after,
+.browser .sizer.on::after {
+  background: #5a5a5a;
+}
+body.sizing,
+body.sizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 .browser.shut {
   width: 26px;

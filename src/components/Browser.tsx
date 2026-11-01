@@ -233,6 +233,15 @@ function Preview() {
   const playing = useBrowser((s) => s.playing);
   const at = useBrowser((s) => s.at);
   const ref = useRef<HTMLCanvasElement>(null);
+  // Redraw when the Browser is resized.
+  const [cw, setCw] = useState(0);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ro = new ResizeObserver(() => setCw(cv.clientWidth));
+    ro.observe(cv);
+    return () => ro.disconnect();
+  }, [current]);
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
@@ -259,7 +268,7 @@ function Preview() {
     const over = css.getPropertyValue("--danger").trim() || "#ff4d4d";
     x.fillStyle = over;
     for (let px = 0; px < w; px++) if (col(px) > 1) x.fillRect(px, 0, 1, 2);
-  }, [info]);
+  }, [info, cw]);
   if (!current) {
     return (
       <div className="preview">
@@ -315,6 +324,47 @@ function Preview() {
   );
 }
 
+/** The 7 px handle on the Browser's right edge: drag to resize (150–380 px,
+ * leaving the playlist at least 420), double-click to reset. */
+function Sizer() {
+  const [on, setOn] = useState(false);
+  return (
+    <div
+      className={`sizer${on ? " on" : ""}`}
+      data-hint="Drag to resize the Browser · double-click resets"
+      onDoubleClick={() => useBrowser.getState().setWidth(null)}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const h = e.currentTarget;
+        const pane = h.parentElement;
+        if (!pane) return;
+        h.setPointerCapture(e.pointerId);
+        const w0 = pane.getBoundingClientRect().width;
+        const x0 = e.clientX;
+        const room = (pane.parentElement?.clientWidth ?? window.innerWidth) - 420;
+        const { setWidth } = useBrowser.getState();
+        setOn(true);
+        document.body.classList.add("sizing");
+        const move = (ev: PointerEvent) => setWidth(Math.min(room, w0 + ev.clientX - x0), false);
+        const up = (ev: PointerEvent) => {
+          h.removeEventListener("pointermove", move);
+          h.removeEventListener("pointerup", up);
+          h.removeEventListener("pointercancel", up);
+          setOn(false);
+          document.body.classList.remove("sizing");
+          if (ev.type === "pointerup") setWidth(useBrowser.getState().width);
+          else setWidth(w0);
+        };
+        h.addEventListener("pointermove", move);
+        h.addEventListener("pointerup", up);
+        h.addEventListener("pointercancel", up);
+      }}
+    />
+  );
+}
+
 /** The Browser from the UX spec: pinned folders, recent files and a folder
  * tree, with search; click to preview, drag onto the playlist to place. */
 export function Browser() {
@@ -326,6 +376,7 @@ export function Browser() {
   const query = useBrowser((s) => s.query);
   const results = useBrowser((s) => s.results);
   const autoPreview = useBrowser((s) => s.autoPreview);
+  const width = useBrowser((s) => s.width);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -390,7 +441,8 @@ export function Browser() {
   };
 
   return (
-    <aside className="browser">
+    <aside className="browser" style={width === null ? undefined : { width }}>
+      <Sizer />
       <div className="phead">
         <button className="x" onClick={() => b().toggle()} title="Hide the Browser (Ctrl+Alt+B)">
           ‹

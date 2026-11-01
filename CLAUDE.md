@@ -48,7 +48,7 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   double-click.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
   `src/styles.css`; zustand stores in `src/stores` (`browser-store.ts`
-  keeps the Browser's folders, pins and recent files in localStorage).
+  keeps the Browser's folders, pins, recent files and width in localStorage).
 - `.github/workflows`: `ci.yml` (checks, tests, Windows "dawg dev" installer
   artifact) and `release.yml` (tag → signed installer + `latest.json`).
 

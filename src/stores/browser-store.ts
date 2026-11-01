@@ -15,10 +15,15 @@ interface Saved {
   /** Collapsed sections: "pins", "recent", "folders". */
   shut: string[];
   autoPreview: boolean;
+  /** Width the user dragged it to; null follows the layout (208, or 176 below 1320 px). */
+  width: number | null;
 }
 
 const KEY = "dawg.browser";
-const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], autoPreview: true };
+const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], autoPreview: true, width: null };
+/** The Browser's resize range, from the mockup. */
+export const BROWSER_MIN_W = 150;
+export const BROWSER_MAX_W = 380;
 const MAX_RECENT = 30;
 
 function load(): Saved {
@@ -63,6 +68,8 @@ interface BrowserStore extends Saved {
   noteRecent: (paths: string[]) => void;
   forgetRecent: (path: string) => void;
   setAutoPreview: (on: boolean) => void;
+  /** Null resets to the layout's width; `keep` false skips saving (mid-drag). */
+  setWidth: (w: number | null, keep?: boolean) => void;
 }
 
 /** "C:\\a\\b" → "b". */
@@ -95,6 +102,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       expanded: s.expanded,
       shut: s.shut,
       autoPreview: s.autoPreview,
+      width: s.width,
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(keep));
@@ -126,6 +134,12 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     info: null,
     playing: false,
     at: 0,
+
+    setWidth: (w, keep = true) => {
+      const width = w === null ? null : Math.round(Math.max(BROWSER_MIN_W, Math.min(BROWSER_MAX_W, w)));
+      if (keep) update({ width });
+      else set({ width });
+    },
 
     isOpen: () => (useSession.getState().session?.scratch ? get().openScratch : get().open),
     toggle: () => {
