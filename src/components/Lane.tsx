@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
@@ -173,7 +173,8 @@ function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; wid
   const w = Math.ceil(x1 - x0);
   const f0 = view.start + x0 * view.fpp;
   const peaks = usePeaks(clip.source, (f0 - shift) / k, (f0 - shift + w * view.fpp) / k, w, clip.reversed ? frames : null);
-  useEffect(() => {
+  // Drawn before paint, so the waveform moves with the clip on the same frame.
+  useLayoutEffect(() => {
     const c = ref.current;
     if (!c || w <= 0) return;
     const h = height - TITLE_H - 5;
@@ -280,7 +281,9 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
   const s0 = clip.offset + (f0 - clip.start) / clip.stretch;
   const peaks = usePeaks(clip.source, s0, s0 + (w * view.fpp) / clip.stretch, w, clip.reversed ? sourceFrames : null);
 
-  useEffect(() => {
+  // Before paint: drawn in a passive effect, the waveform trailed the clip's
+  // box by a frame and slid inside it while zooming.
+  useLayoutEffect(() => {
     if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
   }, [w, waveH, clip, f0, view.fpp, peaks, envEdit]);
 

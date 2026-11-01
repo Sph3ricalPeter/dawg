@@ -112,9 +112,10 @@ class View implements Peaks {
     const span = Math.max(z - a, 1e-9);
     const d = this.detail;
     if (d && d.per < this.levels[0].per && covers(d, a, z)) return minmax(d, a, z);
-    // The coarsest level that is still finer than the span.
+    // The coarsest level with a few buckets to the span, so bucket edges
+    // don't make the shape step as the zoom changes.
     let l = this.levels[0];
-    for (const x of this.levels) if (x.per <= span) l = x;
+    for (const x of this.levels) if (x.per <= span / 4) l = x;
     return minmax(l, a, z);
   }
 }
