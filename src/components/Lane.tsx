@@ -91,50 +91,69 @@ function drawClip(
     }
   } else if (peaks) {
     // Zoomed out, a smoothed outline like the mockup; zoomed in, the real
-    // min/max so single cycles show.
-    const outline = fpp > 24;
-    const lo = new Float32Array(w);
-    const hi = new Float32Array(w);
-    const gains = new Float32Array(w);
-    for (let i = 0; i < w; i++) {
-      const t0 = f0 + i * fpp;
+    // min/max so single cycles show. The two blend over a range of zoom so
+    // there's no visible switch.
+    const outline = clamp((Math.log2(fpp) - 3.5) / 2, 0, 1);
+    const lo = new Float32Array(w + 1);
+    const hi = new Float32Array(w + 1);
+    const gains = new Float32Array(w + 1);
+    const known = new Uint8Array(w + 1);
+    for (let i = 0; i <= w; i++) {
+      // Each column's peak is centred on its pixel, so the edges between
+      // columns can be joined into one smooth, anti-aliased shape.
+      const t0 = f0 + (i - 0.5) * fpp;
       const rel0 = t0 - clip.start;
       // Stretched, the source passes under the clip at 1/stretch speed.
       const s0 = clip.offset + rel0 / clip.stretch;
       const p = peaks.at(s0, s0 + fpp / clip.stretch);
       if (!p) continue;
+      known[i] = 1;
       [lo[i], hi[i]] = p;
-      if (outline) {
-        const a = Math.max(-lo[i], hi[i]);
-        lo[i] = -a;
-        hi[i] = a;
-      }
       const rel = clamp(rel0 + fpp / 2, 0, clip.len - 1);
       gains[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
     }
-    if (outline) {
-      const a = Float32Array.from(hi);
-      for (let i = 0; i < w; i++) {
+    if (outline > 0) {
+      const a = Float32Array.from(hi, (v, i) => Math.max(v, -lo[i]));
+      for (let i = 0; i <= w; i++) {
         let m = 0;
         let k = 0;
-        for (let j = Math.max(0, i - 2); j <= Math.min(w - 1, i + 2); j++) {
+        for (let j = Math.max(0, i - 2); j <= Math.min(w, i + 2); j++) {
           m += a[j];
           k++;
         }
-        hi[i] = m / k;
-        lo[i] = -hi[i];
+        const o = m / k;
+        hi[i] += (o - hi[i]) * outline;
+        lo[i] += (-o - lo[i]) * outline;
       }
     }
-    const bar = (i: number, l: number, hh: number) => x.fillRect(i, mid - hh * half, 1, Math.max(1, (hh - l) * half));
-    for (let i = 0; i < w; i++) {
-      x.fillStyle = "rgba(16,16,16,.2)";
-      bar(i, lo[i], hi[i]);
-      const plo = lo[i] * gains[i];
-      const phi = hi[i] * gains[i];
-      x.fillStyle = "rgba(16,16,16,.8)";
-      bar(i, Math.max(-1, plo), Math.min(1, phi));
-      if (phi > 1 || plo < -1) over.push(i);
-    }
+    // One filled path per run of known columns: the top edge left to right,
+    // the bottom edge back.
+    const shape = (g: (i: number) => number, cap: boolean) => {
+      x.beginPath();
+      let i = 0;
+      while (i <= w) {
+        if (!known[i]) {
+          i++;
+          continue;
+        }
+        let j = i;
+        while (j < w && known[j + 1]) j++;
+        const yt = (k: number) => mid - (cap ? Math.min(1, hi[k] * g(k)) : hi[k] * g(k)) * half;
+        const yb = (k: number) => mid - (cap ? Math.max(-1, lo[k] * g(k)) : lo[k] * g(k)) * half;
+        x.moveTo(i, yt(i));
+        for (let k = i + 1; k <= j; k++) x.lineTo(k, yt(k));
+        // Keep at least a hairline where it's silent.
+        for (let k = j; k >= i; k--) x.lineTo(k, Math.max(yb(k), yt(k) + 0.75));
+        x.closePath();
+        i = j + 1;
+      }
+      x.fill();
+    };
+    x.fillStyle = "rgba(16,16,16,.2)";
+    shape(() => 1, false);
+    x.fillStyle = "rgba(16,16,16,.8)";
+    shape((i) => gains[i], true);
+    for (let i = 0; i <= w; i++) if (known[i] && (hi[i] * gains[i] > 1 || lo[i] * gains[i] < -1)) over.push(i);
   }
   // Anything over full scale.
   x.fillStyle = "#ff4d4d";

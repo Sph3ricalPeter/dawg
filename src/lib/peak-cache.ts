@@ -82,11 +82,26 @@ function overview(source: number, rev: number, frames: number, onReady: () => vo
   return o.levels;
 }
 
+function clampInt(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
 function covers(l: Level, a: number, z: number): boolean {
   return l.from <= a + 0.5 && l.from + (l.data.length / 2) * l.per >= z - 0.5;
 }
 
 function minmax(l: Level, a: number, z: number): [number, number] | null {
+  const n = l.data.length / 2;
+  // Buckets wider than the span: interpolate between bucket centres, so the
+  // shape slopes smoothly instead of stepping at bucket edges.
+  if (z - a < l.per) {
+    const u = ((a + z) / 2 - l.from) / l.per - 0.5;
+    if (u < -0.5 || u > n - 0.5) return null;
+    const b = clampInt(Math.floor(u), 0, n - 1);
+    const c = Math.min(b + 1, n - 1);
+    const t = Math.min(1, Math.max(0, u - b));
+    return [l.data[2 * b] * (1 - t) + l.data[2 * c] * t, l.data[2 * b + 1] * (1 - t) + l.data[2 * c + 1] * t];
+  }
   const b0 = Math.floor((a - l.from) / l.per);
   const b1 = Math.max(b0, Math.ceil((z - l.from) / l.per) - 1);
   let lo = 0;
@@ -126,9 +141,10 @@ class View implements Peaks {
     const d = this.detail;
     // A detail window much finer than a pixel costs more than it shows.
     if (d && d.per < this.levels[0].per && d.per >= span / 64 && covers(d, a, z)) return minmax(d, a, z);
-    // The coarsest level with a few buckets to the span.
+    // The coarsest level with many buckets to the span: close to the true
+    // peak, so stepping between levels as the zoom changes barely shows.
     let l = this.levels[0];
-    for (const x of this.levels) if (x.per <= span / 4) l = x;
+    for (const x of this.levels) if (x.per <= span / 32) l = x;
     return minmax(l, a, z);
   }
 
