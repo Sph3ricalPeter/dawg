@@ -160,7 +160,7 @@ export function EqPanel() {
       x.setTransform(dpr, 0, 0, dpr, 0, 0);
       x.clearRect(0, 0, w, h);
       // Grid.
-      x.font = "10.5px 'Monaspace Argon', Consolas, monospace";
+      x.font = "10.5px 'Roboto Mono', Consolas, monospace";
       x.textBaseline = "top";
       for (const hz of GRID_HZ) {
         if (hz > top) continue;

@@ -14,6 +14,7 @@ MP3 patents have expired worldwide, so no patent license is needed.
 
 The app also bundles one font:
 
-- **Monaspace Argon** (numbers, LCD readouts), SIL Open Font License 1.1,
-  © 2023 GitHub: <https://github.com/githubnext/monaspace>. Packaged from
-  `@fontsource/monaspace-argon`; the license ships in that package.
+- **Roboto Mono** (numbers, LCD readouts), SIL Open Font License 1.1,
+  © 2015 The Roboto Mono Project Authors:
+  <https://github.com/googlefonts/robotomono>. Packaged from
+  `@fontsource/roboto-mono`; the license ships in that package.

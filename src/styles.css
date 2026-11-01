@@ -30,7 +30,7 @@
   --ok: #3fd46a;
   --danger: #ff4d4d;
   --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --mono: "Monaspace Argon", "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
+  --mono: "Roboto Mono", "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
 
   color-scheme: dark;
 }
