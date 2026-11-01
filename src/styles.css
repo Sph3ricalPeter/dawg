@@ -2308,6 +2308,42 @@ body.sizing * {
   cursor: pointer;
   user-select: none;
 }
+.bsecw {
+  position: relative;
+}
+/* Collapsed sections, out of the way at the bottom of the panel. */
+.bshut {
+  flex: none;
+  border-top: 1px solid var(--line-strong);
+  padding-bottom: 4px;
+}
+.bsec.dragging {
+  color: var(--text);
+  background: var(--bg-3);
+}
+.bsecw.drop-before::before,
+.bsecw.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  z-index: 2;
+  pointer-events: none;
+}
+.bsecw.drop-before::before {
+  top: 0;
+}
+.bsecw.drop-after::after {
+  bottom: 0;
+}
+body.secdrag,
+body.secdrag * {
+  cursor: grabbing !important;
+  user-select: none;
+}
 .bsec:hover:not(.nohover) {
   color: var(--text-dim);
 }

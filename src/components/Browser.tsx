@@ -215,16 +215,79 @@ function FolderRow({
   );
 }
 
-function Section({ k, title, children }: { k: string; title: string; children: React.ReactNode }) {
+/** Where a dragged section header would land: before `before` (null: last). */
+interface SecDrop {
+  key: string;
+  before: string | null;
+  /** The section the line is drawn on, and on which side. */
+  at: string;
+  side: "before" | "after";
+}
+
+/** A collapsible section. Click the header to collapse it; drag the header
+ * to reorder. Collapsed sections sit at the bottom of the panel. */
+function Section({ k, title, drop, onDrop, children }: { k: string; title: string; drop: SecDrop | null; onDrop: (d: SecDrop | null) => void; children: React.ReactNode }) {
   const shut = useBrowser((s) => s.shut.includes(k));
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const head = e.currentTarget;
+    const y0 = e.clientY;
+    let moved = false;
+    let cur: SecDrop | null = null;
+    head.setPointerCapture(e.pointerId);
+    const target = (y: number): SecDrop | null => {
+      // The sections in the group this one is shown in (open, or collapsed).
+      const group = [...document.querySelectorAll<HTMLElement>(".browser .bsecw")].filter((el) => el.classList.contains("isshut") === shut);
+      for (const el of group) {
+        const r = el.getBoundingClientRect();
+        const at = el.dataset.k ?? "";
+        if (y < r.top + r.height / 2) return { key: k, before: at, at, side: "before" };
+      }
+      const last = group[group.length - 1]?.dataset.k;
+      if (!last) return null;
+      // Below the group's last section: before whatever follows it in the order.
+      const order = useBrowser.getState().order;
+      const next = order.slice(order.indexOf(last) + 1).find((x) => x !== k) ?? null;
+      return { key: k, before: next, at: last, side: "after" };
+    };
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientY - y0) < 4) return;
+      if (!moved) {
+        moved = true;
+        document.body.classList.add("secdrag");
+      }
+      cur = target(ev.clientY);
+      // Dropping right next to itself changes nothing: no line.
+      onDrop(cur && cur.at !== k ? cur : { key: k, before: null, at: "", side: "before" });
+    };
+    const up = (ev: PointerEvent) => {
+      head.removeEventListener("pointermove", move);
+      head.removeEventListener("pointerup", up);
+      head.removeEventListener("pointercancel", up);
+      document.body.classList.remove("secdrag");
+      onDrop(null);
+      if (ev.type !== "pointerup") return;
+      if (!moved) useBrowser.getState().toggleSection(k);
+      else if (cur && cur.at !== k) useBrowser.getState().moveSection(k, cur.before);
+    };
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", up);
+    head.addEventListener("pointercancel", up);
+  };
+  const line = drop && drop.at === k ? ` drop-${drop.side}` : "";
   return (
-    <>
-      <div className={`bsec${shut ? " shut" : ""}`} onClick={() => useBrowser.getState().toggleSection(k)} data-tip={shut ? "Expand" : "Collapse"}>
+    <div className={`bsecw${shut ? " isshut" : ""}${line}`} data-k={k}>
+      <div
+        className={`bsec${shut ? " shut" : ""}${drop?.key === k ? " dragging" : ""}`}
+        onPointerDown={onDown}
+        data-tip={shut ? "Expand" : "Collapse"}
+        data-hint="Click to collapse or expand · drag to reorder the sections · collapsed sections sit at the bottom"
+      >
         <span className="chev">{CHEV}</span>
         <span className="bst">{title}</span>
       </div>
       {!shut && <div className="bgrp">{children}</div>}
-    </>
+    </div>
   );
 }
 
@@ -378,6 +441,9 @@ export function Browser() {
   const results = useBrowser((s) => s.results);
   const autoPreview = useBrowser((s) => s.autoPreview);
   const width = useBrowser((s) => s.width);
+  const order = useBrowser((s) => s.order);
+  const shutSecs = useBrowser((s) => s.shut);
+  const [secDrop, setSecDrop] = useState<SecDrop | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -441,6 +507,62 @@ export function Browser() {
     setMenu({ x: e.clientX, y: e.clientY, title: baseName(path), path, items });
   };
 
+  const sections: Record<string, { title: string; body: React.ReactNode }> = {
+    pins: {
+      title: "Pinned folders",
+      body: (
+        <>
+          {pins.map((p) => (
+            <div
+              key={p}
+              className="bi"
+              data-tip={`${p}\nClick to show it in Folders · right-click to unpin`}
+              onClick={() => {
+                if (!roots.some((r) => p === r || p.startsWith(r + "\\") || p.startsWith(r + "/"))) void b().addRoots([p]);
+                else if (!b().expanded.includes(p)) b().toggleFolder(p);
+              }}
+              onContextMenu={(e) => folderMenu(e, p, false)}
+            >
+              <span className="ic">{FOLDER}</span>
+              <span className="nm">{baseName(p)}</span>
+            </div>
+          ))}
+          {pins.length === 0 && <div className="bi bnote">Right-click any folder to pin it here</div>}
+        </>
+      ),
+    },
+    recent: {
+      title: "Recent files",
+      body: (
+        <>
+          {recent.map((p) => (
+            <FileRow key={p} path={p} depth={0} onMenu={(e) => fileMenu(e, p, true)} onDrag={setDrag} />
+          ))}
+          {recent.length === 0 && <div className="bi bnote">Files you open or add show up here</div>}
+        </>
+      ),
+    },
+    folders: {
+      title: "Folders",
+      body: (
+        <>
+          {roots.map((r) => (
+            <FolderRow key={r} path={r} depth={0} root onMenu={folderMenu} onDrag={setDrag} />
+          ))}
+          <div className="bi badd" onClick={() => void addFolder()} data-tip="Add a folder to browse (or drop one here from Explorer)">
+            <span className="ic">+</span>
+            <span className="nm">Add folder…</span>
+          </div>
+        </>
+      ),
+    },
+  };
+  const section = (k: string) => (
+    <Section key={k} k={k} title={sections[k].title} drop={secDrop} onDrop={setSecDrop}>
+      {sections[k].body}
+    </Section>
+  );
+
   return (
     <aside className="browser" style={width === null ? undefined : { width }}>
       <Sizer />
@@ -484,43 +606,10 @@ export function Browser() {
             {results.length === 0 && <div className="bi bnote">Nothing by that name in your folders or recent files</div>}
           </>
         ) : (
-          <>
-            <Section k="pins" title="Pinned folders">
-              {pins.map((p) => (
-                <div
-                  key={p}
-                  className="bi"
-                  data-tip={`${p}\nClick to show it in Folders · right-click to unpin`}
-                  onClick={() => {
-                    if (!roots.some((r) => p === r || p.startsWith(r + "\\") || p.startsWith(r + "/"))) void b().addRoots([p]);
-                    else if (!b().expanded.includes(p)) b().toggleFolder(p);
-                  }}
-                  onContextMenu={(e) => folderMenu(e, p, false)}
-                >
-                  <span className="ic">{FOLDER}</span>
-                  <span className="nm">{baseName(p)}</span>
-                </div>
-              ))}
-              {pins.length === 0 && <div className="bi bnote">Right-click any folder to pin it here</div>}
-            </Section>
-            <Section k="recent" title="Recent files">
-              {recent.map((p) => (
-                <FileRow key={p} path={p} depth={0} onMenu={(e) => fileMenu(e, p, true)} onDrag={setDrag} />
-              ))}
-              {recent.length === 0 && <div className="bi bnote">Files you open or add show up here</div>}
-            </Section>
-            <Section k="folders" title="Folders">
-              {roots.map((r) => (
-                <FolderRow key={r} path={r} depth={0} root onMenu={folderMenu} onDrag={setDrag} />
-              ))}
-              <div className="bi badd" onClick={() => void addFolder()} data-tip="Add a folder to browse (or drop one here from Explorer)">
-                <span className="ic">+</span>
-                <span className="nm">Add folder…</span>
-              </div>
-            </Section>
-          </>
+          order.filter((k) => !shutSecs.includes(k)).map(section)
         )}
       </div>
+      {results === null && shutSecs.length > 0 && <div className="bshut">{order.filter((k) => shutSecs.includes(k)).map(section)}</div>}
       <Preview />
       {menu && (
         <div className="menu ctx" role="menu" ref={menuRef} style={{ left: menu.x, top: menu.y }}>

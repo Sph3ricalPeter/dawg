@@ -15,12 +15,17 @@ interface Saved {
   expanded: string[];
   /** Collapsed sections: "pins", "recent", "folders". */
   shut: string[];
+  /** Section order, top to bottom; collapsed ones sit at the bottom in this order. */
+  order: string[];
   autoPreview: boolean;
   /** Width the user dragged it to; null follows the layout (208, or 176 below 1320 px). */
   width: number | null;
 }
 
-const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], autoPreview: true, width: null };
+/** The Browser's sections, in their default order. */
+export const SECTIONS = ["pins", "recent", "folders"];
+
+const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], order: SECTIONS, autoPreview: true, width: null };
 /** The Browser's resize range, from the mockup. */
 export const BROWSER_MIN_W = 150;
 export const BROWSER_MAX_W = 380;
@@ -28,7 +33,11 @@ const MAX_RECENT = 30;
 
 function load(): Saved {
   const v = setting<Partial<Saved> | null>("browser", null);
-  return { ...DEFAULT, ...(v && typeof v === "object" ? v : {}) };
+  const out = { ...DEFAULT, ...(v && typeof v === "object" ? v : {}) };
+  // Keep only known sections, and add any a newer version introduced.
+  const order = Array.isArray(out.order) ? out.order.filter((k) => SECTIONS.includes(k)) : [];
+  out.order = [...new Set([...order, ...SECTIONS])];
+  return out;
 }
 
 export interface Listing {
@@ -57,6 +66,8 @@ interface BrowserStore extends Saved {
   togglePin: (path: string) => void;
   toggleFolder: (path: string) => void;
   toggleSection: (key: string) => void;
+  /** Moves section `key` before `before` (null: to the end). */
+  moveSection: (key: string, before: string | null) => void;
   list: (path: string, force?: boolean) => Promise<void>;
   search: (q: string) => void;
   pick: (path: string, play?: boolean) => Promise<void>;
@@ -98,6 +109,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       recent: s.recent,
       expanded: s.expanded,
       shut: s.shut,
+      order: s.order,
       autoPreview: s.autoPreview,
       width: s.width,
     };
@@ -174,6 +186,13 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     toggleSection: (key) => {
       const sh = get().shut;
       update({ shut: sh.includes(key) ? sh.filter((k) => k !== key) : [...sh, key] });
+    },
+    moveSection: (key, before) => {
+      if (key === before) return;
+      const rest = get().order.filter((k) => k !== key);
+      const i = before === null ? -1 : rest.indexOf(before);
+      rest.splice(i < 0 ? rest.length : i, 0, key);
+      update({ order: rest });
     },
     list: async (path, force = false) => {
       if (get().listings[path] && !force) return;
