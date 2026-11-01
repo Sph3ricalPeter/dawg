@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, apiMessage, type PreviewInfo } from "@/lib/api";
+import { setSetting, setting } from "@/lib/settings";
 import { useSession } from "@/stores/session-store";
 
 /** What the Browser remembers between launches. */
@@ -19,7 +20,6 @@ interface Saved {
   width: number | null;
 }
 
-const KEY = "dawg.browser";
 const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], autoPreview: true, width: null };
 /** The Browser's resize range, from the mockup. */
 export const BROWSER_MIN_W = 150;
@@ -27,11 +27,8 @@ export const BROWSER_MAX_W = 380;
 const MAX_RECENT = 30;
 
 function load(): Saved {
-  try {
-    return { ...DEFAULT, ...(JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Saved> | null) };
-  } catch {
-    return DEFAULT;
-  }
+  const v = setting<Partial<Saved> | null>("browser", null);
+  return { ...DEFAULT, ...(v && typeof v === "object" ? v : {}) };
 }
 
 export interface Listing {
@@ -104,11 +101,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       autoPreview: s.autoPreview,
       width: s.width,
     };
-    try {
-      localStorage.setItem(KEY, JSON.stringify(keep));
-    } catch {
-      // Only a convenience.
-    }
+    setSetting("browser", keep);
   };
   const update = (p: Partial<BrowserStore>) => {
     set(p);

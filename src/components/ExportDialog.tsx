@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Codec, type ExportOptions } from "@/lib/api";
 import { exportTo } from "@/lib/actions";
 import { fmtSeconds, MIN_GAIN_DB } from "@/lib/format";
+import { setSetting, setting } from "@/lib/settings";
 import { useSession } from "@/stores/session-store";
 
 type RangeKind = "song" | "zero" | "range";
@@ -15,25 +16,16 @@ interface Choice {
   kbps: number;
 }
 
-const KEY = "dawg.export";
 const DEFAULT: Choice = { range: "song", codec: "wav", bits: 24, rate: 0, kbps: 320 };
 
 /** Last export's choices, remembered between exports. */
 function load(): Choice {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Choice> | null;
-    return { ...DEFAULT, ...(v ?? {}) };
-  } catch {
-    return DEFAULT;
-  }
+  const v = setting<Partial<Choice> | null>("export", null);
+  return { ...DEFAULT, ...(v && typeof v === "object" ? v : {}) };
 }
 
 function keep(c: Choice) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(c));
-  } catch {
-    // Only a convenience.
-  }
+  setSetting("export", c);
 }
 
 function Seg<T extends string | number>({

@@ -10,25 +10,10 @@ import {
 } from "@/lib/api";
 import { clamp, srcAt } from "@/lib/format";
 import { SNAPS, snapFrames, type Snap, type Units } from "@/lib/grid";
+import { choice, setSetting, setting } from "@/lib/settings";
 
 const SNAP_VALUES = SNAPS.map((s) => s.v);
 
-function remembered<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  try {
-    const v = localStorage.getItem(key) as T | null;
-    return v && allowed.includes(v) ? v : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function remember(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Only a convenience.
-  }
-}
 
 /** The units and snap in effect: a scratch session counts in time, with its
  * own snap. */
@@ -298,9 +283,9 @@ export const useSession = create<SessionStore>((set, get) => ({
   masterPeak: 0,
   resetMasterPeak: () => set({ masterPeak: 0 }),
   range: null,
-  loop: true,
+  loop: setting<unknown>("loop", true) !== false,
   scrubbing: false,
-  envEdit: true,
+  envEdit: setting<unknown>("envEdit", true) !== false,
   toast: null,
   dialog: null,
   busy: null,
@@ -468,25 +453,29 @@ export const useSession = create<SessionStore>((set, get) => ({
     get().adopt(await enqueue(() => api.jumpHistory(done)));
   },
 
-  historyOpen: false,
+  historyOpen: setting<unknown>("historyOpen", false) === true,
   exportOpen: false,
-  units: remembered<Units>("dawg.units", ["bars", "time"], "bars"),
-  snap: remembered<Snap>("dawg.snap", SNAP_VALUES, "line"),
-  snapScratch: remembered<Snap>("dawg.snapScratch", SNAP_VALUES, "off"),
+  units: choice<Units>("units", ["bars", "time"], "bars"),
+  snap: choice<Snap>("snap", SNAP_VALUES, "line"),
+  snapScratch: choice<Snap>("snapScratch", SNAP_VALUES, "off"),
   setUnits: (units) => {
-    remember("dawg.units", units);
+    setSetting("units", units);
     set({ units });
   },
   setSnap: (snap) => {
     if (get().session?.scratch) {
-      remember("dawg.snapScratch", snap);
+      setSetting("snapScratch", snap);
       set({ snapScratch: snap });
     } else {
-      remember("dawg.snap", snap);
+      setSetting("snap", snap);
       set({ snap });
     }
   },
-  toggleHistory: (open) => set((s) => ({ historyOpen: open ?? !s.historyOpen })),
+  toggleHistory: (open) => {
+    const historyOpen = open ?? !get().historyOpen;
+    setSetting("historyOpen", historyOpen);
+    set({ historyOpen });
+  },
 
   select: (clip, toggle = false) => {
     if (clip === null) {
@@ -588,6 +577,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     const { range, playhead } = get();
     if (!range) return;
     set({ loop: true });
+    setSetting("loop", true);
     if (playhead < range.a || playhead >= range.b) {
       const a = Math.round(range.a);
       set({ playhead: a, startPoint: a });
@@ -597,6 +587,7 @@ export const useSession = create<SessionStore>((set, get) => ({
 
   toggleLoop: () => {
     set({ loop: !get().loop });
+    setSetting("loop", get().loop);
     if (get().playing) void get().replay();
   },
 
@@ -645,6 +636,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   toggleEnvEdit: () => {
     const on = !get().envEdit;
     set({ envEdit: on });
+    setSetting("envEdit", on);
     get().showToast(on ? "Envelope editing on" : "Envelope editing off (E turns it back on)");
   },
 

@@ -4,6 +4,7 @@ mod autosave;
 mod browser;
 mod commands;
 mod recent;
+mod settings;
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
@@ -71,6 +72,16 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // Size, position and maximized come back as they were left.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(browser::Previews::default())
@@ -95,6 +106,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
+            settings::load_settings,
+            settings::save_settings,
             commands::startup_file,
             commands::open_file,
             commands::new_project,

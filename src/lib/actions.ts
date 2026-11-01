@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, apiMessage, isApiError, type Codec, type ExportOptions } from "./api";
 import { dirOf, stem } from "./format";
+import { flushSettings, setSetting, setting } from "./settings";
 import { enqueue, useSession } from "@/stores/session-store";
 
 const WAV = { name: "WAV audio", extensions: ["wav", "wave"] };
@@ -83,22 +84,15 @@ export async function locateSource(id: number) {
   }
 }
 
-const PROJECT_DIR_KEY = "dawg.lastProjectDir";
+const PROJECT_DIR_KEY = "lastProjectDir";
 
 function remembered(key: string): string | null {
-  try {
-    return localStorage.getItem(key) || null;
-  } catch {
-    return null;
-  }
+  const v = setting<unknown>(key, null);
+  return typeof v === "string" && v ? v : null;
 }
 
 function remember(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Only a convenience.
-  }
+  setSetting(key, value);
 }
 
 /** Saves the project where it was saved before, or asks where. A scratch
@@ -233,7 +227,7 @@ async function replaceOriginal(): Promise<boolean> {
  */
 /** The last export from this window, and the file it was made from. */
 let lastExport: { from: string; to: string } | null = null;
-const EXPORT_DIR_KEY = "dawg.lastExportDir";
+const EXPORT_DIR_KEY = "lastExportDir";
 
 /** Folder of the last export, kept across restarts. */
 function lastExportDir(): string | null {
@@ -325,6 +319,7 @@ export function requestClose() {
     void api
       .clearAutosave()
       .catch(() => undefined)
+      .then(flushSettings)
       .finally(() => void getCurrentWindow().destroy());
   });
 }

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { api, type BandKind, type EqBand, type Spectrum, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
+import { choice, setSetting } from "@/lib/settings";
 import {
   bandResponse,
   clampBand,
@@ -112,7 +113,11 @@ export function EqPanel() {
   const track = index >= 0 ? tracks[index] : null;
   const hasTrack = track !== null;
   const [sel, setSel] = useState(0);
-  const [range, setRange] = useState(RANGES[0]);
+  const [range, setRangeState] = useState(() => choice<number>("eqRange", RANGES, RANGES[0]));
+  const setRange = (r: number) => {
+    setSetting("eqRange", r);
+    setRangeState(r);
+  };
   const graph = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 600, h: 160 });

@@ -41,14 +41,18 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output; a Browser preview swaps a one-file project into
   the player and the session's comes back on the next Play), `browser.rs`
-  (folder listings, search, preview decode), `recent.rs` (recent projects), plugins,
+  (folder listings, search, preview decode), `recent.rs` (recent projects), `settings.rs` (UI settings file), plugins,
   installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`
   file association).
 - `integrations/unity`: Unity package (git URL install) that opens audio clips in dawg on
   double-click.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
-  `src/styles.css`; zustand stores in `src/stores` (`browser-store.ts`
-  keeps the Browser's folders, pins, recent files and width in localStorage).
+  `src/styles.css`; zustand stores in `src/stores`. App-wide UI settings (Browser folders,
+  pins and width, units, snap, loop, envelope edit, History and export
+  choices) go through `lib/settings.ts`, saved to `settings.json` in the app's
+  data folder (`src-tauri/src/settings.rs`), not localStorage; per-project
+  state belongs in the project file. The window-state plugin keeps the
+  window's size and position.
   Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
   is the one styled tooltip (a stray `title` is converted on hover). `data-hint`
   is the status bar's longer hint.

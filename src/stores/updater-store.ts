@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { flushSettings } from "@/lib/settings";
 import { errorMessage } from "@/lib/app-info";
 
 /** How often a running app looks for a new release. */
@@ -111,6 +112,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     try {
       // Windows: exits here, the installer runs passively and relaunches the
       // app. Elsewhere install returns and we relaunch ourselves.
+      await flushSettings();
       await _update.install();
       await relaunch();
     } catch (err) {
