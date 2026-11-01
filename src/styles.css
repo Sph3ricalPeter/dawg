@@ -571,19 +571,16 @@ button.upd {
   overflow-x: hidden;
   min-height: 0;
 }
-/* 76 px tracks as in the mockup; a lone track fills the editor. */
+/* 76 px tracks as in the mockup, a lone track too (resize it for room). */
 .trow {
   flex: 0 0 76px;
+  /* The header's content (a lone track's clip details) never grows the row. */
+  min-height: 0;
   display: grid;
   grid-template-columns: var(--hdr-w) minmax(0, 1fr);
   border-bottom: 1px solid var(--line);
 }
-.tracks.one .trow:not(.add) {
-  flex: 1 0 140px;
-  max-height: none;
-}
-.trow.sized,
-.tracks.one .trow.sized:not(.add) {
+.trow.sized {
   flex: none;
   max-height: none;
 }

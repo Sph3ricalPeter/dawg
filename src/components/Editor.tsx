@@ -7,6 +7,7 @@ import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
 import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
+import { ease } from "@/lib/smooth-view";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
@@ -310,13 +311,11 @@ function TrackHeader({
   index,
   tall,
   onResize,
-  onResetHeight,
 }: {
   track: TrackState;
   index: number;
   tall: boolean;
   onResize: (e: React.PointerEvent) => void;
-  onResetHeight: (all: boolean) => void;
 }) {
   const session = useSession((s) => s.session);
   const selected = useSession((s) => s.selected);
@@ -366,7 +365,6 @@ function TrackHeader({
       <div
         className="rsz"
         onPointerDown={onResize}
-        onDoubleClick={(e) => onResetHeight(e.altKey)}
         data-hint="Drag to resize this track · Alt+drag resizes all · Alt+wheel over the playlist resizes all · double-click resets"
       />
       <div className="ti">
@@ -568,6 +566,10 @@ function panWithMiddle(e: React.PointerEvent, el: HTMLElement | null) {
   window.addEventListener("pointerup", up);
 }
 
+/** An Alt+wheel track-height zoom in flight: every track's height when it
+ * began, scaled by `s` as it eases toward `to`. */
+type VZoom = { base: Record<number, number>; s: number; to: number; lo: number; hi: number; stop: () => void };
+
 const TRACK_MIN_H = 44;
 const TRACK_MAX_H = 400;
 
@@ -577,8 +579,12 @@ export function Editor() {
   const tracks = useTracks();
   const ref = useRef<HTMLDivElement>(null);
   const [heights, setHeights] = useState<Record<number, number>>({});
-  // Alt+wheel scales every track's height; the point under the mouse stays put.
+  // Alt+wheel scales every track's height, eased over a few frames; the
+  // point under the mouse stays put.
   const anchor = useRef<{ row: number; frac: number; y: number } | null>(null);
+  const vz = useRef<VZoom | null>(null);
+  const lastClick = useRef<{ id: number; at: number } | null>(null);
+  useEffect(() => () => vz.current?.stop(), []);
   useWheel(ref, (factor, clientY) => {
     const el = ref.current;
     if (!el) return;
@@ -588,18 +594,36 @@ export function Editor() {
     const row = i < 0 ? rows.length - 1 : i;
     const rb = rows[row]?.getBoundingClientRect();
     if (rb) anchor.current = { row, frac: (clientY - rb.top) / rb.height, y: clientY - box.top };
-    const next: Record<number, number> = {};
-    tracks.forEach((t, j) => {
-      const h = heights[t.id] ?? rows[j]?.getBoundingClientRect().height ?? 76;
-      next[t.id] = clamp(h * factor, TRACK_MIN_H, TRACK_MAX_H);
-    });
-    setHeights(next);
+    if (!vz.current) {
+      const base: Record<number, number> = {};
+      tracks.forEach((t, j) => (base[t.id] = rows[j]?.getBoundingClientRect().height ?? 76));
+      const hs = Object.values(base);
+      if (!hs.length) return;
+      const lo = TRACK_MIN_H / Math.max(...hs);
+      const hi = TRACK_MAX_H / Math.min(...hs);
+      const z: VZoom = { base, s: 1, to: 1, lo, hi, stop: () => {} };
+      z.stop = onFrame((_now, dt) => {
+        z.s = ease(z.s, z.to, dt);
+        const done = Math.abs(Math.log(z.to / z.s)) < 1e-3;
+        if (done) z.s = z.to;
+        const next: Record<number, number> = {};
+        for (const id in z.base) next[id] = clamp(z.base[id] * z.s, TRACK_MIN_H, TRACK_MAX_H);
+        setHeights(next);
+        if (done) {
+          z.stop();
+          vz.current = null;
+        }
+      });
+      vz.current = z;
+    }
+    const z = vz.current;
+    z.to = clamp(z.to * factor, z.lo, z.hi);
   });
   useLayoutEffect(() => {
     const a = anchor.current;
     const el = ref.current;
     if (!a || !el) return;
-    anchor.current = null;
+    if (!vz.current) anchor.current = null;
     const r = el.querySelectorAll<HTMLElement>(":scope > .trow:not(.add)")[a.row];
     if (!r) return;
     const rb = r.getBoundingClientRect();
@@ -609,19 +633,25 @@ export function Editor() {
   const tall = tracks.length === 1;
   // The header's bottom edge resizes the track; Alt resizes every track and
   // a double-click goes back to the default height.
-  const resetHeight = (id: number, all: boolean) =>
+  const resetHeight = (id: number, all: boolean) => {
+    vz.current?.stop();
+    vz.current = null;
+    anchor.current = null;
     setHeights((h) => {
       const n = { ...h };
       for (const t of all ? tracks : tracks.filter((t) => t.id === id)) delete n[t.id];
       return n;
     });
+  };
   const resize = (e: React.PointerEvent, id: number) => {
     const row = (e.currentTarget as HTMLElement).closest(".trow") as HTMLElement;
     const h0 = row.getBoundingClientRect().height;
     const all = e.altKey;
     document.body.classList.add("rsizing");
     startDrag(e, {
-      slop: 0,
+      // A click doesn't resize, so the handle stays under the mouse for the
+      // second click of a double-click, which is told here rather than by
+      // dblclick (the row can shift under the mouse between the two).
       move: (_dx, dy) => {
         const v = Math.round(clamp(h0 + dy, TRACK_MIN_H, TRACK_MAX_H));
         setHeights((h) => {
@@ -630,7 +660,16 @@ export function Editor() {
           return n;
         });
       },
-      end: () => document.body.classList.remove("rsizing"),
+      end: (moved, ev) => {
+        document.body.classList.remove("rsizing");
+        const now = performance.now();
+        const last = lastClick.current;
+        lastClick.current = moved ? null : { id, at: now };
+        if (!moved && last && last.id === id && now - last.at < 450) {
+          lastClick.current = null;
+          resetHeight(id, ev.altKey || all);
+        }
+      },
     });
   };
   return (
@@ -657,7 +696,6 @@ export function Editor() {
               index={i}
               tall={tall}
               onResize={(e) => resize(e, t.id)}
-              onResetHeight={(all) => resetHeight(t.id, all)}
             />
             <Lane track={t} index={i} />
           </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useSession } from "@/stores/session-store";
+import { SmoothScrollTop, smoothScroll, smoothZoom } from "@/lib/smooth-view";
 
 /** Top of the envelope range, as in `dawg_core::ENV_MAX`: 0 dB sits at 80%. */
 export const ENV_MAX = 1.25;
@@ -38,15 +38,15 @@ export function useWheel(
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const smooth = new SmoothScrollTop(el);
     const onWheel = (e: WheelEvent) => {
-      const s = useSession.getState();
       // Some systems turn Shift or Alt+wheel into a sideways wheel.
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (e.ctrlKey) {
         e.preventDefault();
         const lane = (e.target as HTMLElement).closest(".lane, .ruler");
         const r = (lane ?? el).getBoundingClientRect();
-        s.zoomAt(e.clientX - r.left, Math.exp(d * 0.0025));
+        smoothZoom(e.clientX - r.left, Math.exp(d * 0.0025));
         return;
       }
       if (e.altKey) {
@@ -56,11 +56,17 @@ export function useWheel(
       }
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         e.preventDefault();
-        s.scrollTo(s.view.start + d * s.view.fpp);
+        smoothScroll(d);
+        return;
       }
-      // The plain wheel scrolls the tracks natively, when they overflow.
+      // The plain wheel scrolls the tracks, when they overflow.
+      e.preventDefault();
+      smooth.by(e.deltaY);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      smooth.cancel();
+    };
   }, [ref]);
 }

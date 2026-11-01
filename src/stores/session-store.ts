@@ -268,6 +268,18 @@ export function timelineLimit(s: SessionState): number {
 
 /** How much the scrollbar spans: the clips with room after them, and always
  * more past what's shown, so scrolling right never runs out. */
+/** The zoom range in frames per pixel: a sample per 16 px in, out to the
+ * whole song or ten minutes, whichever is longer. */
+export function fppRange(session: SessionState, width: number): [number, number] {
+  const maxFpp = Math.max(timelineEnd(session) * 2, session.rate * 600) / width;
+  return [1 / 16, Math.max(maxFpp, 1)];
+}
+
+/** Where the view's start may go at `fpp`: 0 up to the timeline's end. */
+export function maxStart(session: SessionState, width: number, fpp: number): number {
+  return Math.max(0, timelineLimit(session) - width * fpp);
+}
+
 export function scrollSpan(s: SessionState, view: View, width: number): number {
   const shown = width * view.fpp;
   return Math.min(timelineLimit(s), Math.max(timelineEnd(s) * 1.5, view.start + shown * 2));
@@ -401,9 +413,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   zoomAt: (px, factor) => {
     const { view, session, width } = get();
     if (!session) return;
-    // Zoom out to the whole song, or ten minutes when that's longer.
-    const maxFpp = Math.max(timelineEnd(session) * 2, session.rate * 600) / width;
-    const fpp = clamp(view.fpp * factor, 1 / 16, Math.max(maxFpp, 1));
+    const fpp = clamp(view.fpp * factor, ...fppRange(session, width));
     const anchor = view.start + px * view.fpp;
     set({ view: { fpp, start: 0 } });
     get().scrollTo(anchor - px * fpp);
@@ -412,8 +422,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   scrollTo: (start) => {
     const { view, session, width } = get();
     if (!session) return;
-    const max = Math.max(0, timelineLimit(session) - width * view.fpp);
-    set({ view: { ...view, start: clamp(start, 0, max) } });
+    set({ view: { ...view, start: clamp(start, 0, maxStart(session, width, view.fpp)) } });
   },
 
   drag: (cmd, draft) => {
