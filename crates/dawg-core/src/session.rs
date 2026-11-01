@@ -19,13 +19,14 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::command::{fit_fades, gain_to_db, Command, CommandError};
 use crate::eq::{Eq, EqBand};
 use crate::file::{AudioFile, Codec, FileError};
+use crate::history::{self, Detail};
 use crate::model::{
     Clip, EnvPoint, FadeCurve, Project, Source, Track, DEFAULT_BPM, MAX_BPM, MIN_BPM,
 };
@@ -40,6 +41,9 @@ use crate::wav::{encode_simple, WavFormat};
 
 /// Undo steps kept.
 const HISTORY: usize = 200;
+/// Longest pause between nudges of the same value that still makes one
+/// step, in ms.
+const MERGE_MS: u64 = 1500;
 
 #[derive(Debug)]
 pub enum OpenError {
@@ -111,6 +115,11 @@ pub struct Session {
     redo: Vec<Step>,
     /// A drag is under way; its first transient command took the undo step.
     in_gesture: bool,
+    /// What the edit under way changes (see [`history::merge_key`]).
+    gesture_key: Option<String>,
+    /// The last step's merge key and when its edit ended: a nudge of the
+    /// same value within [`MERGE_MS`] joins that step.
+    last_nudge: Option<(String, u64)>,
 }
 
 /// Choices in the Export dialog. Every field left out keeps what a plain
@@ -146,6 +155,10 @@ struct Step {
     label: String,
     /// When the edit was made, in ms since the Unix epoch.
     at: u64,
+    /// Edits folded into this step by a run of nudges; 1 for most.
+    edits: u32,
+    /// What it changed, once the state after it can no longer move.
+    detail: OnceLock<Detail>,
 }
 
 /// An edit in the history, for the History panel.
@@ -155,6 +168,16 @@ pub struct HistoryEntry {
     pub label: String,
     /// When it was made, in ms since the Unix epoch.
     pub at: u64,
+    /// The icon for the kind of edit (see [`Detail::kind`]).
+    pub kind: &'static str,
+    /// Where it happened, outermost first: "Vocals", "EQ", "Band 2 Bell".
+    pub place: Vec<String>,
+    /// The values before and after: "Q 9.49 → 3.14".
+    pub change: String,
+    /// Edits folded into the step by a run of nudges.
+    pub edits: u32,
+    /// Separate changes `change` sums up, when it is a summary.
+    pub changes: usize,
 }
 
 fn now_ms() -> u64 {
@@ -366,10 +389,39 @@ fn with_source(p: &Project, source: &Arc<Source>) -> Project {
 }
 
 impl Step {
-    fn entry(&self) -> HistoryEntry {
+    fn new(project: Arc<Project>, label: String) -> Step {
+        Step {
+            project,
+            label,
+            at: now_ms(),
+            edits: 1,
+            detail: OnceLock::new(),
+        }
+    }
+
+    /// The History row for this step, which turned `before` into `after`.
+    /// `fixed` when `after` can't change any more, so the text is kept.
+    fn entry(
+        &self,
+        before: &Project,
+        after: &Project,
+        fixed: bool,
+        name: &dyn Fn(u64) -> String,
+    ) -> HistoryEntry {
+        let make = || history::describe(before, after, &self.label, name);
+        let d = if fixed {
+            self.detail.get_or_init(make).clone()
+        } else {
+            make()
+        };
         HistoryEntry {
             label: self.label.clone(),
             at: self.at,
+            kind: d.kind,
+            place: d.place,
+            change: d.change,
+            edits: self.edits,
+            changes: d.changes,
         }
     }
 }
@@ -414,6 +466,8 @@ impl Session {
             undo: Vec::new(),
             redo: Vec::new(),
             in_gesture: false,
+            gesture_key: None,
+            last_nudge: None,
         }
     }
 
@@ -437,6 +491,8 @@ impl Session {
             undo: Vec::new(),
             redo: Vec::new(),
             in_gesture: false,
+            gesture_key: None,
+            last_nudge: None,
         }
     }
 
@@ -762,8 +818,8 @@ impl Session {
             dirty: self.dirty(),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
-            history: self.undo.iter().map(Step::entry).collect(),
-            future: self.redo.iter().rev().map(Step::entry).collect(),
+            history: self.history(),
+            future: self.future(),
             extra_chunks: o.map_or_else(Vec::new, |o| o.file.extra_chunks()),
             truncated: o.is_some_and(|o| o.file.truncated()),
         }
@@ -783,7 +839,16 @@ impl Session {
             if next.same_edit(&self.project) {
                 return;
             }
-            self.push_undo(label);
+            let key = history::merge_key(&self.project, &next, &label);
+            let now = now_ms();
+            let joins = self.redo.is_empty()
+                && !self.undo.is_empty()
+                && matches!((&key, &self.last_nudge), (Some(k), Some((last, t))) if k == last && now.saturating_sub(*t) <= MERGE_MS);
+            match self.undo.last_mut() {
+                Some(s) if joins => s.edits += 1,
+                _ => self.push_undo(label),
+            }
+            self.gesture_key = key;
         }
         self.project = Arc::new(next);
         self.in_gesture = true;
@@ -798,21 +863,21 @@ impl Session {
             return;
         }
         self.in_gesture = false;
+        let key = self.gesture_key.take();
         if self
             .undo
             .last()
             .is_some_and(|s| s.project.same_edit(&self.project))
         {
             self.undo.pop();
+            self.last_nudge = None;
+        } else {
+            self.last_nudge = key.map(|k| (k, now_ms()));
         }
     }
 
     fn push_undo(&mut self, label: String) {
-        self.undo.push(Step {
-            project: self.project.clone(),
-            label,
-            at: now_ms(),
-        });
+        self.undo.push(Step::new(self.project.clone(), label));
         if self.undo.len() > HISTORY {
             self.undo.remove(0);
         }
@@ -824,6 +889,49 @@ impl Session {
         self.undo.len()
     }
 
+    /// A source's name for the History panel: its file's name.
+    fn source_name(&self, id: u64) -> String {
+        self.sources
+            .get(&id)
+            .map_or_else(|| "clip".to_string(), |s| file_stem(&s.path))
+    }
+
+    /// The undo list as History rows, oldest first.
+    fn history(&self) -> Vec<HistoryEntry> {
+        let name = |id| self.source_name(id);
+        let n = self.undo.len();
+        (0..n)
+            .map(|i| {
+                let after = self.undo.get(i + 1).map_or(&*self.project, |s| &*s.project);
+                // The newest step's after is the live state, still moving.
+                self.undo[i].entry(&self.undo[i].project, after, i + 1 < n, &name)
+            })
+            .collect()
+    }
+
+    /// The redo list as History rows, next to redo first.
+    fn future(&self) -> Vec<HistoryEntry> {
+        let name = |id| self.source_name(id);
+        let mut before = &*self.project;
+        self.redo
+            .iter()
+            .rev()
+            .map(|s| {
+                let e = s.entry(before, &s.project, true, &name);
+                before = &s.project;
+                e
+            })
+            .collect()
+    }
+
+    /// Makes the last edit look older than a nudge run allows, for tests.
+    #[cfg(test)]
+    fn age_last_edit(&mut self) {
+        if let Some((_, t)) = &mut self.last_nudge {
+            *t = t.saturating_sub(MERGE_MS + 1);
+        }
+    }
+
     /// Folds the last edit into the one before it, named `label`: how an
     /// agent's take becomes one undo step as it goes. False when there
     /// aren't two edits to fold.
@@ -833,14 +941,17 @@ impl Session {
             return false;
         }
         self.undo.pop();
+        self.last_nudge = None;
         if let Some(s) = self.undo.last_mut() {
             s.label = label;
+            s.detail = OnceLock::new();
         }
         true
     }
 
     pub fn undo(&mut self) -> bool {
         self.end_gesture();
+        self.last_nudge = None;
         let Some(s) = self.undo.pop() else {
             return false;
         };
@@ -854,6 +965,7 @@ impl Session {
 
     pub fn redo(&mut self) -> bool {
         self.end_gesture();
+        self.last_nudge = None;
         let Some(s) = self.redo.pop() else {
             return false;
         };
@@ -1409,6 +1521,162 @@ mod tests {
         assert!(!s.jump(4));
         assert!(s.jump(0));
         assert!(!s.dirty());
+    }
+
+    fn gain(db: f32) -> Command {
+        Command::SetClipGain {
+            clip: CLIP,
+            gain_db: db,
+        }
+    }
+
+    /// The opened file's track.
+    const TRACK: u64 = 2;
+
+    fn bell(q: f32) -> Command {
+        Command::SetTrackEq {
+            track: TRACK,
+            bands: vec![crate::eq::EqBand {
+                kind: crate::eq::BandKind::Bell,
+                freq: 1200.0,
+                gain_db: 2.0,
+                q,
+                slope: 12,
+                on: true,
+            }],
+            bypass: None,
+        }
+    }
+
+    fn rows(v: &[HistoryEntry]) -> Vec<String> {
+        v.iter()
+            .map(|e| format!("{} | {} | {}", e.kind, e.place.join(" › "), e.change))
+            .collect()
+    }
+
+    #[test]
+    fn history_says_where_and_what_changed() {
+        let mut s = session(44_100);
+        s.apply(&bell(9.49), false).unwrap();
+        s.age_last_edit();
+        s.apply(&bell(3.2), false).unwrap();
+        s.age_last_edit();
+        s.apply(&gain(-6.0), false).unwrap();
+        s.age_last_edit();
+        s.apply(&trim(0, 22_050), false).unwrap();
+        s.age_last_edit();
+        s.apply(
+            &Command::SetTrackMix {
+                track: TRACK,
+                gain_db: None,
+                pan: None,
+                muted: Some(true),
+                solo: None,
+            },
+            false,
+        )
+        .unwrap();
+        s.apply(
+            &Command::Batch {
+                label: Some("AI: brighten".into()),
+                commands: vec![
+                    bell(1.0),
+                    Command::SetTrackMix {
+                        track: TRACK,
+                        gain_db: Some(-3.0),
+                        pan: Some(-0.2),
+                        muted: None,
+                        solo: None,
+                    },
+                ],
+            },
+            false,
+        )
+        .unwrap();
+        let st = s.state();
+        assert_eq!(
+            rows(&st.history),
+            [
+                "eq | mem › EQ › Add band 1 | Bell 1.20 kHz +2.0 dB",
+                "eq | mem › EQ › Band 1 Bell | Q 9.49 → 3.20",
+                "volume | mem › mem › Gain | 0.0 → −6.0 dB",
+                "trim | mem › mem › Trim end | 0:01.00 → 0:00.50",
+                "mute | mem › Mute | Off → On",
+                "ai | mem › brighten | Volume, pan, EQ band 1",
+            ]
+        );
+        assert_eq!(st.history[5].changes, 3);
+        // Undone steps read the same from the other side.
+        assert!(s.jump(2));
+        let st = s.state();
+        assert_eq!(
+            rows(&st.future)[0],
+            "volume | mem › mem › Gain | 0.0 → −6.0 dB"
+        );
+    }
+
+    #[test]
+    fn quick_nudges_of_one_value_are_one_step() {
+        let mut s = session(1000);
+        for db in [-1.0, -2.0, -3.0] {
+            s.apply(&gain(db), false).unwrap();
+        }
+        let st = s.state();
+        assert_eq!(st.history.len(), 1);
+        assert_eq!(st.history[0].change, "0.0 → −3.0 dB");
+        assert_eq!(st.history[0].edits, 3);
+        // A drag of the same value joins too.
+        s.apply(&gain(-4.0), true).unwrap();
+        s.apply(&gain(-5.0), true).unwrap();
+        s.end_gesture();
+        assert_eq!(s.state().history.len(), 1);
+        assert!(s.undo());
+        assert_eq!(s.clip(CLIP).unwrap().gain, 1.0);
+        assert!(s.redo());
+
+        // A pause starts a new step.
+        s.age_last_edit();
+        s.apply(&gain(-6.0), false).unwrap();
+        assert_eq!(s.state().history.len(), 2);
+        // So does another value.
+        s.apply(&trim(0, 900), false).unwrap();
+        s.apply(&gain(-7.0), false).unwrap();
+        assert_eq!(s.state().history.len(), 4);
+        // And an undo.
+        s.undo();
+        s.apply(&gain(-8.0), false).unwrap();
+        assert_eq!(s.state().history.len(), 4);
+        assert_eq!(s.state().history[3].change, "−6.0 → −8.0 dB");
+    }
+
+    #[test]
+    fn nudges_back_to_the_start_leave_no_step() {
+        let mut s = session(1000);
+        s.apply(&gain(-1.0), false).unwrap();
+        s.apply(&gain(0.0), false).unwrap();
+        assert!(!s.state().can_undo);
+    }
+
+    #[test]
+    fn toggles_and_agent_edits_never_merge() {
+        let mut s = session(1000);
+        let mute = |m| Command::SetTrackMix {
+            track: TRACK,
+            gain_db: None,
+            pan: None,
+            muted: Some(m),
+            solo: None,
+        };
+        s.apply(&mute(true), false).unwrap();
+        s.apply(&mute(false), false).unwrap();
+        assert_eq!(s.state().history.len(), 2);
+        let ai = |db| Command::Batch {
+            label: Some("AI: quieter".into()),
+            commands: vec![gain(db)],
+        };
+        s.apply(&ai(-1.0), false).unwrap();
+        s.apply(&ai(-2.0), false).unwrap();
+        assert_eq!(s.state().history.len(), 4);
     }
 
     #[test]

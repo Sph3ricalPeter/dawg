@@ -8,6 +8,7 @@ import { useSession } from "@/stores/session-store";
 import { Tabs } from "./Tabs";
 import { AppMenu } from "./AppMenu";
 import { HistoryPanel } from "./HistoryPanel";
+import { stepText } from "@/lib/history";
 import { Master } from "./Master";
 import { Bpm, Lcd, TimelineMenu } from "./TimeControls";
 import { UpdateIndicator } from "./UpdateIndicator";
@@ -21,7 +22,13 @@ function BrowserToggle() {
   const scratch = useSession((s) => !!s.session?.scratch);
   const open = useBrowser((s) => (scratch ? s.openScratch : s.open));
   return (
-    <button className={`tb${open ? " on" : ""}`} id="tBrowser" aria-label="Browser" data-tip="Browser (Ctrl+Alt+B)" onClick={() => useBrowser.getState().toggle()}>
+    <button
+      className={`tb${open ? " on" : ""}`}
+      id="tBrowser"
+      aria-label="Browser"
+      data-tip="Browser (Ctrl+Alt+B)"
+      onClick={() => useBrowser.getState().toggle()}
+    >
       <svg viewBox="0 0 16 16">
         <path d="M2 3h12v10H2zM3.5 4.5v7h3v-7z" />
       </svg>
@@ -37,8 +44,12 @@ function Transport() {
   const canUndo = useSession((s) => !!s.session?.canUndo);
   const canRedo = useSession((s) => !!s.session?.canRedo);
   // The step each button would take: the last edit, and the next undone one.
-  const undoLabel = useSession((s) => (s.session?.canUndo ? s.session.history.at(-1)?.label : undefined));
-  const redoLabel = useSession((s) => (s.session?.canRedo ? s.session.future[0]?.label : undefined));
+  const undoLabel = useSession((s) =>
+    s.session?.canUndo ? stepText(s.session.history.at(-1)) : undefined,
+  );
+  const redoLabel = useSession((s) =>
+    s.session?.canRedo ? stepText(s.session.future[0]) : undefined,
+  );
   const historyOpen = useSession((s) => s.historyOpen);
   const store = useSession.getState;
   return (
@@ -80,7 +91,12 @@ function Transport() {
           disabled={!session}
           onClick={() => store().toggleLoop()}
         >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          >
             <path d="M4 5.5h7.5a2 2 0 0 1 2 2v.5M12 10.5H4.5a2 2 0 0 1-2-2V8M9.5 3.5l2 2-2 2M6.5 12.5l-2-2 2-2" />
           </svg>
         </button>
@@ -104,15 +120,26 @@ function Transport() {
           disabled={!session}
           onClick={() => store().toggleHistory()}
         >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          >
             <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.6h2.6M8 5v3.2l2.2 1.4" />
           </svg>
           <span className="car">▾</span>
         </button>
-        {historyOpen && session && <HistoryPanel onClose={() => store().toggleHistory(false)} />}
+        {historyOpen && session && (
+          <HistoryPanel onClose={() => store().toggleHistory(false)} />
+        )}
         <button
           className="tb"
-          data-tip={undoLabel ? `Undo ${undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z) · nothing to undo"}
+          data-tip={
+            undoLabel
+              ? `Undo ${undoLabel} (Ctrl+Z)`
+              : "Undo (Ctrl+Z) · nothing to undo"
+          }
           aria-label={undoLabel ? `Undo ${undoLabel}` : "Undo"}
           disabled={!canUndo}
           onClick={() => void store().undo()}
@@ -123,7 +150,11 @@ function Transport() {
         </button>
         <button
           className="tb"
-          data-tip={redoLabel ? `Redo ${redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y) · nothing to redo"}
+          data-tip={
+            redoLabel
+              ? `Redo ${redoLabel} (Ctrl+Y)`
+              : "Redo (Ctrl+Y) · nothing to redo"
+          }
           aria-label={redoLabel ? `Redo ${redoLabel}` : "Redo"}
           disabled={!canRedo}
           onClick={() => void store().redo()}
@@ -144,7 +175,10 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
   const [tight, setTight] = useState(false);
   const onTight = useCallback((t: boolean) => setTight(t), []);
   return (
-    <header className={`titlebar${tight ? " tight" : ""}`} data-tauri-drag-region>
+    <header
+      className={`titlebar${tight ? " tight" : ""}`}
+      data-tauri-drag-region
+    >
       <div className="tleft" data-tauri-drag-region>
         <AppMenu info={info} />
         <Tabs tight={tight} onTight={onTight} />
@@ -171,14 +205,30 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
           </button>
         </div>
         <div className="winctl">
-          <button aria-label="Minimize" onClick={() => windowAction("minimize")}>
-            <svg viewBox="0 0 10 10"><path d="M0 5h10" /></svg>
+          <button
+            aria-label="Minimize"
+            onClick={() => windowAction("minimize")}
+          >
+            <svg viewBox="0 0 10 10">
+              <path d="M0 5h10" />
+            </svg>
           </button>
-          <button aria-label="Maximize" onClick={() => windowAction("toggleMaximize")}>
-            <svg viewBox="0 0 10 10"><path d="M.5.5h9v9h-9z" /></svg>
+          <button
+            aria-label="Maximize"
+            onClick={() => windowAction("toggleMaximize")}
+          >
+            <svg viewBox="0 0 10 10">
+              <path d="M.5.5h9v9h-9z" />
+            </svg>
           </button>
-          <button className="close" aria-label="Close" onClick={() => void requestClose()}>
-            <svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0 0 10" /></svg>
+          <button
+            className="close"
+            aria-label="Close"
+            onClick={() => void requestClose()}
+          >
+            <svg viewBox="0 0 10 10">
+              <path d="M0 0l10 10M10 0 0 10" />
+            </svg>
           </button>
         </div>
       </div>

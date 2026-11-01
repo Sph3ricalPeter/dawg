@@ -2067,8 +2067,8 @@ body.rsizing * {
   top: 30px;
   left: 0;
   z-index: 40;
-  width: 310px;
-  max-height: 440px;
+  width: 360px;
+  max-height: 480px;
   display: flex;
   flex-direction: column;
   background: var(--bg-3);
@@ -2103,7 +2103,7 @@ body.rsizing * {
 }
 .he {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   padding: 5px 10px 5px 12px;
@@ -2127,9 +2127,24 @@ body.rsizing * {
 }
 .he .ic {
   width: 22px;
+  height: 17px;
   flex: none;
   display: flex;
+  align-items: center;
   justify-content: center;
+}
+.he .ic svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.he.cur .ic svg,
+.he:hover .ic svg {
+  stroke: var(--text);
 }
 .he .ic i {
   width: 6px;
@@ -2140,12 +2155,48 @@ body.rsizing * {
 .he .lb {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.he .pl,
+.he .chg {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.he .pl {
+  color: var(--text-dim);
+}
+.he .pl b {
+  color: var(--text);
+  font-weight: 500;
+}
+.he .pl .sep {
+  color: var(--text-faint);
+  padding: 0 4px;
+}
+.he .chg {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.he .chg .arr {
+  color: var(--text-faint);
+  padding: 0 4px;
+}
+.he .chg .to {
+  color: var(--text);
+}
+.he .chg .n {
+  margin-left: 6px;
+  font-family: var(--font);
+  color: var(--text-faint);
+}
 .he .tm {
   flex: none;
+  line-height: 17px;
   color: var(--text-faint);
   font-family: var(--mono);
   font-size: 11px;

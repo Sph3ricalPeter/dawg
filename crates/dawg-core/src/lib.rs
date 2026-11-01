@@ -10,6 +10,7 @@ pub mod analysis;
 pub mod command;
 pub mod eq;
 pub mod file;
+pub mod history;
 mod model;
 pub mod mp3;
 pub mod peaks;

@@ -143,6 +143,16 @@ export interface HistoryEntry {
   label: string;
   /** ms since the Unix epoch. */
   at: number;
+  /** The icon: the kind of edit ("eq", "volume", "ai", …). */
+  kind: string;
+  /** Where it happened, outermost first: ["Vocals", "EQ", "Band 2 Bell"]. */
+  place: string[];
+  /** The values before and after: "Q 9.49 → 3.14". */
+  change: string;
+  /** Edits folded into the step by a run of quick nudges. */
+  edits: number;
+  /** Separate changes `change` sums up, when it is a summary. */
+  changes: number;
 }
 
 /** Mirrors `dawg_core::session::Placement`. */
