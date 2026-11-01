@@ -109,9 +109,15 @@ npm run build:dev   # local installable "dawg dev" build
   enforces no allocation; extend it when you add to the path.
 - **No clicks from live changes**: a new project snapshot never steps the
   sound. `Renderer` ramps volume, pan, mute/solo, clip gain and master over
-  `RAMP_SECONDS` and crossfades a changed EQ over `EQ_FADE_SECONDS`; a jump
-  fades out and in (`SEEK_FADE_SECONDS`). A new live value goes through the
-  same ramps, and values holding still must render exactly as before.
+  `RAMP_SECONDS`, crossfades a changed EQ over `EQ_FADE_SECONDS`, and
+  crossfades a track whose clips sound different (moved, trimmed,
+  stretched, faded, enveloped, added, deleted, or the track added or
+  deleted) from the old clips to the new over `EDIT_FADE_SECONDS`, before
+  its EQ; edits arriving mid-crossfade queue up, newest wins. Track mix
+  state follows the track id, so deleting or moving a track doesn't reset
+  the others. A jump fades out and in (`SEEK_FADE_SECONDS`). A new live
+  value goes through the same ramps, and values holding still must render
+  exactly as before.
 - **One render path**: playback and mixdown export both go through
   `Renderer::process`, so what you hear is what you export. The one
   exception is saving an edited WAV (`wav::WavFile::render_clip`): it keeps

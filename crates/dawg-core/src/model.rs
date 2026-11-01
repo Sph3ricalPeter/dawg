@@ -343,6 +343,29 @@ impl Clip {
             && self.envelope.iter().all(|p| p.gain == 1.0)
     }
 
+    /// Plays the same audio, apart from its gain (which the renderer ramps):
+    /// same source, position, trim, fades, envelope, direction and retime.
+    pub fn same_sound(&self, other: &Clip) -> bool {
+        self.id == other.id
+            && Arc::ptr_eq(&self.source, &other.source)
+            && self.start == other.start
+            && self.offset == other.offset
+            && self.len == other.len
+            && self.fade_in == other.fade_in
+            && self.fade_out == other.fade_out
+            && self.fade_in_curve == other.fade_in_curve
+            && self.fade_out_curve == other.fade_out_curve
+            && self.reversed == other.reversed
+            && (Arc::ptr_eq(&self.envelope, &other.envelope) || self.envelope == other.envelope)
+            && self.stretch == other.stretch
+            && self.pitch == other.pitch
+            && match (&self.audio, &other.audio) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+    }
+
     /// Same edit state: source, position, trim, gain, fades and envelope.
     pub fn same_edit(&self, other: &Clip) -> bool {
         self.id == other.id

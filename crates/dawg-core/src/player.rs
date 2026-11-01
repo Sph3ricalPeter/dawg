@@ -359,11 +359,17 @@ impl Player {
             match msg {
                 PlayerMsg::Project(p) => {
                     self.step = p.sample_rate as f64 / self.device_rate;
-                    let old = self.renderer.swap_project(p);
-                    if let Err(rtrb::PushError::Full(old)) = self.garbage.push(old) {
-                        // Never free on this thread; a leak is the lesser evil
-                        // and can't happen while the handle keeps collecting.
-                        std::mem::forget(old);
+                    if self.playing {
+                        // Crossfades to it where it sounds different; the
+                        // old one comes back once that's done.
+                        if let Some(old) = self.renderer.swap_project(p) {
+                            self.free(old);
+                        }
+                    } else {
+                        self.renderer.cut_to(p);
+                    }
+                    while let Some(p) = self.renderer.released() {
+                        self.free(p);
                     }
                 }
                 PlayerMsg::Play { from, to, looping } => {
@@ -398,6 +404,15 @@ impl Player {
                     self.gain = 1.0;
                 }
             }
+        }
+    }
+
+    /// Hands a snapshot back to the handle's thread to free.
+    fn free(&mut self, p: Arc<Project>) {
+        if let Err(rtrb::PushError::Full(p)) = self.garbage.push(p) {
+            // Never free on this thread; a leak is the lesser evil and
+            // can't happen while the handle keeps collecting.
+            std::mem::forget(p);
         }
     }
 
@@ -465,6 +480,9 @@ impl Player {
             self.renderer
                 .tap_track(self.shared.tap_track.load(Ordering::Relaxed));
             self.renderer.process(&mut self.block);
+            while let Some(p) = self.renderer.released() {
+                self.free(p);
+            }
             for (shared, peak) in self.shared.peaks.iter().zip(self.renderer.take_peaks()) {
                 shared[0].fetch_max(peak[0].to_bits(), Ordering::Relaxed);
                 shared[1].fetch_max(peak[1].to_bits(), Ordering::Relaxed);
@@ -742,6 +760,43 @@ mod tests {
         assert_eq!(handle.garbage.slots(), 1);
         handle.collect();
         assert_eq!(handle.garbage.slots(), 0);
+    }
+
+    #[test]
+    fn a_clip_moved_while_playing_crossfades_and_comes_back() {
+        let src = Arc::new(Source::new(1, vec![0.5; 48_000]));
+        let a = Project::with_tracks(
+            48_000,
+            vec![Track {
+                clips: vec![Clip::new(src, 0)],
+                ..Track::default()
+            }],
+        );
+        let mut b = a.clone();
+        b.tracks[0].clips[0].start = 100_000;
+        let (mut player, mut handle) = player(Arc::new(a), 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 0,
+            to: 200_000,
+            looping: None,
+        });
+        let mut out = vec![0.0; 2 * 1000];
+        player.fill(&mut out);
+        handle.send(PlayerMsg::Project(Arc::new(b)));
+        player.fill(&mut out);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        let fade = crate::render::EDIT_FADE_SECONDS * 48_000.0;
+        let max_step = left
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max);
+        assert!(max_step <= 0.5 / fade as f32 * 1.01, "step {max_step}");
+        assert_eq!(*left.last().unwrap(), 0.0);
+        // Moved, not seeked: the playhead carried on.
+        assert!(handle.position() >= 2000 - 300);
+        // The old snapshot is handed back once the crossfade is over.
+        player.fill(&mut out);
+        assert!(handle.garbage.slots() >= 1);
     }
 
     #[test]

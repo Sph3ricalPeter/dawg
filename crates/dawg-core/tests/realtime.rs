@@ -129,6 +129,22 @@ fn player_fill_does_not_allocate_or_free() {
                     player.fill(&mut buf);
                 }
             });
+            // A clip moved while playing, twice in one crossfade.
+            for shift in [100, 200] {
+                let mut moved = (*scene.project).clone();
+                for t in &mut moved.tracks {
+                    for c in &mut t.clips {
+                        c.start += shift;
+                    }
+                }
+                handle.send(PlayerMsg::Project(std::sync::Arc::new(moved)));
+            }
+            assert_no_alloc(scene.name, || {
+                for _ in 0..5 {
+                    player.fill(&mut buf);
+                }
+            });
+            handle.collect();
             handle.send(PlayerMsg::Stop);
             assert_no_alloc(scene.name, || player.fill(&mut buf));
         }
@@ -150,6 +166,9 @@ fn ramps_and_eq_crossfades_do_not_allocate() {
             t.muted = i % 2 == 1;
             for c in &mut t.clips {
                 c.gain *= 0.5;
+                // Moved and trimmed: crossfades from the old clips.
+                c.start += 100;
+                c.len = c.len.saturating_sub(50).max(1);
             }
             t.eq = if t.eq.active() {
                 Eq::new(t.eq.bands(), true, next.sample_rate)
@@ -165,18 +184,24 @@ fn ramps_and_eq_crossfades_do_not_allocate() {
                 Eq::new(&[band], false, next.sample_rate)
             };
         }
+        // A track deleted (fading out) and one added (fading in).
+        if let Some(t) = next.tracks.pop() {
+            let mut added = t.clone();
+            added.id = next.next_id;
+            next.tracks.insert(0, added);
+        }
         let next = std::sync::Arc::new(next);
         let mut renderer = Renderer::new(scene.project.clone(), 0);
         let mut buf = vec![0.0f32; 128 * OUT_CHANNELS];
         renderer.process(&mut buf);
-        let old = renderer.swap_project(next.clone());
+        let _ = renderer.swap_project(next.clone());
         assert_no_alloc(scene.name, || {
             for _ in 0..20 {
                 renderer.process(&mut buf);
             }
         });
         // And straight back, mid-ramp.
-        let _next = renderer.swap_project(old);
+        let _ = renderer.swap_project(scene.project.clone());
         assert_no_alloc(scene.name, || {
             for _ in 0..20 {
                 renderer.process(&mut buf);
