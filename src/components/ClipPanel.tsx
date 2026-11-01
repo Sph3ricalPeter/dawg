@@ -260,7 +260,7 @@ export function ClipPanel() {
           <span className="n">{src?.name ?? "Clip"}</span>
         </div>
         {path && (
-          <div className="faint mono path" title={path}>
+          <div className="faint mono path" data-tip={path}>
             {path}
           </div>
         )}

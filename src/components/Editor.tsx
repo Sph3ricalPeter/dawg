@@ -263,7 +263,7 @@ function TrackMenu({
             key={c}
             className={`swatch${track.color === i ? " on" : ""}`}
             style={{ background: c }}
-            title="Track colour"
+            data-tip="Track colour"
             onClick={() => {
               onClose();
               void store().apply({ type: "set_track_color", track: track.id, color: track.color === i ? null : i });

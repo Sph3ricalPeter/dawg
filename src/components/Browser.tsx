@@ -122,7 +122,7 @@ function FileRow({
       onClick={() => void useBrowser.getState().pick(path)}
       onDoubleClick={() => place(path, null, Math.round(useSession.getState().playhead))}
       onContextMenu={(e) => onMenu(e, path, false)}
-      title={path}
+      data-tip={path}
       data-hint="Click to preview · drag onto a track or the empty lane below · double-click adds it on a new track at the playhead · right-click for more"
     >
       <span className="ic">
@@ -161,7 +161,7 @@ function FolderRow({
       <div
         className={`bi fold${open ? "" : " closed"}`}
         style={{ paddingLeft: pad }}
-        title={path}
+        data-tip={path}
         onClick={() => b().toggleFolder(path)}
         onContextMenu={(e) => onMenu(e, path, !!root)}
       >
@@ -172,7 +172,7 @@ function FolderRow({
           {root && <span className="rp"> {dirName(path) === path ? "" : dirName(path)}</span>}
         </span>
         {pinned && (
-          <span className="pinm" title="Pinned">
+          <span className="pinm" data-tip="Pinned">
             •
           </span>
         )}
@@ -218,7 +218,7 @@ function Section({ k, title, children }: { k: string; title: string; children: R
   const shut = useBrowser((s) => s.shut.includes(k));
   return (
     <>
-      <div className={`bsec${shut ? " shut" : ""}`} onClick={() => useBrowser.getState().toggleSection(k)} title={shut ? "Expand" : "Collapse"}>
+      <div className={`bsec${shut ? " shut" : ""}`} onClick={() => useBrowser.getState().toggleSection(k)} data-tip={shut ? "Expand" : "Collapse"}>
         <span className="chev">{CHEV}</span>
         <span className="bst">{title}</span>
       </div>
@@ -398,7 +398,7 @@ export function Browser() {
   if (!open) {
     return (
       <aside className="browser shut">
-        <button className="rail" onClick={() => b().toggle()} title="Show the Browser (Ctrl+Alt+B)">
+        <button className="rail" onClick={() => b().toggle()} data-tip="Show the Browser (Ctrl+Alt+B)">
           Browser
         </button>
       </aside>
@@ -444,7 +444,7 @@ export function Browser() {
     <aside className="browser" style={width === null ? undefined : { width }}>
       <Sizer />
       <div className="phead">
-        <button className="x" onClick={() => b().toggle()} title="Hide the Browser (Ctrl+Alt+B)">
+        <button className="x" aria-label="Hide the Browser" onClick={() => b().toggle()} data-tip="Hide the Browser (Ctrl+Alt+B)">
           ‹
         </button>
         <span className="pht">Browser</span>
@@ -489,7 +489,7 @@ export function Browser() {
                 <div
                   key={p}
                   className="bi"
-                  title={`${p}\nClick to show it in Folders · right-click to unpin`}
+                  data-tip={`${p}\nClick to show it in Folders · right-click to unpin`}
                   onClick={() => {
                     if (!roots.some((r) => p === r || p.startsWith(r + "\\") || p.startsWith(r + "/"))) void b().addRoots([p]);
                     else if (!b().expanded.includes(p)) b().toggleFolder(p);
@@ -512,7 +512,7 @@ export function Browser() {
               {roots.map((r) => (
                 <FolderRow key={r} path={r} depth={0} root onMenu={folderMenu} onDrag={setDrag} />
               ))}
-              <div className="bi badd" onClick={() => void addFolder()} title="Add a folder to browse (or drop one here from Explorer)">
+              <div className="bi badd" onClick={() => void addFolder()} data-tip="Add a folder to browse (or drop one here from Explorer)">
                 <span className="ic">+</span>
                 <span className="nm">Add folder…</span>
               </div>

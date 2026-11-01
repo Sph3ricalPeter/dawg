@@ -51,7 +51,7 @@ export function UpdateIndicator() {
   switch (status) {
     case "downloading":
       return (
-        <span className="upd faint" title={`Downloading dawg ${version}`}>
+        <span className="upd faint" data-tip={`Downloading dawg ${version}`}>
           Updating {progress}%
         </span>
       );
@@ -59,7 +59,7 @@ export function UpdateIndicator() {
       return (
         <button
           className="upd upd-ready"
-          title={`dawg ${version} is downloaded. Restart to use it.${notes ? `\n\n${notes}` : ""}`}
+          data-tip={`dawg ${version} is downloaded. Restart to use it.${notes ? `\n\n${notes}` : ""}`}
           onClick={() => void restart()}
         >
           <span className="dot" />
@@ -72,7 +72,7 @@ export function UpdateIndicator() {
       return (
         <button
           className="tb upd-btn upd-error"
-          title={`Update check failed: ${error}\nClick to try again.`}
+          data-tip={`Update check failed: ${error}\nClick to try again.`}
           aria-label="Update check failed, click to try again"
           onClick={() => void check()}
         >
@@ -81,7 +81,7 @@ export function UpdateIndicator() {
       );
     case "checking":
       return (
-        <button className="tb upd-btn" disabled title="Checking for updates…" aria-label="Checking for updates">
+        <button className="tb upd-btn" disabled data-tip="Checking for updates…" aria-label="Checking for updates">
           <SpinnerIcon />
         </button>
       );
@@ -91,7 +91,7 @@ export function UpdateIndicator() {
         <button
           className="tb upd-btn"
           disabled={status === "disabled"}
-          title={status === "disabled" ? line : `${line}. Click to check for updates.`}
+          data-tip={status === "disabled" ? line : `${line}. Click to check for updates.`}
           aria-label="Check for updates"
           onClick={() => void check()}
         >

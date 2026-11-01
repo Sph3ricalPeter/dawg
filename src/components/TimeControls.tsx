@@ -25,7 +25,7 @@ export function Lcd() {
   return (
     <div
       className={`lcd${units === "bars" ? " bars" : ""}`}
-      title="Playhead position · double-click to type one, like 5.1.1 or 0:12.5"
+      data-tip="Playhead position · double-click to type one, like 5.1.1 or 0:12.5"
       onDoubleClick={() => session && setTyping(true)}
     >
       {typing ? (
@@ -150,7 +150,7 @@ export function TimelineMenu() {
         className={`tb tlset${open ? " on" : ""}`}
         disabled={!session}
         onClick={() => setOpen(!open)}
-        title={`Timeline settings · snap ${label.toLowerCase()} · envelope editing ${envEdit ? "on" : "off"}`}
+        data-tip={`Timeline settings · snap ${label.toLowerCase()} · envelope editing ${envEdit ? "on" : "off"}`}
       >
         <span>Snap {label}</span>
         {!envEdit && <span className="tlenv">Env off</span>}

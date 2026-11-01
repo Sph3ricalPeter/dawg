@@ -6,6 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Browser } from "@/components/Browser";
 import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
+import { TooltipLayer } from "@/components/Tooltip";
 import { Editor } from "@/components/Editor";
 import { EqPanel } from "@/components/EqPanel";
 import { ExportDialog } from "@/components/ExportDialog";
@@ -69,7 +70,7 @@ function EmptyState({ dropping }: { dropping: boolean }) {
         <div className="recent">
           <span className="faint">Recent projects</span>
           {recent.map((r) => (
-            <button key={r.path} className="link" title={r.path} onClick={() => void openRecent(r.path)}>
+            <button key={r.path} className="link" data-tip={r.path} onClick={() => void openRecent(r.path)}>
               {r.name}
             </button>
           ))}
@@ -394,6 +395,7 @@ export function App() {
       <ExportDialog />
       <RecoverDialog />
       <Toast />
+      <TooltipLayer />
     </div>
   );
 }

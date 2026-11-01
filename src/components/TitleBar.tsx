@@ -28,7 +28,7 @@ function Doc() {
   // As in the mockup: a scratch file is tagged, a project shows its file
   // name, and an untitled one says it isn't saved.
   return (
-    <div className="doc" title={session.path ?? session.project ?? "Not saved yet"}>
+    <div className="doc" data-tip={session.path ?? session.project ?? "Not saved yet"}>
       <b>
         {session.name}
         {session.dirty && <span className="dirty"> •</span>}
@@ -46,7 +46,7 @@ function BrowserToggle() {
   const scratch = useSession((s) => !!s.session?.scratch);
   const open = useBrowser((s) => (scratch ? s.openScratch : s.open));
   return (
-    <button className={`tb${open ? " on" : ""}`} id="tBrowser" title="Browser (Ctrl+Alt+B)" onClick={() => useBrowser.getState().toggle()}>
+    <button className={`tb${open ? " on" : ""}`} id="tBrowser" aria-label="Browser" data-tip="Browser (Ctrl+Alt+B)" onClick={() => useBrowser.getState().toggle()}>
       <svg viewBox="0 0 16 16">
         <path d="M2 3h12v10H2zM3.5 4.5v7h3v-7z" />
       </svg>
@@ -61,6 +61,9 @@ function Transport() {
   const hasRange = useSession((s) => !!s.range);
   const canUndo = useSession((s) => !!s.session?.canUndo);
   const canRedo = useSession((s) => !!s.session?.canRedo);
+  // The step each button would take: the last edit, and the next undone one.
+  const undoLabel = useSession((s) => (s.session?.canUndo ? s.session.history.at(-1)?.label : undefined));
+  const redoLabel = useSession((s) => (s.session?.canRedo ? s.session.future[0]?.label : undefined));
   const historyOpen = useSession((s) => s.historyOpen);
   const store = useSession.getState;
   return (
@@ -72,7 +75,8 @@ function Transport() {
         <button
           className={`tb${playing ? " on" : ""}`}
           id="tPlay"
-          title="Play / stop (Space)"
+          aria-label={playing ? "Stop" : "Play"}
+          data-tip="Play / stop (Space)"
           disabled={!session}
           onClick={() => void store().togglePlay()}
         >
@@ -82,7 +86,8 @@ function Transport() {
         </button>
         <button
           className="tb"
-          title="Stop and return to where playback started"
+          aria-label="Stop and return"
+          data-tip="Stop and return to where playback started"
           disabled={!session}
           onClick={() => {
             void store().stop();
@@ -94,7 +99,9 @@ function Transport() {
         </button>
         <button
           className={`tb${loop ? " on" : ""}`}
-          title={`Loop (L) · ${hasRange ? "the range" : "from 0 to the end of the last clip"}`}
+          aria-label="Loop"
+          aria-pressed={loop}
+          data-tip={`Loop (L) · ${hasRange ? "the range" : "from 0 to the end of the last clip"}`}
           disabled={!session}
           onClick={() => store().toggleLoop()}
         >
@@ -117,7 +124,8 @@ function Transport() {
         <button
           className={`tb hb${historyOpen ? " on" : ""}`}
           id="tHist"
-          title="History (Ctrl+H)"
+          aria-label="History"
+          data-tip="History (Ctrl+H)"
           disabled={!session}
           onClick={() => store().toggleHistory()}
         >
@@ -127,12 +135,24 @@ function Transport() {
           <span className="car">▾</span>
         </button>
         {historyOpen && session && <HistoryPanel onClose={() => store().toggleHistory(false)} />}
-        <button className="tb" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={() => void store().undo()}>
+        <button
+          className="tb"
+          data-tip={undoLabel ? `Undo ${undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z) · nothing to undo"}
+          aria-label={undoLabel ? `Undo ${undoLabel}` : "Undo"}
+          disabled={!canUndo}
+          onClick={() => void store().undo()}
+        >
           <svg viewBox="0 0 16 16">
             <path d="M6 3 1.5 7 6 11V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z" />
           </svg>
         </button>
-        <button className="tb" title="Redo (Ctrl+Y)" disabled={!canRedo} onClick={() => void store().redo()}>
+        <button
+          className="tb"
+          data-tip={redoLabel ? `Redo ${redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y) · nothing to redo"}
+          aria-label={redoLabel ? `Redo ${redoLabel}` : "Redo"}
+          disabled={!canRedo}
+          onClick={() => void store().redo()}
+        >
           <svg viewBox="0 0 16 16" style={{ transform: "scaleX(-1)" }}>
             <path d="M6 3 1.5 7 6 11V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z" />
           </svg>
@@ -160,7 +180,7 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
             id="tExport"
             disabled={!session}
             onClick={() => void exportDialog()}
-            title={
+            data-tip={
               session?.scratch
                 ? "Export (Ctrl+S) · the dialog starts on the original file; saving there replaces it, with a backup"
                 : "Export a mixdown (Ctrl+R)"

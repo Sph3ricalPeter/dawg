@@ -52,7 +52,7 @@ function Seg<T extends string | number>({
           key={String(o.v)}
           className={value === o.v ? "on" : ""}
           disabled={o.disabled}
-          title={o.hint}
+          data-tip={o.hint}
           onClick={() => onChange(o.v)}
         >
           {o.label}

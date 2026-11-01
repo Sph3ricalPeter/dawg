@@ -62,11 +62,11 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
 
   return (
     <div className="menu-wrap" ref={ref}>
-      <button className={`logo${open ? " open" : ""}`} onClick={() => setOpen(!open)} title="Menu">
+      <button className={`logo${open ? " open" : ""}`} onClick={() => setOpen(!open)} aria-label="Menu" data-tip="Menu">
         <DawgMark className="mark" />
         dawg
         {info?.channel === "dev" && (
-          <span className="pill" title={`dawg dev ${info.version}`}>
+          <span className="pill" data-tip={`dawg dev ${info.version}`}>
             dev {devBuild(info)}
           </span>
         )}
@@ -94,7 +94,7 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
                   key={r.path}
                   className="menu-item"
                   role="menuitem"
-                  title={r.path}
+                  data-tip={r.path}
                   onClick={() => {
                     setOpen(false);
                     void openRecent(r.path);

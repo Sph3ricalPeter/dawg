@@ -618,7 +618,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
         data-hint="Drag to move · right-click for clip settings: fades, envelope presets, reverse"
       >
         <span className="nm" style={{ paddingLeft: Math.max(0, -left) }}>
-          {clip.reversed && <span className="rev" title="Reversed">⇠ </span>}
+          {clip.reversed && <span className="rev" data-tip="Reversed">⇠ </span>}
           {stem(sourceName)}
         </span>
         {missing && (

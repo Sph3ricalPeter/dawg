@@ -2505,3 +2505,38 @@ body.sizing * {
 .dragchip .dl {
   color: var(--text-dim);
 }
+
+/* The app's one tooltip (components/Tooltip.tsx): anything with data-tip. */
+.tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 100;
+  max-width: 320px;
+  padding: 4px 8px;
+  background: var(--bg-4);
+  color: var(--text);
+  border: 1px solid #333;
+  border-radius: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.08s ease-out, transform 0.08s ease-out;
+}
+.tooltip.on {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+}
+.tooltip.above {
+  transform: translateY(2px);
+}
+.tooltip.on.above {
+  transform: none;
+}

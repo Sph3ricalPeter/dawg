@@ -49,6 +49,9 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
   `src/styles.css`; zustand stores in `src/stores` (`browser-store.ts`
   keeps the Browser's folders, pins, recent files and width in localStorage).
+  Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
+  is the one styled tooltip (a stray `title` is converted on hover). `data-hint`
+  is the status bar's longer hint.
 - `.github/workflows`: `ci.yml` (checks, tests, Windows "dawg dev" installer
   artifact) and `release.yml` (tag → signed installer + `latest.json`).
 
