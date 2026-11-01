@@ -159,8 +159,11 @@ interface SessionStore {
    * into it, as in the mockup. */
   rangeLoop: () => void;
   toggleLoop: () => void;
-  /** Restarts playback from the playhead when what it plays changed. */
+  /** Restarts playback from the playhead, after the playhead moved. */
   replay: () => Promise<void>;
+  /** Moves the loop or end of the playback in progress without restarting
+   * it, after the range, loop or song end changed. */
+  retarget: () => Promise<void>;
   cropToRange: () => Promise<void>;
   toggleEnvEdit: () => void;
   togglePlay: () => Promise<void>;
@@ -202,6 +205,10 @@ const METER_FALL = 0.75;
 /** Shortest clip a trim can leave, in frames (`dawg_core::command::MIN_CLIP`). */
 export const MIN_LEN = 16;
 
+/** Shortest range that loops, in seconds. A shorter one (the first moments
+ * of a Ctrl+drag) would only buzz, so playback ignores it. */
+const MIN_LOOP_SECONDS = 0.05;
+
 /** What playback covers: up to `to`, then back to `loopFrom` (or stop when
  * that's null). Null when there is nothing to play. */
 function bounds(st: { session: SessionState | null; range: Range | null; loop: boolean }): {
@@ -210,7 +217,8 @@ function bounds(st: { session: SessionState | null; range: Range | null; loop: b
 } | null {
   const s = st.session;
   if (!s) return null;
-  if (st.range && st.loop) return { to: Math.round(st.range.b), loopFrom: Math.round(st.range.a) };
+  const minLoop = MIN_LOOP_SECONDS * s.format.sampleRate;
+  if (st.range && st.loop && st.range.b - st.range.a >= minLoop) return { to: Math.round(st.range.b), loopFrom: Math.round(st.range.a) };
   const end = songEnd(s);
   if (end <= 0) return null;
   return { to: end, loopFrom: st.loop ? 0 : null };
@@ -570,7 +578,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   setRange: (r) => {
     const had = get().range;
     set({ range: r && r.b - r.a >= 1 ? r : null });
-    if (get().playing && (had !== null || get().range !== null)) void get().replay();
+    if (get().playing && (had !== null || get().range !== null)) void get().retarget();
   },
 
   rangeLoop: () => {
@@ -582,13 +590,13 @@ export const useSession = create<SessionStore>((set, get) => ({
       const a = Math.round(range.a);
       set({ playhead: a, startPoint: a });
     }
-    if (get().playing) void get().replay();
+    if (get().playing) void get().retarget();
   },
 
   toggleLoop: () => {
     set({ loop: !get().loop });
     setSetting("loop", get().loop);
-    if (get().playing) void get().replay();
+    if (get().playing) void get().retarget();
   },
 
   replay: async () => {
@@ -602,6 +610,26 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (from >= b.to || (b.loopFrom !== null && from < b.loopFrom)) from = b.loopFrom ?? 0;
     await api.play(from, b.to, b.loopFrom).catch(() => undefined);
     set({ playhead: from });
+  },
+
+  retarget: async () => {
+    if (!get().playing) return;
+    const b = bounds(get());
+    if (!b) {
+      await get().stop();
+      return;
+    }
+    const at = get().playhead;
+    const outside = at >= b.to || (b.loopFrom !== null && at < b.loopFrom);
+    // Past the end with nothing to loop back to: start over, as before.
+    if (outside && b.loopFrom === null) {
+      await get().replay();
+      return;
+    }
+    // Playback carries on where it is; seeking on every move of a dragged
+    // range restarted the same few milliseconds over and over (a buzz).
+    await api.setBounds(b.to, b.loopFrom).catch(() => undefined);
+    if (outside && b.loopFrom !== null) set({ playhead: b.loopFrom });
   },
 
   cropToRange: async () => {
@@ -714,7 +742,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     const before = get().session;
     set({ session: s, draft: null, selected: get().selected.filter((id) => ids.has(id)) });
     // The loop follows the last clip's end.
-    if (s && before && songEnd(s) !== songEnd(before)) void get().replay();
+    if (s && before && songEnd(s) !== songEnd(before)) void get().retarget();
   },
 
   opened: (s) => start(s),

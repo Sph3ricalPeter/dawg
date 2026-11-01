@@ -22,6 +22,9 @@ use crate::render::{Renderer, METER_TRACKS, NO_TAP, OUT_CHANNELS};
 const BLOCK: usize = 256;
 /// Messages in flight; also bounds the snapshots awaiting release.
 const RING: usize = 64;
+/// Shortest loop the player keeps, in frames: anything shorter is stretched
+/// to this. A loop of a few frames is an audible buzz, not music.
+pub const MIN_LOOP: u64 = 1024;
 
 pub enum PlayerMsg {
     Project(Arc<Project>),
@@ -29,6 +32,14 @@ pub enum PlayerMsg {
     /// back to `loop_from` and carry on until stopped.
     Play {
         from: u64,
+        to: u64,
+        looping: Option<u64>,
+    },
+    /// Change where playback stops or loops back without seeking, so a loop
+    /// being dragged doesn't restart the sound on every move. Jumps to
+    /// `looping` only if the playhead is outside the new loop. Ignored when
+    /// stopped.
+    Bounds {
         to: u64,
         looping: Option<u64>,
     },
@@ -206,6 +217,15 @@ impl PlayerHandle {
     }
 }
 
+/// `to` and the loop start as the player uses them: a loop start at or past
+/// `to` is no loop, and a loop is at least [`MIN_LOOP`] long.
+fn loop_bounds(to: u64, looping: Option<u64>) -> (u64, Option<u64>) {
+    match looping {
+        Some(l) if l < to => (to.max(l + MIN_LOOP), Some(l)),
+        _ => (to, None),
+    }
+}
+
 /// The audio-thread side.
 pub struct Player {
     rx: Consumer<PlayerMsg>,
@@ -325,22 +345,40 @@ impl Player {
                     }
                 }
                 PlayerMsg::Play { from, to, looping } => {
-                    self.renderer.seek(from);
-                    self.block_pos = 0;
-                    self.block_len = 0;
-                    self.stop_at = to;
-                    self.loop_from = looping.filter(|&l| l < to);
-                    self.playing = true;
-                    self.heard = from;
-                    self.frac = 0.0;
-                    let a = self.next_src();
-                    let b = self.next_src();
-                    let c = self.next_src();
-                    self.hist = [[0.0; 2], a, b, c];
+                    let (to, looping) = loop_bounds(to, looping);
+                    self.start(from, to, looping);
+                }
+                PlayerMsg::Bounds { to, looping } => {
+                    if !self.playing {
+                        continue;
+                    }
+                    let (to, looping) = loop_bounds(to, looping);
+                    match looping {
+                        Some(l) if self.heard < l || self.heard >= to => self.start(l, to, looping),
+                        _ => {
+                            self.stop_at = to;
+                            self.loop_from = looping;
+                        }
+                    }
                 }
                 PlayerMsg::Stop => self.playing = false,
             }
         }
+    }
+
+    fn start(&mut self, from: u64, to: u64, looping: Option<u64>) {
+        self.renderer.seek(from);
+        self.block_pos = 0;
+        self.block_len = 0;
+        self.stop_at = to;
+        self.loop_from = looping;
+        self.playing = true;
+        self.heard = from;
+        self.frac = 0.0;
+        let a = self.next_src();
+        let b = self.next_src();
+        let c = self.next_src();
+        self.hist = [[0.0; 2], a, b, c];
     }
 
     /// Timeline frame of the next source frame to be read.
@@ -468,6 +506,65 @@ mod tests {
         handle.send(PlayerMsg::Stop);
         player.fill(&mut out[..8]);
         assert!(!handle.playing());
+    }
+
+    #[test]
+    fn bounds_move_the_loop_without_seeking() {
+        let p = project(48_000, 8000);
+        let (mut player, mut handle) = player(p.clone(), 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 1000,
+            to: 6000,
+            looping: Some(1000),
+        });
+        let mut out = vec![0.0; 2 * 4000];
+        player.fill(&mut out[..2 * 1000]);
+        // At 2000, the loop end moves in to 4000: playback carries on.
+        handle.send(PlayerMsg::Bounds {
+            to: 4000,
+            looping: Some(1000),
+        });
+        player.fill(&mut out[2 * 1000..]);
+        let mut want = crate::render(p.clone(), 1000, 3000);
+        want.extend(crate::render(p, 1000, 1000));
+        assert_eq!(out, want);
+        assert_eq!(handle.position(), 2000);
+    }
+
+    #[test]
+    fn bounds_jump_into_a_loop_the_playhead_is_outside() {
+        let p = project(48_000, 8000);
+        let (mut player, mut handle) = player(p.clone(), 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 0,
+            to: 8000,
+            looping: Some(0),
+        });
+        let mut out = vec![0.0; 2 * 1000];
+        player.fill(&mut out);
+        handle.send(PlayerMsg::Bounds {
+            to: 6000,
+            looping: Some(3000),
+        });
+        player.fill(&mut out);
+        assert_eq!(out, crate::render(p, 3000, 1000));
+    }
+
+    #[test]
+    fn a_tiny_loop_is_stretched_to_the_minimum() {
+        let p = project(48_000, 8000);
+        let (mut player, mut handle) = player(p.clone(), 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 100,
+            to: 102,
+            looping: Some(100),
+        });
+        let len = MIN_LOOP as usize;
+        let mut out = vec![0.0; 2 * 2 * len];
+        player.fill(&mut out);
+        let mut want = crate::render(p.clone(), 100, len);
+        want.extend(crate::render(p, 100, len));
+        assert_eq!(out, want);
     }
 
     #[test]

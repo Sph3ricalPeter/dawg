@@ -115,6 +115,20 @@ fn player_fill_does_not_allocate_or_free() {
                     player.fill(&mut buf);
                 }
             });
+            // A loop dragged shorter mid-playback, then past the playhead.
+            handle.send(PlayerMsg::Bounds {
+                to: scene.frames as u64 / 2,
+                looping: Some(0),
+            });
+            handle.send(PlayerMsg::Bounds {
+                to: scene.frames as u64,
+                looping: Some(scene.frames as u64 / 2),
+            });
+            assert_no_alloc(scene.name, || {
+                for _ in 0..5 {
+                    player.fill(&mut buf);
+                }
+            });
             handle.send(PlayerMsg::Stop);
             assert_no_alloc(scene.name, || player.fill(&mut buf));
         }
