@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -7,7 +8,9 @@ import { Browser } from "@/components/Browser";
 import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { TooltipLayer } from "@/components/Tooltip";
-import { Editor } from "@/components/Editor";
+import { Dock } from "@/components/Dock";
+import { panelHost, type PanelState } from "@/lib/dock";
+import { Editor, TimelineHead } from "@/components/Editor";
 import { EqPanel } from "@/components/EqPanel";
 import { ExportDialog } from "@/components/ExportDialog";
 import { RecoverDialog } from "@/components/RecoverDialog";
@@ -33,7 +36,9 @@ import { dropTarget, setDropHover } from "@/lib/drop";
 import { DropGhost } from "@/components/DropGhost";
 import { fmtFormat } from "@/lib/format";
 import { everyFrameAtMost } from "@/lib/frame-loop";
+import { isFloating, type PanelId } from "@/lib/layout";
 import { useBrowser } from "@/stores/browser-store";
+import { useLayout } from "@/stores/layout-store";
 import { useSession } from "@/stores/session-store";
 import { CHECK_INTERVAL_MS, DEV_CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
 
@@ -347,12 +352,31 @@ function useWindowTitle(info: AppInfo | null) {
   }, [name, dirty, info]);
 }
 
+/** What each panel shows, for the dock. A docked Browser that's hidden
+ * stays as its rail; a floating one goes away until it's shown again. */
+function usePanels(): Record<PanelId, PanelState> {
+  const scratch = useSession((s) => !!s.session?.scratch);
+  const browserOpen = useBrowser((s) => (scratch ? s.openScratch : s.open));
+  const browserFloats = useLayout((s) => isFloating(s.layout, "browser"));
+  const eqShown = useSession((s) => s.eqTrack !== null && !!s.session?.tracks.some((t) => t.id === s.eqTrack));
+  return {
+    browser: {
+      shown: browserFloats ? browserOpen : true,
+      collapsed: !browserOpen,
+      close: { label: browserOpen ? "Hide" : "Show", run: () => useBrowser.getState().toggle() },
+    },
+    timeline: { shown: true },
+    eq: { shown: eqShown, close: { label: "Close", run: () => useSession.getState().openEq(null) } },
+  };
+}
+
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [hint, setHint] = useState("");
   const [drop, setDrop] = useState<DropState>(null);
   const dropping = drop !== null;
   const session = useSession((s) => s.session);
+  const panels = usePanels();
 
   useEffect(() => {
     let timer: number | undefined;
@@ -397,23 +421,28 @@ export function App() {
   return (
     <div className="app" onMouseOver={onOver} onContextMenu={(e) => e.preventDefault()}>
       <TitleBar info={info} />
-      <div className="workarea">
-      <Browser />
-      <main className="arrangement">
-        {session && (session.scratch || session.tracks.length > 0) ? <Editor /> : <EmptyState dropping={dropping} />}
-        <DropGhost />
-        {session && drop && (
-          <div className="dropbar">
-            {drop.track
-              ? `Drop to add it to ${drop.track} where you let go`
-              : drop.files > 1
-                ? `Drop to add ${drop.files} files, each on a new track`
-                : "Drop to add it on a new track"}
-          </div>
-        )}
-      </main>
-      </div>
-      {session && <EqPanel />}
+      <Dock panels={panels} />
+      {createPortal(<Browser />, panelHost("browser"))}
+      {createPortal(
+        <>
+          <TimelineHead />
+          <main className="arrangement">
+            {session && (session.scratch || session.tracks.length > 0) ? <Editor /> : <EmptyState dropping={dropping} />}
+            <DropGhost />
+            {session && drop && (
+              <div className="dropbar">
+                {drop.track
+                  ? `Drop to add it to ${drop.track} where you let go`
+                  : drop.files > 1
+                    ? `Drop to add ${drop.files} files, each on a new track`
+                    : "Drop to add it on a new track"}
+              </div>
+            )}
+          </main>
+        </>,
+        panelHost("timeline"),
+      )}
+      {createPortal(session ? <EqPanel /> : null, panelHost("eq"))}
       <StatusBar hint={hint} />
       <ClipPanel />
       <Dialogs />

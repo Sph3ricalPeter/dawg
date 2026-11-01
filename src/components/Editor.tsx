@@ -11,6 +11,7 @@ import { ease } from "@/lib/smooth-view";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Lane } from "./Lane";
+import { PanelHead } from "./Dock";
 import { Playhead } from "./Playhead";
 
 
@@ -567,6 +568,23 @@ const TRACK_MIN_H = 44;
 const TRACK_MAX_H = 400;
 
 /** The playlist: a ruler over the tracks, each a header and a lane. */
+/** The Timeline panel's header: its name, track count and rate. */
+export function TimelineHead() {
+  const count = useSession((s) => s.session?.tracks.length ?? null);
+  const rate = useSession((s) => s.session?.rate ?? null);
+  return (
+    <PanelHead id="timeline">
+      <span className="pht">Timeline</span>
+      {count !== null && rate !== null && (
+        <span className="phm">
+          {count} track{count === 1 ? "" : "s"} · {fmtRate(rate)}
+        </span>
+      )}
+      <span className="sp" />
+    </PanelHead>
+  );
+}
+
 export function Editor() {
   const session = useSession((s) => s.session);
   const tracks = useTracks();
@@ -667,10 +685,7 @@ export function Editor() {
   };
   return (
     <div className="editor">
-      <div className="corner">
-        {tracks.length} track{tracks.length === 1 ? "" : "s"}
-        <span className="r">{fmtRate(session.rate)}</span>
-      </div>
+      <div className="corner" />
       <Ruler />
       <div
         className={`tracks${tall ? " one" : ""}`}

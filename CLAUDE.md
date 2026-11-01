@@ -47,12 +47,18 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
 - `integrations/unity`: Unity package (git URL install) that opens audio clips in dawg on
   double-click.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
-  `src/styles.css`; zustand stores in `src/stores`. App-wide UI settings (Browser folders,
-  pins and width, units, snap, loop, envelope edit, History and export
-  choices) go through `lib/settings.ts`, saved to `settings.json` in the app's
+  `src/styles.css`; zustand stores in `src/stores`. App-wide UI settings (the
+  panel layout, Browser folders and pins, units, snap, loop, envelope edit,
+  History and export choices) go through `lib/settings.ts`, saved to `settings.json` in the app's
   data folder (`src-tauri/src/settings.rs`), not localStorage; per-project
   state belongs in the project file. The window-state plugin keeps the
   window's size and position.
+  Panels: the Browser, Timeline and EQ dock and float (`lib/layout.ts` is
+  the pure dock tree and presets, `stores/layout-store.ts` saves it as
+  `layout`, `lib/dock.ts` holds the panel hosts, actions and header drag,
+  `components/Dock.tsx` renders it). Each panel renders once, through a
+  portal, into a host element that moves between slots, so docking never
+  remounts it; give a new panel a `PanelHead` and an entry in `PANELS`.
   Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
   is the one styled tooltip (a stray `title` is converted on hover). `data-hint`
   is the status bar's longer hint.

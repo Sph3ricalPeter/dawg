@@ -7,7 +7,9 @@ import { dropTarget, setDropHover } from "@/lib/drop";
 import { fmtSeconds } from "@/lib/format";
 import { onFrame, snapPx } from "@/lib/frame-loop";
 import { baseName, dirName, disambiguate, joinPath, previewClock, useBrowser } from "@/stores/browser-store";
+import { useLayout } from "@/stores/layout-store";
 import { useSession } from "@/stores/session-store";
+import { PanelHead } from "./Dock";
 
 const FOLDER = (
   <svg width="11" height="9" viewBox="0 0 11 9">
@@ -492,47 +494,6 @@ function Preview() {
   );
 }
 
-/** The 7 px handle on the Browser's right edge: drag to resize (150–380 px,
- * leaving the playlist at least 420), double-click to reset. */
-function Sizer() {
-  const [on, setOn] = useState(false);
-  return (
-    <div
-      className={`sizer${on ? " on" : ""}`}
-      data-hint="Drag to resize the Browser · double-click resets"
-      onDoubleClick={() => useBrowser.getState().setWidth(null)}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const h = e.currentTarget;
-        const pane = h.parentElement;
-        if (!pane) return;
-        h.setPointerCapture(e.pointerId);
-        const w0 = pane.getBoundingClientRect().width;
-        const x0 = e.clientX;
-        const room = (pane.parentElement?.clientWidth ?? window.innerWidth) - 420;
-        const { setWidth } = useBrowser.getState();
-        setOn(true);
-        document.body.classList.add("sizing");
-        const move = (ev: PointerEvent) => setWidth(Math.min(room, w0 + ev.clientX - x0), false);
-        const up = (ev: PointerEvent) => {
-          h.removeEventListener("pointermove", move);
-          h.removeEventListener("pointerup", up);
-          h.removeEventListener("pointercancel", up);
-          setOn(false);
-          document.body.classList.remove("sizing");
-          if (ev.type === "pointerup") setWidth(useBrowser.getState().width);
-          else setWidth(w0);
-        };
-        h.addEventListener("pointermove", move);
-        h.addEventListener("pointerup", up);
-        h.addEventListener("pointercancel", up);
-      }}
-    />
-  );
-}
-
 /** The Browser from the UX spec: pinned folders, recent files and a folder
  * tree, with search; click to preview, drag onto the playlist to place. */
 export function Browser() {
@@ -543,7 +504,6 @@ export function Browser() {
   const recent = useBrowser((s) => s.recent);
   const query = useBrowser((s) => s.query);
   const results = useBrowser((s) => s.results);
-  const width = useBrowser((s) => s.width);
   const order = useBrowser((s) => s.order);
   const shutSecs = useBrowser((s) => s.shut);
   const [secDrop, setSecDrop] = useState<SecDrop | null>(null);
@@ -568,7 +528,15 @@ export function Browser() {
   if (!open) {
     return (
       <aside className="browser shut">
-        <button className="rail" onClick={() => b().toggle()} data-tip="Show the Browser (Ctrl+Alt+B)">
+        <button
+          className="rail"
+          onClick={() => b().toggle()}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            useLayout.getState().openMenu("browser", e.clientX, e.clientY);
+          }}
+          data-tip="Show the Browser (Ctrl+Alt+B)"
+        >
           Browser
         </button>
       </aside>
@@ -672,15 +640,15 @@ export function Browser() {
   );
 
   return (
-    <aside className="browser" style={width === null ? undefined : { width }}>
-      <Sizer />
-      <div className="phead">
+    <aside className="browser">
+      <PanelHead id="browser">
         <button className="x" aria-label="Hide the Browser" onClick={() => b().toggle()} data-tip="Hide the Browser (Ctrl+Alt+B)">
           ‹
         </button>
         <span className="pht">Browser</span>
+        <span className="sp" />
         <BrowserOptions />
-      </div>
+      </PanelHead>
       <label className="search">
         <svg width="11" height="11" viewBox="0 0 16 16">
           <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="2" fill="none" />

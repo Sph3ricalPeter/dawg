@@ -1501,12 +1501,11 @@ body.rsizing * {
   box-shadow: 0 0 0 1px var(--text);
 }
 .eqp {
-  flex: none;
-  height: 252px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-1);
-  border-top: 1px solid var(--line-strong);
 }
 .eqh {
   height: 26px;
@@ -1517,6 +1516,8 @@ body.rsizing * {
   padding: 0 6px 0 10px;
   border-bottom: 1px solid var(--line);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .eqh b {
   font-size: 11.5px;
@@ -2235,63 +2236,15 @@ body.rsizing * {
 }
 
 /* The Browser: pinned folders, recent files, folder tree, preview. */
-.workarea {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-.workarea > .arrangement {
-  min-width: 0;
-}
 .browser {
   position: relative;
-  width: 208px;
+  flex: 1;
   min-width: 0;
-  flex: none;
   background: var(--bg-1);
-  border-right: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
   min-height: 0;
   font-size: 12px;
-}
-@media (max-width: 1320px) {
-  .browser {
-    width: 176px;
-  }
-}
-/* The resize handle straddles the Browser's right border. */
-.browser .sizer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: -4px;
-  width: 7px;
-  z-index: 6;
-  cursor: col-resize;
-  touch-action: none;
-}
-.browser .sizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 3px;
-  width: 1px;
-  background: transparent;
-  transition: background 0.1s;
-}
-.browser .sizer:hover::after,
-.browser .sizer.on::after {
-  background: #5a5a5a;
-}
-body.sizing,
-body.sizing * {
-  cursor: col-resize !important;
-  user-select: none;
-}
-.browser.shut {
-  width: 26px;
 }
 .browser .rail {
   flex: 1;
@@ -2312,7 +2265,8 @@ body.sizing * {
   color: var(--text);
   background: var(--bg-3);
 }
-.browser .phead {
+.browser .phead,
+.dhost-timeline > .phead {
   height: 26px;
   flex: none;
   display: flex;
@@ -2743,4 +2697,236 @@ body.secdrag * {
 }
 .lane.dropping {
   background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Panels and docking (components/Dock.tsx): splits of docked panels with
+   1 px separators, floating panels above them, and the drag guides. */
+.dock {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  background: var(--page);
+}
+.dflex,
+.dcell,
+.dslot {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.dcell,
+.dslot {
+  flex: 1;
+}
+.dsplit.row {
+  flex-direction: row;
+}
+.dsplit.col {
+  flex-direction: column;
+}
+.dhost {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  background: var(--bg-1);
+}
+.dhost > .arrangement {
+  min-width: 0;
+}
+.dsep {
+  flex: none;
+  position: relative;
+  z-index: 6;
+  background: var(--line-strong);
+  touch-action: none;
+  transition: background 0.1s;
+}
+.dsep.row {
+  width: 1px;
+  cursor: col-resize;
+}
+.dsep.col {
+  height: 1px;
+  cursor: row-resize;
+}
+/* A 7 px grab band around the 1 px line. */
+.dsep::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+.dsep.col::before {
+  inset: -3px 0;
+}
+.dsep:hover,
+.dsep.on {
+  background: #5a5a5a;
+}
+.dsep.off {
+  pointer-events: none;
+}
+body.sizing,
+body.sizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.sizing-v,
+body.sizing-v * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+/* A Browser hidden in a column shows a strip instead of the side rail. */
+.dcell.strip .browser .rail {
+  writing-mode: horizontal-tb;
+  transform: none;
+  text-align: left;
+  padding: 0 10px;
+}
+
+/* every panel's header: ⋯ opens the panel menu */
+.phead {
+  cursor: default;
+  user-select: none;
+}
+.phead .sp {
+  flex: 1;
+}
+.phead .phm {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.phead .pmore {
+  flex: none;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.phead .pmore:hover {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.menu.pmenu .menu-item.checked::after {
+  content: "✓";
+  color: var(--text-dim);
+}
+
+.dfloat {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 8;
+  display: flex;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.6);
+  will-change: transform;
+}
+.dfloat .phead {
+  background: var(--bg-3);
+}
+.dfloat.moving {
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.75),
+    0 0 0 1px var(--knob);
+}
+.dgrow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  z-index: 4;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, #3a3a3a 50%, #3a3a3a 58%, transparent 58%, transparent 70%, #3a3a3a 70%, #3a3a3a 78%, transparent 78%);
+}
+
+.dlayer {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+}
+.dghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--knob);
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.55);
+  color: var(--knob);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  will-change: transform;
+}
+.dpreview {
+  position: absolute;
+  display: none;
+  background: rgba(44, 195, 238, 0.14);
+  border: 1px solid var(--knob);
+}
+.dpreview em {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--bg-0);
+  color: var(--text);
+  font-style: normal;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.dguide {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3d3d3d;
+  border-radius: 5px;
+  background: #101010;
+  color: var(--text-dim);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+.dguide svg {
+  width: 16px;
+  height: 16px;
+}
+.dguide.hot {
+  border-color: var(--knob);
+  background: #0f2a33;
+}
+.dsnap {
+  position: absolute;
+  display: none;
+  background: var(--knob);
 }

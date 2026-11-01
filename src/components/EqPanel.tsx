@@ -25,6 +25,7 @@ import { type KnobControl, knobControl } from "@/lib/knob";
 import { trackColor } from "@/lib/timeline";
 import { useSession, useTracks } from "@/stores/session-store";
 import { Knob } from "./Knob";
+import { PanelHead } from "./Dock";
 
 const GRID_HZ = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 /** Display ranges in dB, as in Pro-Q: the curve's scale, not a limit. */
@@ -103,7 +104,7 @@ function newBand(hz: number, db: number): EqBand {
   return clampBand({ kind, freq: hz, gainDb: hasGain(kind) ? db : 0, q: kind === "bell" ? 1 : Math.SQRT1_2, slope: 24, on: true });
 }
 
-/** The track EQ, docked under the playlist: a Pro-Q style curve with a node
+/** The track EQ panel (docked or floating, see Dock): a Pro-Q style curve with a node
  * per band, and the selected band's controls. */
 export function EqPanel() {
   const trackId = useSession((s) => s.eqTrack);
@@ -341,7 +342,7 @@ export function EqPanel() {
 
   return (
     <section className="eqp" style={{ ["--c" as string]: color }}>
-      <header className="eqh">
+      <PanelHead id="eq" className="eqh">
         <b>EQ</b>
         <span className="eqt">{track.name || `Track ${index + 1}`}</span>
         <button
@@ -365,7 +366,7 @@ export function EqPanel() {
         <button className="eqx" onClick={() => store().openEq(null)} data-hint="Close the EQ">
           ✕
         </button>
-      </header>
+      </PanelHead>
       <div className="eqbody">
         <div
           className="eqg"
