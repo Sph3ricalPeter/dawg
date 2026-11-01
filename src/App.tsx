@@ -410,7 +410,7 @@ export function App() {
     // command line. A later launch hands it to this window and says so.
     const take = () =>
       void api.startupFile().then((path) => {
-        if (path) openPath(path);
+        if (path) openPath(path, [], true);
       });
     take();
     const unlisten = listen("open-requested", take);

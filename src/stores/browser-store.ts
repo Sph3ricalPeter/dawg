@@ -8,7 +8,9 @@ import { useSession } from "@/stores/session-store";
 
 /** What the Browser remembers between launches. */
 interface Saved {
-  /** Shown in projects; a scratch session starts with it collapsed. */
+  /** Shown in projects. A scratch tab opened from outside the window ("Edit
+   * in dawg", Unity) starts with it collapsed; one opened from inside keeps
+   * it as it was. */
   open: boolean;
   /** Folders added to the Folders tree. */
   roots: string[];
@@ -85,7 +87,7 @@ export interface Listing {
 }
 
 interface BrowserStore extends Saved {
-  /** Open in this scratch session (it starts collapsed). */
+  /** Open in scratch tabs (see `open`). */
   openScratch: boolean;
   listings: Record<string, Listing | undefined>;
   query: string;
@@ -382,15 +384,36 @@ export const useBrowser = create<BrowserStore>((set, get) => {
   };
 });
 
-/** Files that join the session land in Recent files; the session playing
- * stops a preview. */
+let collapseNext = false;
+
+/** While true, a scratch tab that opens starts with the Browser collapsed:
+ * set around opens that come from outside the window. */
+export function collapseBrowserForNextScratch(on: boolean) {
+  collapseNext = on;
+}
+
+/** Whether each tab was last seen as a scratch session, so switching back
+ * to one leaves the Browser alone. */
+const scratchTabs = new Map<number, boolean>();
+
+/** Files that join the session land in Recent files; a new scratch tab sets
+ * the Browser (see `Saved.open`); the session playing stops a preview. */
 useSession.subscribe((s, prev) => {
   if (s.session !== prev.session && s.session) {
     const before = new Set(prev.session?.sources.map((x) => x.path) ?? []);
     const added = s.session.sources.map((x) => x.path).filter((p) => !before.has(p));
     if (s.session.path && s.session.path !== prev.session?.path) added.unshift(s.session.path);
     useBrowser.getState().noteRecent([...new Set(added)]);
-    if (s.session.scratch && !prev.session?.scratch) useBrowser.setState({ openScratch: false });
+    // A scratch session just appeared: a new tab, or a blank one the file
+    // went into.
+    const tab = s.activeTab;
+    const became = s.session.scratch && tab !== null && scratchTabs.get(tab) !== true;
+    if (tab !== null) scratchTabs.set(tab, s.session.scratch);
+    if (became) {
+      const b = useBrowser.getState();
+      const shown = prev.session?.scratch ? b.openScratch : b.open;
+      useBrowser.setState({ openScratch: collapseNext ? false : shown });
+    }
   }
   if (s.playing && !prev.playing && useBrowser.getState().playing) useBrowser.getState().stop();
 });

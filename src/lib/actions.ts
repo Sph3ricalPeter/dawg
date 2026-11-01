@@ -6,6 +6,7 @@ import { dirOf, stem } from "./format";
 import { flushSettings, setSetting, setting } from "./settings";
 import { flushLibrary } from "@/stores/library-store";
 import { flushViews } from "./view-memory";
+import { collapseBrowserForNextScratch } from "@/stores/browser-store";
 import { enqueue, useSession } from "@/stores/session-store";
 
 const WAV = { name: "WAV audio", extensions: ["wav", "wave"] };
@@ -34,11 +35,15 @@ function sessionDir(): string | undefined {
 }
 
 /** Open a WAV or MP3, or a project, in a tab of its own (or bring its tab
- * to the front). Any further audio files go onto tracks of their own. */
-export function openPath(path: string, more: string[] = []) {
+ * to the front). Any further audio files go onto tracks of their own.
+ * `outside`: the file came from outside the window ("Edit in dawg", Unity),
+ * so a scratch tab starts with the Browser collapsed. */
+export function openPath(path: string, more: string[] = [], outside = false) {
+  collapseBrowserForNextScratch(outside);
   void useSession
     .getState()
     .open(path)
+    .finally(() => collapseBrowserForNextScratch(false))
     .then((ok) => {
       if (!ok) return;
       const now = useSession.getState().session;
