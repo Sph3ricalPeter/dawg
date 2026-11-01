@@ -188,8 +188,9 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
         <UpdateIndicator />
         <div className="tg">
           <button
-            className="btn primary"
+            className="tb"
             id="tExport"
+            aria-label="Export"
             disabled={!session}
             onClick={() => void exportDialog()}
             data-tip={
@@ -201,7 +202,6 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
             <svg viewBox="0 0 16 16">
               <path d="M8 10V2.5M5 5.2 8 2.3l3 2.9M2.5 9.5v3.5h11V9.5" />
             </svg>
-            Export
           </button>
         </div>
         <div className="winctl">

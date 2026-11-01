@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { shortVersion, updateLine, useUpdaterStore } from "@/stores/updater-store";
 import { registerRichTip } from "@/lib/rich-tips";
 
@@ -13,6 +13,40 @@ const SpinnerIcon = () => (
     <path d="M8 2a6 6 0 1 0 6 6" />
   </svg>
 );
+
+const CheckIcon = () => (
+  <svg viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="6" />
+    <path d="M5.3 8.2 7.2 10l3.5-3.8" />
+  </svg>
+);
+
+/** A green arrow into a tray: an update is downloaded and waits for a restart. */
+const ReadyIcon = () => (
+  <svg viewBox="0 0 16 16">
+    <path d="M8 2v7.5M5 6.7 8 9.6l3-2.9M2.5 10v3.5h11V10" />
+    <circle className="upd-pip" cx="13" cy="3" r="2" />
+  </svg>
+);
+
+/** Download progress as a ring filling round an arrow. */
+const ProgressIcon = ({ progress }: { progress: number }) => {
+  const C = 2 * Math.PI * 6.5;
+  return (
+    <svg viewBox="0 0 16 16">
+      <circle className="upd-track" cx="8" cy="8" r="6.5" />
+      <circle
+        className="upd-ring"
+        cx="8"
+        cy="8"
+        r="6.5"
+        strokeDasharray={C}
+        strokeDashoffset={C * (1 - Math.max(0.04, progress / 100))}
+      />
+      <path d="M8 5v5.5M6 8.6 8 10.6l2-2" />
+    </svg>
+  );
+};
 
 const WarnIcon = () => (
   <svg viewBox="0 0 16 16">
@@ -41,21 +75,25 @@ function when(iso: string | null): string | null {
   return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/** The tooltip on "Restart to update": current → new, the commit or release
- * notes, and when it was published. */
-function UpdateTip() {
+/** What the update is: current → new, the commit or release notes, and when
+ * it was published. Shared by the hover tooltip and the click dropdown. */
+function UpdateDetails({ foot }: { foot?: React.ReactNode }) {
+  const status = useUpdaterStore((s) => s.status);
   const version = useUpdaterStore((s) => s.pendingVersion);
   const current = useUpdaterStore((s) => s.currentVersion);
   const notes = useUpdaterStore((s) => s.releaseNotes);
   const commit = useUpdaterStore((s) => s.pendingCommit);
   const date = useUpdaterStore((s) => s.pendingDate);
+  const progress = useUpdaterStore((s) => s.downloadProgress);
   if (!version) return null;
   const published = when(date);
   const { lines, more } = noteLines(notes ?? "");
+  const head = status === "downloading" ? `Downloading update · ${progress}%` : "Update ready";
   return (
     <div className="updtip">
       <div className="updtip-head">
-        Update ready{published && <span className="faint"> · {published}</span>}
+        {head}
+        {published && <span className="faint"> · {published}</span>}
       </div>
       <div className="updtip-vers">
         {current && (
@@ -82,22 +120,36 @@ function UpdateTip() {
           {more > 0 && <li className="faint">and {more} more</li>}
         </ul>
       )}
-      <div className="updtip-foot faint">Click to restart and install.</div>
+      {foot}
     </div>
+  );
+}
+
+function UpdateTip() {
+  const status = useUpdaterStore((s) => s.status);
+  return (
+    <UpdateDetails
+      foot={
+        <div className="updtip-foot faint">
+          {status === "ready" ? "Click to restart and install." : "Installs when you restart."}
+        </div>
+      }
+    />
   );
 }
 
 registerRichTip("update", <UpdateTip />);
 
 /**
- * Title-bar updater button, always visible so a check is one click away.
- * Idle: click checks now. Checking: spinner. Downloading: progress.
- * Ready: "Restart to update". Error: warning, click retries.
+ * Title-bar updater: one icon button whose icon says where the updater stands.
+ * Not checked: download arrow, click checks. Up to date: check mark (green for
+ * a moment after a check that found nothing). Checking: spinner. Downloading:
+ * a ring filling with progress. Ready: green arrow with a dot; hover shows
+ * what's new, click opens the same with Restart now. Error: warning, click retries.
  */
 export function UpdateIndicator() {
   const status = useUpdaterStore((s) => s.status);
   const version = useUpdaterStore((s) => s.pendingVersion);
-  const notes = useUpdaterStore((s) => s.releaseNotes);
   const progress = useUpdaterStore((s) => s.downloadProgress);
   const error = useUpdaterStore((s) => s.error);
   const lastChecked = useUpdaterStore((s) => s.lastChecked);
@@ -112,35 +164,91 @@ export function UpdateIndicator() {
     return () => window.clearTimeout(t);
   }, [confirmed]);
 
+  const [menu, setOpen] = useState(false);
+  const open = menu && status === "ready";
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
   const check = async () => {
     setConfirmed(false);
     await checkNow();
     setConfirmed(useUpdaterStore.getState().status === "idle");
   };
 
+  const short = version ? shortVersion(version) : "";
+  const line = updateLine(status, lastChecked);
+
   switch (status) {
     case "downloading":
       return (
-        <span className="upd faint" data-tip={`Downloading dawg ${version}`}>
-          Updating{version && ` to ${shortVersion(version)}`} {progress}%
-        </span>
+        <button
+          className="tb upd-btn upd-dl"
+          data-tip={`Downloading dawg ${version} · ${progress}%`}
+          data-tip-rich="update"
+          aria-label={`Downloading update to ${short}, ${progress}%`}
+        >
+          <ProgressIcon progress={progress} />
+        </button>
       );
     case "ready":
       return (
-        <button
-          className="upd upd-ready"
-          data-tip={`dawg ${version} is downloaded. Restart to use it.${notes ? `\n\n${notes}` : ""}`}
-          data-tip-rich="update"
-          aria-label={`Restart to update to dawg ${version}`}
-          onClick={() => void restart()}
-        >
-          <span className="dot" />
-          Restart to update
-          {version && <span className="upd-ver">{shortVersion(version)}</span>}
-        </button>
+        <div className="menu-wrap upd-wrap" ref={ref}>
+          <button
+            className={`tb upd-btn upd-ready${open ? " open" : ""}`}
+            data-tip={open ? undefined : `dawg ${version} is downloaded. Click to restart and install.`}
+            data-tip-rich={open ? undefined : "update"}
+            aria-label={`Update to ${short} ready`}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <ReadyIcon />
+          </button>
+          {open && (
+            <div className="menu upd-menu" role="menu">
+              <UpdateDetails
+                foot={
+                  <div className="upd-actions">
+                    <button className="btn ghost small" onClick={() => setOpen(false)}>
+                      Later
+                    </button>
+                    <button
+                      className="btn primary small"
+                      role="menuitem"
+                      autoFocus
+                      onClick={() => {
+                        setOpen(false);
+                        void restart();
+                      }}
+                    >
+                      Restart now
+                    </button>
+                  </div>
+                }
+              />
+            </div>
+          )}
+        </div>
       );
     case "restarting":
-      return <span className="upd faint">Restarting…</span>;
+      return (
+        <button className="tb upd-btn upd-ready" disabled data-tip="Restarting…" aria-label="Restarting">
+          <SpinnerIcon />
+        </button>
+      );
     case "error":
       return (
         <button
@@ -154,22 +262,21 @@ export function UpdateIndicator() {
       );
     case "checking":
       return (
-        <button className="tb upd-btn" disabled data-tip="Checking for updates…" aria-label="Checking for updates">
+        <button className="tb upd-btn upd-busy" disabled data-tip="Checking for updates…" aria-label="Checking for updates">
           <SpinnerIcon />
         </button>
       );
     default: {
-      const line = updateLine(status, lastChecked);
+      const upToDate = status === "idle" && lastChecked !== null;
       return (
         <button
-          className="tb upd-btn"
+          className={`tb upd-btn${confirmed ? " upd-ok" : ""}`}
           disabled={status === "disabled"}
           data-tip={status === "disabled" ? line : `${line}. Click to check for updates.`}
           aria-label="Check for updates"
           onClick={() => void check()}
         >
-          <DownloadIcon />
-          {confirmed && <span className="faint">Up to date</span>}
+          {upToDate ? <CheckIcon /> : <DownloadIcon />}
         </button>
       );
     }

@@ -403,20 +403,12 @@ body.panning * {
   font-size: 12.5px;
   letter-spacing: 0.02em;
 }
-#tExport {
-  height: 20px;
-  padding: 0 10px 0 8px;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
 #tExport svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -556,43 +548,16 @@ body.panning * {
   letter-spacing: 0.05em;
 }
 
-/* update indicator */
-.upd {
-  height: 20px;
-  margin-right: 8px;
-  padding: 0 8px;
+/* update indicator: one icon button, its icon is the state */
+.upd-wrap {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-}
-button.upd {
-  cursor: pointer;
-}
-.upd-ready {
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
-}
-.upd-ready .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-.upd-ready .upd-ver {
-  padding: 0 5px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.18);
-  font: 600 11px var(--mono);
 }
 .upd-btn {
-  margin-right: 8px;
+  margin-right: 2px;
 }
 .upd-btn svg {
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
@@ -601,17 +566,62 @@ button.upd {
 }
 .upd-btn .spin {
   animation: upd-spin 0.9s linear infinite;
+  transform-origin: 50% 50%;
 }
 @keyframes upd-spin {
   to {
     transform: rotate(360deg);
   }
 }
-.upd-error {
+.upd-busy:disabled {
+  opacity: 0.8;
+}
+.upd-ok,
+.upd-ok:hover:not(:disabled) {
+  color: var(--ok);
+}
+.upd-dl {
+  color: var(--text);
+  cursor: default;
+}
+.upd-dl .upd-track {
+  stroke: var(--bg-4);
+}
+.upd-dl .upd-ring {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.4s linear;
+}
+.upd-ready,
+.upd-ready:hover:not(:disabled),
+.upd-ready:disabled {
+  color: var(--ok);
+  opacity: 1;
+}
+.upd-ready.open {
+  background: var(--bg-4);
+}
+.upd-ready .upd-pip {
+  fill: var(--ok);
+  stroke: var(--bg-1);
+  stroke-width: 1.5;
+}
+.upd-error,
+.upd-error:hover:not(:disabled) {
   color: var(--warn);
 }
-.upd-error:hover {
-  background: var(--bg-4);
+.menu.upd-menu {
+  left: auto;
+  right: 0;
+  top: 26px;
+  width: 320px;
+  padding: 9px 11px 10px;
+}
+.upd-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 /* window controls */
