@@ -25,6 +25,9 @@ const RING: usize = 64;
 /// Shortest loop the player keeps, in frames: anything shorter is stretched
 /// to this. A loop of a few frames is an audible buzz, not music.
 pub const MIN_LOOP: u64 = 1024;
+/// Length of the fade-out before, and the fade-in after, a jump during
+/// playback, in seconds: long enough not to click, too short to hear.
+const SEEK_FADE_SECONDS: f64 = 0.004;
 
 pub enum PlayerMsg {
     Project(Arc<Project>),
@@ -249,6 +252,12 @@ pub struct Player {
     /// Source frames per device frame. At 1.0 the interpolator reads `x[0]`
     /// exactly, so same-rate playback is the render, bit for bit.
     step: f64,
+    /// Output gain, 1 except around a jump during playback.
+    gain: f32,
+    /// Gain change per device frame while fading.
+    fade_step: f32,
+    /// A jump waiting for the fade-out: `from`, `to`, loop start.
+    pending: Option<(u64, u64, Option<u64>)>,
 }
 
 /// A player for a device running at `device_rate` with `channels`
@@ -279,6 +288,9 @@ pub fn player(project: Arc<Project>, device_rate: u32, channels: usize) -> (Play
         frac: 0.0,
         heard: 0,
         step,
+        gain: 1.0,
+        fade_step: (1.0 / (SEEK_FADE_SECONDS * device_rate as f64).max(1.0)) as f32,
+        pending: None,
     };
     let handle = PlayerHandle {
         tx,
@@ -309,14 +321,24 @@ impl Player {
             return;
         }
         for frame in out.chunks_exact_mut(ch) {
-            if self.heard >= self.stop_at {
+            if self.playing && self.heard >= self.stop_at {
                 self.playing = false;
+                // Ran out before the fade did: nothing to fade, just go.
+                if let Some((from, to, looping)) = self.pending.take() {
+                    self.start(from, to, looping);
+                    self.gain = 0.0;
+                }
             }
-            let [l, r] = if self.playing {
+            let [mut l, mut r] = if self.playing {
                 self.interpolated()
             } else {
                 [0.0; 2]
             };
+            if self.gain < 1.0 || self.pending.is_some() {
+                l *= self.gain;
+                r *= self.gain;
+                self.fade();
+            }
             match ch {
                 1 => frame[0] = 0.5 * (l + r),
                 _ => {
@@ -346,23 +368,62 @@ impl Player {
                 }
                 PlayerMsg::Play { from, to, looping } => {
                     let (to, looping) = loop_bounds(to, looping);
-                    self.start(from, to, looping);
+                    self.jump(from, to, looping);
                 }
                 PlayerMsg::Bounds { to, looping } => {
                     if !self.playing {
                         continue;
                     }
                     let (to, looping) = loop_bounds(to, looping);
+                    // Where playback is, or is about to jump to.
+                    let at = self.pending.map_or(self.heard, |p| p.0);
                     match looping {
-                        Some(l) if self.heard < l || self.heard >= to => self.start(l, to, looping),
-                        _ => {
-                            self.stop_at = to;
-                            self.loop_from = looping;
-                        }
+                        Some(l) if at < l || at >= to => self.jump(l, to, looping),
+                        _ => match &mut self.pending {
+                            // A jump is on its way: it takes the new bounds.
+                            Some(p) => {
+                                p.1 = to;
+                                p.2 = looping;
+                            }
+                            None => {
+                                self.stop_at = to;
+                                self.loop_from = looping;
+                            }
+                        },
                     }
                 }
-                PlayerMsg::Stop => self.playing = false,
+                PlayerMsg::Stop => {
+                    self.playing = false;
+                    self.pending = None;
+                    self.gain = 1.0;
+                }
             }
+        }
+    }
+
+    /// Plays from `from`. From silence that's immediate and at full level,
+    /// so playback starts bit for bit as the render; while sound is playing
+    /// it fades out first and back in after, so the jump doesn't click.
+    fn jump(&mut self, from: u64, to: u64, looping: Option<u64>) {
+        if self.playing {
+            self.pending = Some((from, to, looping));
+        } else {
+            self.gain = 1.0;
+            self.start(from, to, looping);
+        }
+    }
+
+    /// One device frame of fading: down to the pending jump, then back up.
+    fn fade(&mut self) {
+        if let Some((from, to, looping)) = self.pending {
+            self.gain -= self.fade_step;
+            if self.gain <= 0.0 {
+                self.gain = 0.0;
+                self.pending = None;
+                self.start(from, to, looping);
+            }
+        } else {
+            self.gain = (self.gain + self.fade_step).min(1.0);
         }
     }
 
@@ -547,7 +608,55 @@ mod tests {
             looping: Some(3000),
         });
         player.fill(&mut out);
-        assert_eq!(out, crate::render(p, 3000, 1000));
+        // After fading out, it plays from the loop start, and after fading
+        // back in, exactly as rendered.
+        let fade = (SEEK_FADE_SECONDS * 48_000.0).ceil() as usize;
+        let want = crate::render(p, 3000, 1000);
+        let n = 1000 - 2 * fade - 2;
+        assert!((fade - 1..=fade + 1).any(|out_len| {
+            out[2 * (1000 - n)..] == want[2 * (1000 - n - out_len)..2 * (1000 - out_len)]
+        }));
+    }
+
+    #[test]
+    fn a_jump_while_playing_fades_out_and_back_in() {
+        // A steady level, so any step in the output is the jump's.
+        let src = Arc::new(Source::new(1, vec![0.5; 8000]));
+        let p = Arc::new(Project::with_tracks(
+            48_000,
+            vec![Track {
+                clips: vec![Clip::new(src, 0)],
+                ..Track::default()
+            }],
+        ));
+        let (mut player, mut handle) = player(p.clone(), 48_000, 2);
+        handle.send(PlayerMsg::Play {
+            from: 0,
+            to: 8000,
+            looping: None,
+        });
+        let mut out = vec![0.0; 2 * 1000];
+        player.fill(&mut out);
+        let level = out[2 * 999];
+        assert!(level > 0.1);
+        handle.send(PlayerMsg::Play {
+            from: 4000,
+            to: 8000,
+            looping: None,
+        });
+        player.fill(&mut out);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        // Down to silence and back, never in one step.
+        let fade = SEEK_FADE_SECONDS * 48_000.0;
+        let max_step = left
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max);
+        assert!(max_step <= level / fade as f32 * 1.01, "step {max_step}");
+        assert!(left.iter().any(|&x| x.abs() < 1e-6));
+        assert_eq!(*left.last().unwrap(), level);
+        // It landed where asked: two fades after the jump.
+        assert!(handle.position() >= 4000 + 1000 - 2 * fade as u64 - 2);
     }
 
     #[test]
