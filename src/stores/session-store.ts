@@ -12,6 +12,7 @@ import { clamp, shiftEnvelope, srcAt } from "@/lib/format";
 import { Clock } from "@/lib/frame-loop";
 import { SNAPS, snapFrames, type Snap, type Units } from "@/lib/grid";
 import { choice, setSetting, setting } from "@/lib/settings";
+import { follow, recall, touched, tracksScroll, UNTITLED, viewKey, type SavedView } from "@/lib/view-memory";
 
 const SNAP_VALUES = SNAPS.map((s) => s.v);
 
@@ -81,6 +82,9 @@ interface SessionStore {
   view: View;
   /** Lane width in CSS pixels. */
   width: number;
+  /** Track heights the user set, by track id; the rest use the default. */
+  heights: Record<number, number>;
+  setHeights: (h: Record<number, number> | ((h: Record<number, number>) => Record<number, number>)) => void;
   playhead: number;
   /** Where Stop returns to. */
   startPoint: number;
@@ -313,6 +317,8 @@ export const useSession = create<SessionStore>((set, get) => ({
   selected: [],
   view: { start: 0, fpp: 100 },
   width: 800,
+  heights: {},
+  setHeights: (h) => set({ heights: typeof h === "function" ? h(get().heights) : h }),
   playhead: 0,
   startPoint: 0,
   playing: false,
@@ -355,7 +361,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   recover: async () => {
     await get().stop();
     try {
-      start(await enqueue(() => api.recover()));
+      start(await enqueue(() => api.recover()), true);
     } catch (e) {
       get().showToast(`Couldn't recover: ${apiMessage(e)}`, { error: true });
     }
@@ -399,7 +405,9 @@ export const useSession = create<SessionStore>((set, get) => ({
   setWidth: (w) => {
     const first = get().width === 800 && w !== 800;
     set({ width: Math.max(50, w) });
-    if (first) get().fit();
+    // A file opened before the lanes were measured fits now, unless it came
+    // back with the view it was left with.
+    if (first && !restored) get().fit();
   },
 
   fit: () => {
@@ -801,20 +809,79 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
 }));
 
+/** Where the session's view is remembered (see `lib/view-memory`). */
+function keyOf(s: SessionState | null): string | null {
+  if (!s) return null;
+  return viewKey(s.project ?? (s.scratch ? s.path : null)) ?? UNTITLED;
+}
+
+/** What `lib/view-memory` saves for the session shown now. */
+function readView(): Omit<SavedView, "at"> {
+  const st = useSession.getState();
+  return {
+    start: st.view.start,
+    fpp: st.view.fpp,
+    scrollTop: tracksScroll.top,
+    playhead: st.startPoint,
+    range: st.range,
+    heights: st.heights,
+  };
+}
+
+/** The open file came back with its saved view, so it isn't fitted. */
+let restored = false;
+
 /** A session just opened or started: a scratch file comes up selected, a
- * project as it was left. */
-function start(s: SessionState) {
+ * project as it was left, and either with the view it had last time
+ * (an Untitled project's only when it's recovered). */
+function start(s: SessionState, recovered = false) {
+  const key = keyOf(s);
+  // Saves what the last session had waiting before it goes.
+  follow(key, readView);
+  const v = key && (key !== UNTITLED || recovered) ? recall(key) : null;
+  const st = useSession.getState();
+  const limit = timelineLimit(s);
+  const playhead = v ? Math.round(clamp(v.playhead, 0, limit)) : 0;
+  const ids = new Set(s.tracks.map((t) => t.id));
+  const heights: Record<number, number> = {};
+  for (const [id, h] of Object.entries(v?.heights ?? {})) if (ids.has(Number(id))) heights[Number(id)] = h;
+  restored = !!v;
+  tracksScroll.top = v?.scrollTop ?? 0;
+  tracksScroll.pending = tracksScroll.top;
   useSession.setState({
     session: s,
     draft: null,
-    range: null,
+    range: v?.range ? { a: clamp(v.range.a, 0, limit), b: clamp(v.range.b, 0, limit) } : null,
     selected: s.scratch ? allClips(s).map((c) => c.clip.id) : [],
-    playhead: 0,
-    startPoint: 0,
-    fileRev: useSession.getState().fileRev + 1,
+    playhead,
+    startPoint: playhead,
+    heights,
+    fileRev: st.fileRev + 1,
   });
-  useSession.getState().fit();
+  if (v) {
+    const fpp = clamp(v.fpp, ...fppRange(s, st.width));
+    useSession.setState({ view: { fpp, start: clamp(v.start, 0, maxStart(s, st.width, fpp)) } });
+  } else {
+    useSession.getState().fit();
+  }
 }
+
+// Remembers the view as it changes: zoom, scroll, the playhead where it was
+// put, the range and track heights. A save after "Save as" moves to the
+// project's own key.
+useSession.subscribe((st, prev) => {
+  if (!st.session) return;
+  if (st.session !== prev.session) follow(keyOf(st.session), readView);
+  if (
+    st.view !== prev.view ||
+    st.startPoint !== prev.startPoint ||
+    st.range !== prev.range ||
+    st.heights !== prev.heights ||
+    st.session.project !== prev.session?.project
+  ) {
+    touched();
+  }
+});
 
 /** The tracks as they should be drawn right now. */
 export function useTracks(): TrackState[] {

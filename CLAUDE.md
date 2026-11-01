@@ -52,7 +52,10 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   History and export choices) go through `lib/settings.ts`, saved to `settings.json` in the app's
   data folder (`src-tauri/src/settings.rs`), not localStorage; per-project
   state belongs in the project file. The window-state plugin keeps the
-  window's size and position.
+  window's size and position. How each file was last shown (zoom, scroll,
+  track heights, playhead, range) is `lib/view-memory.ts`, saved per file
+  path to `views.json` beside the settings; session tabs keep one `SavedView`
+  per tab.
   Panels: the Browser, Timeline and EQ dock and float (`lib/layout.ts` is
   the pure dock tree and presets, `stores/layout-store.ts` saves it as
   `layout`, `lib/dock.ts` holds the panel hosts, actions and header drag,

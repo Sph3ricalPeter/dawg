@@ -8,6 +8,7 @@ import { knobControl } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
 import { ease } from "@/lib/smooth-view";
+import { touched, tracksScroll } from "@/lib/view-memory";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Volume } from "./Volume";
@@ -538,7 +539,19 @@ export function Editor() {
   const session = useSession((s) => s.session);
   const tracks = useTracks();
   const ref = useRef<HTMLDivElement>(null);
-  const [heights, setHeights] = useState<Record<number, number>>({});
+  // In the store, so they're remembered with the file's view.
+  const heights = useSession((s) => s.heights);
+  const setHeights = useSession((s) => s.setHeights);
+  const fileRev = useSession((s) => s.fileRev);
+  const shown = !!session;
+  // A file just opened scrolls back to where it was left.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || tracksScroll.pending === null) return;
+    el.scrollTop = tracksScroll.pending;
+    tracksScroll.pending = null;
+    tracksScroll.top = el.scrollTop;
+  }, [fileRev, shown]);
   // Alt+wheel scales every track's height, eased over a few frames; the
   // point under the mouse stays put.
   const anchor = useRef<{ row: number; frac: number; y: number } | null>(null);
@@ -639,6 +652,10 @@ export function Editor() {
       <div
         className={`tracks${tall ? " one" : ""}`}
         ref={ref}
+        onScroll={(e) => {
+          tracksScroll.top = e.currentTarget.scrollTop;
+          touched();
+        }}
         onPointerDownCapture={(e) => panWithMiddle(e, ref.current)}
         onMouseDown={(e) => e.button === 1 && e.preventDefault()}
       >

@@ -4,6 +4,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, apiMessage, isApiError, type Codec, type ExportOptions } from "./api";
 import { dirOf, stem } from "./format";
 import { flushSettings, setSetting, setting } from "./settings";
+import { flushViews } from "./view-memory";
 import { enqueue, useSession } from "@/stores/session-store";
 
 const WAV = { name: "WAV audio", extensions: ["wav", "wave"] };
@@ -319,7 +320,7 @@ export function requestClose() {
     void api
       .clearAutosave()
       .catch(() => undefined)
-      .then(flushSettings)
+      .then(() => Promise.all([flushSettings(), flushViews()]))
       .finally(() => void getCurrentWindow().destroy());
   });
 }
