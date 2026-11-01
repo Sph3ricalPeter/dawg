@@ -196,7 +196,7 @@ body.panning * {
   background: transparent;
   border: 0;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -238,7 +238,7 @@ body.panning * {
 #tExport {
   height: 20px;
   padding: 0 10px 0 8px;
-  font-size: 11px;
+  font-size: 12px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -315,12 +315,12 @@ body.panning * {
   flex: none;
 }
 .logo .car {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--text-faint);
   margin-left: -1px;
 }
 .pill {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -383,7 +383,7 @@ body.panning * {
 .menu-h {
   padding: 6px 8px 2px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -396,7 +396,7 @@ body.panning * {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   background: transparent;
   border: 0;
   border-radius: 6px;
@@ -560,7 +560,7 @@ button.upd {
 .corner .r {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
 }
 /* Tracks fill the playlist and share it, 96 px at least, then scroll. */
 .tracks {
@@ -625,7 +625,7 @@ button.upd {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .addmsg strong {
@@ -647,7 +647,7 @@ button.upd {
   height: 24px;
   color: var(--text);
   justify-content: center;
-  font-size: 11px;
+  font-size: 12px;
 }
 .addbox .addbtn + .addbtn {
   margin-left: -8px;
@@ -679,7 +679,7 @@ button.upd {
   align-items: center;
   padding: 0 8px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 .ruler {
   position: relative;
@@ -821,7 +821,7 @@ body.rsizing * {
   border-radius: 1px;
   background: var(--bg-4);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   padding: 0;
@@ -890,7 +890,7 @@ body.rsizing * {
 }
 .vk .vv {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text);
   white-space: nowrap;
   cursor: text;
@@ -929,7 +929,7 @@ body.rsizing * {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .kv {
   display: grid;
@@ -1028,7 +1028,7 @@ body.rsizing * {
   height: 14px;
   background: color-mix(in srgb, var(--c) 75%, #fff);
   color: #111;
-  font-size: 10.5px;
+  font-size: 11.5px;
   line-height: 14px;
   padding: 0 4px 0 5px;
   border-radius: 4px 4px 0 0;
@@ -1073,7 +1073,7 @@ body.rsizing * {
 }
 .clip .gain {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   padding: 0 3px 0 4px;
   border-radius: 2px;
   flex: none;
@@ -1096,7 +1096,7 @@ body.rsizing * {
   border-radius: 6px;
   background: rgba(18, 18, 18, 0.6);
   color: #eee;
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 12px;
   display: flex;
   align-items: center;
@@ -1175,7 +1175,7 @@ body.rsizing * {
 .clip .tsr {
   pointer-events: auto;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   padding: 0 4px;
   border-radius: 2px;
   flex: none;
@@ -1296,7 +1296,7 @@ body.rsizing * {
   background: var(--bg-0);
   border-top: 1px solid var(--line);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -1397,7 +1397,7 @@ body.rsizing * {
   border: 0 solid rgba(229, 83, 75, 0.6);
 }
 .note {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--text-dim);
   display: flex;
   gap: 8px;
@@ -1484,16 +1484,16 @@ body.rsizing * {
 .toast .btn {
   height: 22px;
   padding: 0 9px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .toast .x {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* Track EQ, docked under the playlist like Ableton's detail view. */
 .ms.eq {
   width: 22px;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: -0.2px;
 }
 .ms.eq.on {
@@ -1519,10 +1519,10 @@ body.rsizing * {
   gap: 8px;
   padding: 0 6px 0 10px;
   border-bottom: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 12px;
 }
 .eqh b {
-  font-size: 10.5px;
+  font-size: 11.5px;
   letter-spacing: 0.5px;
 }
 .eqh .eqt {
@@ -1546,7 +1546,7 @@ body.rsizing * {
   border-radius: 3px;
   background: var(--bg-3);
   color: var(--text-dim);
-  font-size: 10.5px;
+  font-size: 11.5px;
   cursor: pointer;
 }
 .eqb:hover {
@@ -1640,7 +1640,7 @@ body.rsizing * {
   border-radius: 50%;
   background: var(--c);
   color: #111;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-align: center;
   line-height: 18px;
@@ -1673,13 +1673,13 @@ body.rsizing * {
   pointer-events: none;
 }
 .eql {
-  font-size: 9.5px;
+  font-size: 10.5px;
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
 .eqv {
-  font-size: 11px;
+  font-size: 12px;
 }
 .eqslope {
   display: flex;
@@ -1703,7 +1703,7 @@ body.rsizing * {
 }
 .eqhelp {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1734,7 +1734,7 @@ body.rsizing * {
 }
 .clippanel h4 {
   margin: 0 0 1px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-faint);
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -1763,7 +1763,7 @@ body.rsizing * {
 }
 .clippanel .path,
 .clippanel .small {
-  font-size: 10.5px;
+  font-size: 11.5px;
 }
 .clippanel .irow {
   display: flex;
@@ -1801,7 +1801,7 @@ body.rsizing * {
   border-radius: 2px;
 }
 .clippanel .kc .kl {
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-dim);
 }
 .clippanel .kc .kv {
@@ -1821,7 +1821,7 @@ body.rsizing * {
   height: 22px;
   cursor: pointer;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
 }
 .seg button + button {
   border-left: 1px solid var(--line-strong);
@@ -1847,7 +1847,7 @@ body.rsizing * {
   justify-content: center;
   gap: 1px;
   color: var(--text-dim);
-  font-size: 10.5px;
+  font-size: 11.5px;
   padding: 2px;
 }
 .clippanel .pre:hover {
@@ -1879,7 +1879,7 @@ body.rsizing * {
   gap: 1px;
 }
 .tb.hb .car {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--text-faint);
 }
 .histpop {
@@ -1903,7 +1903,7 @@ body.rsizing * {
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line-strong);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1968,7 +1968,7 @@ body.rsizing * {
   flex: none;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
 }
 .hempty {
   padding: 14px 12px;
@@ -2055,7 +2055,7 @@ body.rsizing * {
 .btn.small {
   height: 22px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* bars and beats, tempo, timeline settings */
@@ -2066,7 +2066,7 @@ body.rsizing * {
   line-height: 1.05;
 }
 .lcd .small {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-faint);
 }
 .lcd .lcdin,
@@ -2083,7 +2083,7 @@ body.rsizing * {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-faint);
   letter-spacing: 0.04em;
 }
@@ -2106,14 +2106,14 @@ body.rsizing * {
 .tb.tlset {
   width: auto;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-dim);
 }
 .tb.tlset .tlenv {
   color: var(--warn);
 }
 .tb.tlset .car {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--text-faint);
 }
 .bopts {
@@ -2138,7 +2138,7 @@ body.rsizing * {
 }
 .menu-note {
   padding: 2px 8px 4px 24px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-faint);
 }
 .menu.tlmenu {
@@ -2178,7 +2178,7 @@ body.rsizing * {
 /* AI: the badge on an agent's history rows. */
 .aib {
   display: inline-block;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--ai-ink);
@@ -2203,7 +2203,7 @@ body.rsizing * {
   border-radius: 4px;
   color: var(--text-dim);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
   max-width: 260px;
@@ -2304,7 +2304,7 @@ body.sizing * {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   font: inherit;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2324,7 +2324,7 @@ body.sizing * {
   padding: 0 8px 0 4px;
   border-bottom: 1px solid var(--line-strong);
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2350,7 +2350,7 @@ body.sizing * {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
-  font-size: 11px;
+  font-size: 12px;
   gap: 5px;
 }
 .browser .search {
@@ -2387,7 +2387,7 @@ body.sizing * {
 .bsec {
   padding: 8px 10px 3px;
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2509,21 +2509,21 @@ body.secdrag * {
 }
 .bi .rp {
   color: var(--text-faint);
-  font-size: 10.5px;
+  font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .bi .pinm {
   margin-left: auto;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: 11px;
 }
 .bi.bnote,
 .bi.bnote:hover {
   color: var(--text-faint);
   cursor: default;
   background: none;
-  font-size: 11px;
+  font-size: 12px;
   white-space: normal;
 }
 .bi.badd {
@@ -2568,8 +2568,11 @@ body.secdrag * {
   justify-content: center;
 }
 .pvw .hintx {
+  padding: 0 12px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: 12px;
+  text-align: center;
+  white-space: normal;
 }
 .pvw canvas {
   position: absolute;
@@ -2638,7 +2641,7 @@ body.secdrag * {
   border-radius: 4px;
   background: rgba(13, 13, 13, 0.7);
   color: var(--text);
-  font-size: 9px;
+  font-size: 10px;
   cursor: pointer;
 }
 .pvplay:hover {
@@ -2656,7 +2659,7 @@ body.secdrag * {
   border-radius: 6px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  font-size: 11.5px;
+  font-size: 12.5px;
   white-space: nowrap;
 }
 .dragchip .dl {
@@ -2676,7 +2679,7 @@ body.secdrag * {
   border: 1px solid #333;
   border-radius: 5px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   white-space: pre-line;
   overflow-wrap: anywhere;
@@ -2723,7 +2726,7 @@ body.secdrag * {
   height: 14px;
   line-height: 14px;
   padding: 0 5px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--accent);
   background: rgba(255, 255, 255, 0.08);
