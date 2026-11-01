@@ -271,7 +271,7 @@ export function EqPanel() {
     e.stopPropagation();
     const b = bands[i];
     setSel(i);
-    setBand(i, { ...b, q: b.q * Math.exp(-e.deltaY * (e.shiftKey ? 0.0003 : 0.0015)) }, true);
+    setBand(i, { ...b, q: b.q * Math.exp(e.deltaY * (e.shiftKey ? 0.0003 : 0.0015)) }, true);
     window.clearTimeout(wheelTimer.current);
     wheelTimer.current = window.setTimeout(() => void store().commit(), 350);
   };
