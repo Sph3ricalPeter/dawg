@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSession } from "@/stores/session-store";
 
-/* Waveform peaks for the playlist, drawn every frame while it scrolls and
- * zooms. Each source keeps an overview of its whole length, fetched once,
+/* Peaks of any span of a source, for the faint audio a trim leaves out
+ * (clip waveforms themselves are `lib/wave-tiles`). Each source keeps an overview of its whole length, fetched once,
  * so any view can draw straight away; zoomed in past the overview, each
  * clip fetches a finer window around what it shows, wider than the screen
  * so scrolling stays inside it, and draws from the overview until that
@@ -50,29 +50,6 @@ function coarser(l: Level): Level {
     data[2 * b + 1] = hi;
   }
   return { from: l.from, per: l.per * REDUCE, data };
-}
-
-/** Halvings of a level, built as needed: `[l, l merged in twos, ...]`. */
-const halvings = new WeakMap<Level, Level[]>();
-
-function halve(l: Level): Level {
-  const n = Math.ceil(l.data.length / 4);
-  const data = new Float32Array(2 * n);
-  for (let b = 0; b < n; b++) {
-    const j = 2 * b;
-    const k = Math.min(j + 1, l.data.length / 2 - 1);
-    data[2 * b] = Math.min(l.data[2 * j], l.data[2 * k]);
-    data[2 * b + 1] = Math.max(l.data[2 * j + 1], l.data[2 * k + 1]);
-  }
-  return { from: l.from, per: l.per * 2, data };
-}
-
-/** `l` merged down to buckets `per` frames wide (`per / l.per` a power of two). */
-function mergedTo(l: Level, per: number): Level {
-  let chain = halvings.get(l);
-  if (!chain) halvings.set(l, (chain = [l]));
-  while (chain[chain.length - 1].per < per && chain[chain.length - 1].data.length > 2) chain.push(halve(chain[chain.length - 1]));
-  return chain.find((x) => x.per >= per) ?? chain[chain.length - 1];
 }
 
 /** The source's overview levels, finest first; null until fetched, and
@@ -144,18 +121,6 @@ export interface Peaks {
   /** Min and max over source frames `f0..f1` (as the clip counts them),
    * or null where nothing is known. */
   at(f0: number, f1: number): [number, number] | null;
-  /** Source frame `s` when it is loaded sample by sample, else null. */
-  sample(s: number): number | null;
-  /** The waveform's outline for source frames `s0..s1` at `spp` source
-   * frames a pixel, as points fixed in time (see `View.points`). */
-  points(spp: number, s0: number, s1: number): Points | null;
-}
-
-/** Peak points in source frames (as the clip counts them, ascending). */
-export interface Points {
-  s: Float64Array;
-  lo: Float32Array;
-  hi: Float32Array;
 }
 
 class View implements Peaks {
@@ -180,78 +145,6 @@ class View implements Peaks {
     let l = this.levels[0];
     for (const x of this.levels) if (x.per <= span / 32) l = x;
     return minmax(l, a, z);
-  }
-
-  /** Buckets exactly `per` frames wide over raw frames `a..z`, from the
-   * detail window if it covers them, else the overview; null if neither is
-   * fine enough. */
-  private level(per: number, a: number, z: number): Level | null {
-    const d = this.detail;
-    if (d && d.per <= per && covers(d, a, z)) return mergedTo(d, per);
-    if (this.levels[0].per <= per) return mergedTo(this.levels[0], per);
-    return null;
-  }
-
-  /** The outline drawn at `spp` source frames a pixel: one point per bucket,
-   * at the bucket's centre, so the points stay put in time while the view
-   * zooms and only slide with it. Bucket widths are powers of two, about a
-   * pixel each; between two of them the outline morphs from the finer
-   * buckets' peaks toward the coarser ones', so nothing jumps when the
-   * width doubles. */
-  points(spp: number, s0: number, s1: number): Points | null {
-    const [a, z] = this.mirror === null ? [s0, s1] : [this.mirror - s1, this.mirror - s0];
-    const lg = Math.log2(Math.max(1, spp));
-    let p = 2 ** Math.floor(lg);
-    let t = lg - Math.floor(lg);
-    let fine = this.level(p, a, z);
-    // Not loaded that fine yet: the nearest coarser width, unmorphed.
-    while (!fine && p < this.levels[0].per) {
-      p *= 2;
-      t = 0;
-      fine = this.level(p, a, z);
-    }
-    if (!fine) return null;
-    const coarse = t > 0 ? this.level(p * 2, a, z) : null;
-    const n = fine.data.length / 2;
-    const b0 = Math.max(0, Math.floor((a - fine.from) / fine.per) - 1);
-    const b1 = Math.min(n - 1, Math.ceil((z - fine.from) / fine.per) + 1);
-    const m = Math.max(0, b1 - b0 + 1);
-    const s = new Float64Array(m);
-    const lo = new Float32Array(m);
-    const hi = new Float32Array(m);
-    for (let i = 0; i < m; i++) {
-      const b = b0 + i;
-      let l = fine.data[2 * b];
-      let h = fine.data[2 * b + 1];
-      if (coarse) {
-        const c = Math.floor((fine.from + b * fine.per - coarse.from) / coarse.per);
-        if (c >= 0 && c < coarse.data.length / 2) {
-          l += (coarse.data[2 * c] - l) * t;
-          h += (coarse.data[2 * c + 1] - h) * t;
-        }
-      }
-      const rc = fine.from + (b + 0.5) * fine.per;
-      // Reversed, the points run the other way.
-      const j = this.mirror === null ? i : m - 1 - i;
-      s[j] = this.mirror === null ? rc : this.mirror - rc;
-      lo[j] = l;
-      hi[j] = h;
-    }
-    return { s, lo, hi };
-  }
-
-  /** Sample `s` (a whole source frame, as the clip counts them), once the
-   * window around it is loaded sample by sample; else null. */
-  sample(s: number): number | null {
-    const d = this.detail;
-    if (!d || d.per !== 1) return null;
-    const r = (this.mirror === null ? s : this.mirror - 1 - s) - d.from;
-    if (r < 0 || r >= d.data.length / 2) return null;
-    // One frame per bucket: min and max are its peak sample either way;
-    // the larger magnitude keeps a stereo file's shape.
-    const lo = d.data[2 * r];
-    const hi = d.data[2 * r + 1];
-    return -lo > hi ? lo : hi;
   }
 }
 

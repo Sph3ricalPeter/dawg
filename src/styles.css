@@ -1172,7 +1172,11 @@ body.rsizing * {
   position: absolute;
   left: 0;
   top: 14px;
+  overflow: hidden;
   pointer-events: none;
+}
+.clip .clipcv canvas {
+  display: block;
 }
 .ghostcv {
   position: absolute;
