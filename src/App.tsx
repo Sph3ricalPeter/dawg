@@ -225,8 +225,21 @@ function useShortcuts() {
       } else handled = false;
       if (handled) e.preventDefault();
     };
+    // On Windows a lone Alt press and release opens the window's system menu,
+    // which takes keyboard focus from the page, so the next Ctrl+wheel isn't
+    // seen as Ctrl. Alt is a modifier here (snap bypass, Alt+wheel), never a
+    // menu key, so its own presses are swallowed; Alt+F4 still closes.
+    const onAlt = (e: KeyboardEvent) => {
+      if (e.key === "Alt") e.preventDefault();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onAlt, true);
+    window.addEventListener("keyup", onAlt, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onAlt, true);
+      window.removeEventListener("keyup", onAlt, true);
+    };
   }, []);
 }
 
