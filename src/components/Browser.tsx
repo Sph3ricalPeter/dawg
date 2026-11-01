@@ -3,7 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "@/lib/api";
 import { openPath } from "@/lib/actions";
-import { dropTarget } from "@/lib/drop";
+import { dropTarget, setDropHover } from "@/lib/drop";
 import { fmtSeconds } from "@/lib/format";
 import { baseName, dirName, joinPath, useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
@@ -65,16 +65,14 @@ interface Drag {
   label: string;
 }
 
-function dragLabel(x: number, y: number): string {
+function dragLabel(x: number, y: number): string | null {
   const s = useSession.getState();
   if (!s.session) return "Drop to open it";
   const t = dropTarget(x, y);
-  if (t.over && t.track !== null) {
-    const tr = s.session.tracks.find((k) => k.id === t.track);
-    return `Add to ${tr?.name || "the track"}`;
-  }
+  // Over a lane the ghost clip shows where it lands, so the chip hides.
+  if (t.over) return null;
   const el = document.elementFromPoint(x, y);
-  if (t.over || el?.closest(".arrangement")) return "Add on a new track";
+  if (el?.closest(".arrangement")) return "Add on a new track";
   return "";
 }
 
@@ -101,14 +99,17 @@ function FileRow({
     const move = (ev: PointerEvent) => {
       if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
       dragging = true;
-      onDrag({ path, x: ev.clientX, y: ev.clientY, label: dragLabel(ev.clientX, ev.clientY) });
+      setDropHover({ paths: [path], x: ev.clientX, y: ev.clientY, free: ev.altKey });
+      const label = dragLabel(ev.clientX, ev.clientY);
+      onDrag(label === null ? null : { path, x: ev.clientX, y: ev.clientY, label });
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       if (!dragging) return;
       onDrag(null);
-      const t = dropTarget(ev.clientX, ev.clientY);
+      setDropHover(null);
+      const t = dropTarget(ev.clientX, ev.clientY, ev.altKey);
       const el = document.elementFromPoint(ev.clientX, ev.clientY);
       if (t.over) place(path, t.track, t.start);
       else if (el?.closest(".arrangement")) place(path, null, 0);

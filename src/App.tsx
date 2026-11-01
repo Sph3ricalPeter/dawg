@@ -29,7 +29,8 @@ import {
 } from "@/lib/actions";
 import { followAgent, useAgent } from "@/lib/agent";
 import { getAppInfo, type AppInfo } from "@/lib/app-info";
-import { dropTarget } from "@/lib/drop";
+import { dropTarget, setDropHover } from "@/lib/drop";
+import { DropGhost } from "@/components/DropGhost";
 import { fmtFormat } from "@/lib/format";
 import { useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
@@ -258,6 +259,7 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
     if (!isTauri()) return;
     const unlisten: Array<() => void> = [];
     let files = 0;
+    let dragged: string[] = [];
     const at = (p: { x: number; y: number }) => {
       const dpr = window.devicePixelRatio || 1;
       return dropTarget(p.x / dpr, p.y / dpr);
@@ -270,14 +272,24 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
     void getCurrentWebview()
       .onDragDropEvent((e) => {
         const p = e.payload;
+        const hover = (pos: { x: number; y: number }) => {
+          const dpr = window.devicePixelRatio || 1;
+          setDropHover(dragged.length ? { paths: dragged, x: pos.x / dpr, y: pos.y / dpr } : null);
+        };
         if (p.type === "enter") {
-          files = p.paths.filter(isAudio).length;
+          dragged = p.paths.filter(isAudio);
+          files = dragged.length;
           setDrop({ files, track: files === 1 ? trackName(at(p.position).track) : null });
+          hover(p.position);
         } else if (p.type === "over") {
           setDrop({ files, track: files === 1 ? trackName(at(p.position).track) : null });
-        } else if (p.type === "leave") setDrop(null);
-        else if (p.type === "drop") {
+          hover(p.position);
+        } else if (p.type === "leave") {
           setDrop(null);
+          setDropHover(null);
+        } else if (p.type === "drop") {
+          setDrop(null);
+          setDropHover(null);
           const project = p.paths.find(isProject);
           if (project) {
             openPath(project);
@@ -384,6 +396,7 @@ export function App() {
       <Browser />
       <main className="arrangement">
         {session && (session.scratch || session.tracks.length > 0) ? <Editor /> : <EmptyState dropping={dropping} />}
+        <DropGhost />
         {session && drop && (
           <div className="dropbar">
             {drop.track
