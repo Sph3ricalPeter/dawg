@@ -68,6 +68,19 @@ export function envelopeAt(env: EnvPoint[], at: number): number {
   return a.gain + ((b.gain - a.gain) * (at - a.at)) / (b.at - a.at);
 }
 
+/** `env` slid by `delta` source frames, kept inside a source of `frames`
+ * frames. A point pushed past either end is cut there at the gain the curve
+ * had, so the line stays the same up to the edge. */
+export function shiftEnvelope(env: EnvPoint[], delta: number, frames: number): EnvPoint[] {
+  if (!env.length || !delta) return env;
+  const moved = env.map((p) => ({ at: p.at + delta, gain: p.gain }));
+  const end = Math.max(0, frames - 1);
+  const inside = moved.filter((p) => p.at >= 0 && p.at <= end);
+  if (moved[0].at < 0) inside.unshift({ at: 0, gain: envelopeAt(moved, 0) });
+  if (moved[moved.length - 1].at > end) inside.push({ at: end, gain: envelopeAt(moved, end) });
+  return inside.filter((p, i) => i === 0 || p.at !== inside[i - 1].at);
+}
+
 /** "0:01.250" */
 export function fmtTime(seconds: number, digits = 3): string {
   const s = Math.max(0, seconds);

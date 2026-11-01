@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
-import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
+import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, shiftEnvelope, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
 import { MIN_LEN, allClips, snapStep, useSession, type View } from "@/stores/session-store";
 import { snapTo } from "@/lib/grid";
@@ -505,12 +505,18 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
           const start = clamp(c0.start + d, first, c0.start + c0.len - MIN_LEN);
           const shift = start - c0.start;
           const offset = Math.max(0, c0.offset + Math.round(shift / c0.stretch));
-          next = { ...c0, start, offset, len: Math.min(c0.len - shift, maxLen(c0, offset, sourceFrames)) };
+          // The envelope moves with the left edge, so it keeps its place in
+          // the clip and every point stays on it to grab.
+          const envelope = shiftEnvelope(c0.envelope, offset - c0.offset, sourceFrames);
+          next = { ...c0, start, offset, envelope, len: Math.min(c0.len - shift, maxLen(c0, offset, sourceFrames)) };
         } else {
           next = { ...c0, len: clamp(c0.len + d, MIN_LEN, maxLen(c0, c0.offset, sourceFrames)) };
         }
+        const trim = { type: "trim_clip", clip: c0.id, start: next.start, offset: next.offset, len: next.len } as const;
         store().drag(
-          { type: "trim_clip", clip: c0.id, start: next.start, offset: next.offset, len: next.len },
+          next.envelope === c0.envelope
+            ? trim
+            : { type: "batch", commands: [trim, { type: "set_envelope", clip: c0.id, points: next.envelope }], label: "Trim clip" },
           { kind: "clip", track: track.id, clip: next, ghost: true },
         );
       },

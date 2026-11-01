@@ -8,7 +8,7 @@ import {
   type SessionState,
   type TrackState,
 } from "@/lib/api";
-import { clamp, srcAt } from "@/lib/format";
+import { clamp, shiftEnvelope, srcAt } from "@/lib/format";
 import { SNAPS, snapFrames, type Snap, type Units } from "@/lib/grid";
 import { choice, setSetting, setting } from "@/lib/settings";
 
@@ -623,7 +623,13 @@ export const useSession = create<SessionStore>((set, get) => ({
       if (e - s < MIN_LEN) {
         commands.push({ type: "delete_clip", clip: c.id });
       } else if (s !== c.start || e !== c.start + c.len) {
-        commands.push({ type: "trim_clip", clip: c.id, start: s, offset: srcAt(c, s - c.start), len: e - s });
+        const offset = srcAt(c, s - c.start);
+        commands.push({ type: "trim_clip", clip: c.id, start: s, offset, len: e - s });
+        // As with dragging the left edge, the envelope moves with the cut.
+        if (offset !== c.offset && c.envelope.length) {
+          const frames = session.sources.find((x) => x.id === c.source)?.frames ?? offset + e - s;
+          commands.push({ type: "set_envelope", clip: c.id, points: shiftEnvelope(c.envelope, offset - c.offset, frames) });
+        }
       }
     }
     if (commands.every((c) => c.type === "delete_clip")) {
