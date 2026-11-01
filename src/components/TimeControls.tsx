@@ -64,6 +64,7 @@ export function Bpm() {
     const b0 = bpm;
     let v = b0;
     startDrag(e, {
+      lock: true,
       move: (_dx, dy, ev) => {
         const raw = b0 - dy * (ev.shiftKey ? 0.05 : 0.5);
         v = Math.min(999, Math.max(20, ev.ctrlKey ? Math.round(raw) : Math.round(raw * 100) / 100));

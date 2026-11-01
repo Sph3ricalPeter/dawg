@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { clamp, fmtDb, MIN_GAIN_DB } from "@/lib/format";
 import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
-import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
+import { knobControl, parseDb, volKnobFrac } from "@/lib/knob";
 import { useSession } from "@/stores/session-store";
 import { Knob } from "./Knob";
 
@@ -64,11 +64,9 @@ export function Master() {
       <div
         className="mvk"
         data-hint="Master volume · drag up/down (Shift fine, Ctrl 1 dB steps) · double-click resets to 0 dB"
-        onPointerDown={(e) =>
-          dragKnob(e, db <= MIN_GAIN_DB ? VOL_MIN : db, { rate: 0.25, min: VOL_MIN, max: VOL_MAX, step: 1, res: 0.1, detent: 0.3 }, (v, done) =>
-            set(v <= VOL_MIN ? MIN_GAIN_DB : v, done),
-          )
-        }
+        {...knobControl(db <= MIN_GAIN_DB ? VOL_MIN : db, { rate: 0.25, min: VOL_MIN, max: VOL_MAX, step: 1, res: 0.1, detent: 0.3 }, (v, done) =>
+          set(v <= VOL_MIN ? MIN_GAIN_DB : v, done),
+        )}
         onDoubleClick={() => void store().apply({ type: "set_master_gain", gain_db: 0 })}
       >
         <Knob f={volKnobFrac(db)} />

@@ -21,7 +21,7 @@ import {
 } from "@/lib/eq";
 import { clamp, fmtDb } from "@/lib/format";
 import { everyFrameAtMost, meterStep, onFrame } from "@/lib/frame-loop";
-import { dragKnob } from "@/lib/knob";
+import { type KnobControl, knobControl } from "@/lib/knob";
 import { trackColor } from "@/lib/timeline";
 import { useSession, useTracks } from "@/stores/session-store";
 import { Knob } from "./Knob";
@@ -323,11 +323,11 @@ export function EqPanel() {
     value: string,
     f: number,
     bipolar: boolean,
-    onDown: (e: React.PointerEvent) => void,
+    onDown: KnobControl,
     onReset: (() => void) | null,
     hint: string,
   ) => (
-    <div className="eqk" onPointerDown={onDown} onDoubleClick={onReset ?? undefined} data-hint={hint}>
+    <div className="eqk" {...onDown} onDoubleClick={onReset ?? undefined} data-hint={hint}>
       <Knob f={f} bipolar={bipolar} size={26} />
       <div>
         <div className="eql">{label}</div>
@@ -427,13 +427,11 @@ export function EqPanel() {
                   fmtHz(band.freq),
                   lf(band.freq),
                   false,
-                  (e) =>
-                    dragKnob(
-                      e,
-                      Math.log2(band.freq),
-                      { rate: 0.02, min: Math.log2(MIN_FREQ), max: Math.log2(MAX_FREQ), step: 1 / 3, res: 0.001, detent: 0 },
-                      (v, done) => (done ? void store().commit() : setBand(sel, { ...band, freq: Math.round(2 ** v * 10) / 10 }, true)),
-                    ),
+                  knobControl(
+                    Math.log2(band.freq),
+                    { rate: 0.02, min: Math.log2(MIN_FREQ), max: Math.log2(MAX_FREQ), step: 1 / 3, res: 0.001, detent: 0 },
+                    (v, done) => (done ? void store().commit() : setBand(sel, { ...band, freq: Math.round(2 ** v * 10) / 10 }, true)),
+                  ),
                   null,
                   "Frequency · drag up or down (Shift fine, Ctrl in third-octaves)",
                 )}
@@ -443,13 +441,11 @@ export function EqPanel() {
                     fmtDb(band.gainDb),
                     band.gainDb / MAX_GAIN_DB,
                     true,
-                    (e) =>
-                      dragKnob(
-                        e,
-                        band.gainDb,
-                        { rate: 0.1, min: -MAX_GAIN_DB, max: MAX_GAIN_DB, step: 1, res: 0.1, detent: 0.3 },
-                        (v, done) => (done ? void store().commit() : setBand(sel, { ...band, gainDb: v }, true)),
-                      ),
+                    knobControl(
+                      band.gainDb,
+                      { rate: 0.1, min: -MAX_GAIN_DB, max: MAX_GAIN_DB, step: 1, res: 0.1, detent: 0.3 },
+                      (v, done) => (done ? void store().commit() : setBand(sel, { ...band, gainDb: v }, true)),
+                    ),
                     () => setBand(sel, { ...band, gainDb: 0 }, false),
                     "Gain · drag up or down (Shift fine, Ctrl 1 dB steps) · double-click for 0 dB",
                   )}
@@ -458,13 +454,11 @@ export function EqPanel() {
                   band.q.toFixed(2),
                   lq(band.q),
                   false,
-                  (e) =>
-                    dragKnob(
-                      e,
-                      Math.log2(band.q),
-                      { rate: 0.015, min: Math.log2(MIN_Q), max: Math.log2(MAX_Q), step: 0.5, res: 0.001, detent: 0 },
-                      (v, done) => (done ? void store().commit() : setBand(sel, { ...band, q: Math.round(2 ** v * 1000) / 1000 }, true)),
-                    ),
+                  knobControl(
+                    Math.log2(band.q),
+                    { rate: 0.015, min: Math.log2(MIN_Q), max: Math.log2(MAX_Q), step: 0.5, res: 0.001, detent: 0 },
+                    (v, done) => (done ? void store().commit() : setBand(sel, { ...band, q: Math.round(2 ** v * 1000) / 1000 }, true)),
+                  ),
                   () => setBand(sel, { ...band, q: isCut(band.kind) || band.kind.endsWith("shelf") ? Math.SQRT1_2 : 1 }, false),
                   isCut(band.kind)
                     ? "Resonance at the corner · 0.71 is flat · double-click resets"

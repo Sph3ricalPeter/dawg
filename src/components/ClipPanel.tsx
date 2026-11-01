@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { api, apiMessage, type ClipState, type Command, type EnvPoint, type FadeCurve } from "@/lib/api";
 import { clamp, fmtDb, fmtMs, fmtSeconds, fmtTime, MAX_GAIN_DB, MIN_GAIN_DB, srcAt } from "@/lib/format";
-import { dragKnob } from "@/lib/knob";
+import { type KnobControl, knobControl } from "@/lib/knob";
 import { ENV_MAX, trackColor } from "@/lib/timeline";
 import { allClips, useSession } from "@/stores/session-store";
 import { Knob } from "./Knob";
@@ -63,11 +63,11 @@ function KnobCell({
   value: string;
   f: number;
   hint: string;
-  onDrag: (e: React.PointerEvent) => void;
+  onDrag: KnobControl;
   onReset: () => void;
 }) {
   return (
-    <div className="kc" data-hint={hint} onPointerDown={onDrag} onDoubleClick={onReset}>
+    <div className="kc" data-hint={hint} {...onDrag} onDoubleClick={onReset}>
       <span className="kl">{label}</span>
       <Knob f={f} size={28} />
       <span className="kv">{value}</span>
@@ -224,22 +224,20 @@ export function ClipPanel() {
     fade_out: Math.round(fadeOut),
     ...(curve ? { curve_in: curve, curve_out: curve } : {}),
   });
-  const gainKnob = (e: React.PointerEvent) =>
-    dragKnob(
-      e,
-      Math.max(clip.gainDb, GAIN_KNOB_MIN),
-      { rate: 0.15, min: GAIN_KNOB_MIN, max: MAX_GAIN_DB, step: 1, res: 0.1, detent: 0.3 },
-      (v, end) => {
-        if (end) return done();
-        const db = v <= GAIN_KNOB_MIN ? MIN_GAIN_DB : v;
-        drag({ ...clip, gainDb: db }, { type: "set_clip_gain", clip: clip.id, gain_db: db });
-      },
-    );
+  const gainKnob = knobControl(
+    Math.max(clip.gainDb, GAIN_KNOB_MIN),
+    { rate: 0.15, min: GAIN_KNOB_MIN, max: MAX_GAIN_DB, step: 1, res: 0.1, detent: 0.3 },
+    (v, end) => {
+      if (end) return done();
+      const db = v <= GAIN_KNOB_MIN ? MIN_GAIN_DB : v;
+      drag({ ...clip, gainDb: db }, { type: "set_clip_gain", clip: clip.id, gain_db: db });
+    },
+  );
   // Fade knobs work on the square root of the length, 0 to 1000.
-  const fadeKnob = (which: "in" | "out") => (e: React.PointerEvent) => {
+  const fadeKnob = (which: "in" | "out") => {
     const now = which === "in" ? clip.fadeIn : clip.fadeOut;
     const other = which === "in" ? clip.fadeOut : clip.fadeIn;
-    dragKnob(e, fadeFrac(now, clip.len) * 1000, { rate: 4, min: 0, max: 1000, step: 50, res: 1, detent: 0 }, (v, end) => {
+    return knobControl(fadeFrac(now, clip.len) * 1000, { rate: 4, min: 0, max: 1000, step: 50, res: 1, detent: 0 }, (v, end) => {
       if (end) return done();
       const frames = Math.min(clip.len - other, Math.round((v / 1000) ** 2 * clip.len));
       const next = which === "in" ? { ...clip, fadeIn: frames } : { ...clip, fadeOut: frames };

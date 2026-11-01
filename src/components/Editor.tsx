@@ -4,7 +4,7 @@ import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
 import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime, MIN_GAIN_DB } from "@/lib/format";
 import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
-import { dragKnob, parseDb, volKnobFrac } from "@/lib/knob";
+import { knobControl, parseDb, volKnobFrac } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
 import { ease } from "@/lib/smooth-view";
@@ -346,6 +346,12 @@ function TrackHeader({
     void store().apply({ type: "set_track_mix", track: track.id, ...m });
   const vol = track.gainDb <= MIN_GAIN_DB ? VOL_MIN : track.gainDb;
   const pan = Math.round(track.pan * 100);
+  const { ref: volRef, onPointerDown: volDown } = knobControl(
+    vol,
+    { rate: 0.25, min: VOL_MIN, max: VOL_MAX, step: 1, res: 0.1, detent: 0.3 },
+    (v, done) => mix({ gain_db: v }, done),
+  );
+  const panKnob = knobControl(pan, { rate: 1, min: -100, max: 100, step: 10, res: 1, detent: 4 }, (v, done) => mix({ pan: v / 100 }, done));
   const rate = session.rate;
   // In a tall track, details of its selected clip (the scratch session's view).
   const clip = tall ? (track.clips.find((c) => selected.includes(c.id)) ?? (track.clips.length === 1 ? track.clips[0] : null)) : null;
@@ -416,21 +422,10 @@ function TrackHeader({
           <div
             className="vk"
             data-hint="Track volume · drag up/down (Shift fine, Ctrl 1 dB steps) · double-click the number to type, the knob to reset"
+            ref={volRef}
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest(".vv, .ktype")) return;
-              dragKnob(
-                e,
-                vol,
-                {
-                  rate: 0.25,
-                  min: VOL_MIN,
-                  max: VOL_MAX,
-                  step: 1,
-                  res: 0.1,
-                  detent: 0.3,
-                },
-                (v, done) => mix({ gain_db: v }, done),
-              );
+              volDown(e);
             }}
             onDoubleClick={(e) => {
               if (!(e.target as HTMLElement).closest(".vv, .ktype")) setMix({ gain_db: 0 });
@@ -458,9 +453,7 @@ function TrackHeader({
           <div
             className="pan"
             data-hint={`Pan ${fmtPan(track.pan)} · drag up/down (Shift fine, Ctrl 10% steps) · double-click centres`}
-            onPointerDown={(e) =>
-              dragKnob(e, pan, { rate: 1, min: -100, max: 100, step: 10, res: 1, detent: 4 }, (v, done) => mix({ pan: v / 100 }, done))
-            }
+            {...panKnob}
             onDoubleClick={() => setMix({ pan: 0 })}
           >
             <Knob f={pan / 100} bipolar />
