@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
+import { type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
 import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, shiftEnvelope, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
+import { usePeaks, type Peaks } from "@/lib/peak-cache";
 import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/stores/session-store";
 import { gridLines, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
@@ -29,66 +30,6 @@ function shade(hex: string, k: number): string {
   const n = parseInt(hex.slice(1), 16);
   const c = (v: number) => Math.round(v * k);
   return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`;
-}
-
-interface Peaks {
-  /** Source frame of the first bucket, and frames per bucket. */
-  from: number;
-  per: number;
-  data: Float32Array;
-}
-
-/** Min/max peaks over source frames `from..to`, refetched when they change.
- * With `mirror` (the source's length), the frames count from its end: a
- * reversed clip's view of it. */
-function usePeaks(source: number, from: number, to: number, buckets: number, mirror: number | null = null): Peaks | null {
-  const [peaks, setPeaks] = useState<(Peaks & { key: string }) | null>(null);
-  const fileRev = useSession((s) => s.fileRev);
-  const key = `${source}:${fileRev}:${mirror ?? ""}`;
-  const a = Math.max(0, Math.floor(from));
-  const z = Math.max(a + 1, Math.ceil(to));
-  const n = Math.max(1, Math.ceil(buckets));
-  useEffect(() => {
-    let live = true;
-    const raf = requestAnimationFrame(() => {
-      const fetch = mirror === null ? api.peaks(source, a, z, n) : api.peaks(source, Math.max(0, mirror - z), Math.max(0, mirror - a), n);
-      void fetch
-        .then((raw) => {
-          let data = raw;
-          if (mirror !== null) {
-            // Bucket order back to front; each (min, max) pair stays as is.
-            data = new Float32Array(raw.length);
-            const m = raw.length / 2;
-            for (let b = 0; b < m; b++) {
-              data[2 * b] = raw[2 * (m - 1 - b)];
-              data[2 * b + 1] = raw[2 * (m - 1 - b) + 1];
-            }
-          }
-          if (live) setPeaks({ key, from: a, per: (z - a) / n, data });
-        })
-        .catch(() => undefined);
-    });
-    return () => {
-      live = false;
-      cancelAnimationFrame(raf);
-    };
-  }, [key, source, a, z, n, mirror]);
-  return peaks && peaks.key === key ? peaks : null;
-}
-
-/** Peak amplitude (min, max) of the source frames one pixel covers. */
-function peakAt(peaks: Peaks, f0: number, f1: number): [number, number] | null {
-  const b0 = Math.floor((f0 - peaks.from) / peaks.per);
-  const b1 = Math.max(b0, Math.ceil((f1 - peaks.from) / peaks.per) - 1);
-  let lo = 0;
-  let hi = 0;
-  let any = false;
-  for (let b = Math.max(0, b0); b <= b1 && b < peaks.data.length / 2; b++) {
-    lo = Math.min(lo, peaks.data[2 * b]);
-    hi = Math.max(hi, peaks.data[2 * b + 1]);
-    any = true;
-  }
-  return any ? [lo, hi] : null;
 }
 
 function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
@@ -133,7 +74,7 @@ function drawClip(
       const rel0 = t0 - clip.start;
       // Stretched, the source passes under the clip at 1/stretch speed.
       const s0 = clip.offset + rel0 / clip.stretch;
-      const p = peakAt(peaks, s0, s0 + fpp / clip.stretch);
+      const p = peaks.at(s0, s0 + fpp / clip.stretch);
       if (!p) continue;
       [lo[i], hi[i]] = p;
       if (outline) {
@@ -242,7 +183,7 @@ function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; wid
     for (let i = 0; i < w; i++) {
       const t = f0 + i * view.fpp;
       if (t + view.fpp > clip.start && t < clip.start + clip.len) continue;
-      const p = peakAt(peaks, (t - shift) / k, (t - shift + view.fpp) / k);
+      const p = peaks.at((t - shift) / k, (t - shift + view.fpp) / k);
       if (!p) continue;
       const a = Math.max(-p[0], p[1]);
       x.fillRect(i, h / 2 - a * (h / 2 - 2), 1, Math.max(1, 2 * a * (h / 2 - 2)));
