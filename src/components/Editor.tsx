@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TrackState } from "@/lib/api";
 import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
@@ -352,7 +352,7 @@ function TrackHeader({
         className="rsz"
         onPointerDown={onResize}
         onDoubleClick={(e) => onResetHeight(e.altKey)}
-        data-hint="Drag to resize this track · Alt+drag resizes all · double-click resets"
+        data-hint="Drag to resize this track · Alt+drag resizes all · Alt+wheel over the playlist resizes all · double-click resets"
       />
       <div className="ti">
         <div className="tn">
@@ -562,7 +562,34 @@ export function Editor() {
   const tracks = useTracks();
   const ref = useRef<HTMLDivElement>(null);
   const [heights, setHeights] = useState<Record<number, number>>({});
-  useWheel(ref);
+  // Alt+wheel scales every track's height; the point under the mouse stays put.
+  const anchor = useRef<{ row: number; frac: number; y: number } | null>(null);
+  useWheel(ref, (factor, clientY) => {
+    const el = ref.current;
+    if (!el) return;
+    const rows = [...el.querySelectorAll<HTMLElement>(":scope > .trow:not(.add)")];
+    const box = el.getBoundingClientRect();
+    const i = rows.findIndex((r) => r.getBoundingClientRect().bottom > clientY);
+    const row = i < 0 ? rows.length - 1 : i;
+    const rb = rows[row]?.getBoundingClientRect();
+    if (rb) anchor.current = { row, frac: (clientY - rb.top) / rb.height, y: clientY - box.top };
+    const next: Record<number, number> = {};
+    tracks.forEach((t, j) => {
+      const h = heights[t.id] ?? rows[j]?.getBoundingClientRect().height ?? 76;
+      next[t.id] = clamp(h * factor, TRACK_MIN_H, TRACK_MAX_H);
+    });
+    setHeights(next);
+  });
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    const el = ref.current;
+    if (!a || !el) return;
+    anchor.current = null;
+    const r = el.querySelectorAll<HTMLElement>(":scope > .trow:not(.add)")[a.row];
+    if (!r) return;
+    const rb = r.getBoundingClientRect();
+    el.scrollTop += rb.top + a.frac * rb.height - (el.getBoundingClientRect().top + a.y);
+  }, [heights]);
   if (!session) return null;
   const tall = tracks.length === 1;
   // The header's bottom edge resizes the track; Alt resizes every track and

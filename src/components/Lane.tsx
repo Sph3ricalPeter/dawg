@@ -831,7 +831,7 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
       ref={ref}
       data-track={track.id}
       onPointerDown={onBackground}
-      data-hint="Drag to select clips · click to deselect · drop files to add clips · the playhead moves from the ruler"
+      data-hint="Drag to select clips · click to deselect · drop files to add clips · the playhead moves from the ruler · wheel scrolls tracks, Shift+wheel scrolls time, Ctrl+wheel zooms time, Alt+wheel zooms track height"
     >
       {ghost && <Ghost clip={ghost} view={view} width={width} height={height} />}
       {track.clips.map((c) => (

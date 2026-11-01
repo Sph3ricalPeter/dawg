@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSession } from "@/stores/session-store";
 
 /** Top of the envelope range, as in `dawg_core::ENV_MAX`: 0 dB sits at 80%. */
@@ -24,29 +24,41 @@ export function envY(g: number, h: number): number {
   return (1 - g / ENV_MAX) * (h - 2) + 1;
 }
 
-/** Ctrl+wheel zooms around the mouse; Shift+wheel (or a sideways wheel)
- * scrolls through time; the plain wheel scrolls the tracks. */
-export function useWheel(ref: React.RefObject<HTMLDivElement | null>) {
+/** The playlist's wheel: plain scrolls the tracks, Shift (or a sideways
+ * wheel) scrolls through time, Ctrl zooms time around the mouse and Alt
+ * zooms the track height around the mouse (`onVZoom`). */
+export function useWheel(
+  ref: React.RefObject<HTMLDivElement | null>,
+  onVZoom?: (factor: number, clientY: number) => void,
+) {
+  const vzoom = useRef(onVZoom);
+  useEffect(() => {
+    vzoom.current = onVZoom;
+  });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       const s = useSession.getState();
-      const lane = (e.target as HTMLElement).closest(".lane, .ruler");
-      const r = (lane ?? el).getBoundingClientRect();
+      // Some systems turn Shift or Alt+wheel into a sideways wheel.
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (e.ctrlKey) {
         e.preventDefault();
-        s.zoomAt(e.clientX - r.left, Math.exp(e.deltaY * 0.0025));
+        const lane = (e.target as HTMLElement).closest(".lane, .ruler");
+        const r = (lane ?? el).getBoundingClientRect();
+        s.zoomAt(e.clientX - r.left, Math.exp(d * 0.0025));
         return;
       }
-      const sideways = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
-      // With nothing to scroll vertically, the wheel scrolls time.
-      const tall = el.scrollHeight > el.clientHeight;
-      if (sideways || !tall) {
+      if (e.altKey) {
         e.preventDefault();
-        const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        vzoom.current?.(Math.exp(-d * 0.0025), e.clientY);
+        return;
+      }
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
         s.scrollTo(s.view.start + d * s.view.fpp);
       }
+      // The plain wheel scrolls the tracks natively, when they overflow.
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
