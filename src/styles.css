@@ -2825,6 +2825,405 @@ body.secdrag * {
 .pvplay:hover {
   background: var(--bg-4);
 }
+/* Browser labels and favourites (design/browser-library.html). */
+.bview {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 6px;
+  margin-top: -2px;
+}
+.bview .glab {
+  color: var(--text-faint);
+  font-size: 10px;
+  margin-right: 2px;
+}
+.bview .grp {
+  display: inline-flex;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px;
+}
+.bview .grp button {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  height: 17px;
+}
+.bview .grp button:hover {
+  color: var(--text-dim);
+}
+.bview .grp button.on {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.bview .favf {
+  margin-left: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-0);
+  color: var(--text-faint);
+  border-radius: 6px;
+  height: 19px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.bview .favf:hover {
+  color: var(--text-dim);
+}
+.bview .favf.on {
+  color: var(--warn);
+  border-color: #3a3520;
+  background: rgba(255, 210, 63, 0.08);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  background: var(--bg-3);
+  color: var(--text-dim);
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.chip.flt {
+  background: var(--bg-4);
+  color: var(--text);
+  border-color: #333;
+}
+.chipx {
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+.chipx:hover {
+  color: var(--text);
+}
+.chip.add {
+  cursor: pointer;
+  color: var(--text-faint);
+  border-style: dashed;
+  background: transparent;
+}
+.chip.add:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+.chip .li,
+.chip .li svg {
+  width: 11px;
+  height: 11px;
+}
+.li {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.li svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bi .lbl {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+  align-items: center;
+}
+.bi .lbl .li,
+.bi .lbl .li svg {
+  width: 11px;
+  height: 11px;
+}
+.bi .lbl .more {
+  font: 9px var(--mono);
+  color: var(--text-faint);
+}
+.bi .cnt {
+  margin-left: auto;
+  font: 10px var(--mono);
+  color: var(--text-faint);
+}
+.bi .tag {
+  width: 12px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.bi > .li {
+  color: var(--text-faint);
+}
+.fav {
+  border: 0;
+  background: none;
+  padding: 0;
+  width: 14px;
+  flex: none;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--warn);
+  text-align: center;
+}
+.fav.off {
+  color: var(--text-faint);
+  visibility: hidden;
+}
+.bi:hover .fav.off,
+.bi.cur .fav.off {
+  visibility: visible;
+}
+.fav.off:hover {
+  color: var(--text);
+}
+.bsec .bsx {
+  margin-left: auto;
+  height: 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.bsec .bsx:hover {
+  color: var(--text);
+}
+.bsec.sub {
+  padding-top: 10px;
+  font-size: 10.5px;
+}
+.lcloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 10px 6px;
+}
+.lcloud .lnote {
+  width: 100%;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  padding: 0 0 2px;
+}
+.chip.lc {
+  cursor: pointer;
+  height: 18px;
+}
+.chip.lc:hover {
+  color: var(--text);
+  border-color: #333;
+}
+.chip.lc .n {
+  font: 9px var(--mono);
+  color: var(--text-faint);
+}
+/* The previewed file's favourite and labels, under the preview. */
+.bmeta {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-1);
+}
+.bmeta .r1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bmeta .favbig {
+  border: 1px solid var(--line-strong);
+  background: var(--bg-3);
+  color: var(--text-dim);
+  border-radius: 6px;
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.bmeta .favbig:hover {
+  color: var(--text);
+}
+.bmeta .favbig.on {
+  color: var(--warn);
+  border-color: #3a3520;
+  background: rgba(255, 210, 63, 0.08);
+}
+.bmeta .k {
+  margin-left: auto;
+  color: var(--text-faint);
+  font: 10px var(--mono);
+}
+.bmeta .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* Label picker and the Manage labels menu. */
+.menu.lpick {
+  position: fixed;
+  z-index: 30;
+  min-width: 210px;
+  max-width: 240px;
+  max-height: min(380px, calc(100vh - 8px));
+  overflow: auto;
+}
+.lpick .lpq {
+  padding: 4px 4px 6px;
+}
+.lpick input,
+.newl .nname {
+  width: 100%;
+  height: 22px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  padding: 0 6px;
+  font: inherit;
+  outline: 0;
+}
+.lpick input:focus,
+.newl .nname:focus {
+  border-color: var(--line-strong);
+}
+.lpick .menu-item span {
+  display: inline-flex;
+  align-items: center;
+}
+.lpick .menu-item .li {
+  margin-right: 6px;
+}
+.lpick .new {
+  color: var(--text-dim);
+}
+.newl {
+  position: fixed;
+  z-index: 31;
+  width: 222px;
+}
+.newl .row {
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.newl .lab {
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.newl .warnx {
+  color: var(--warn);
+  font-size: 10.5px;
+}
+.newl .icons {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+}
+.newl .icons button,
+.newl .cols button {
+  border: 1px solid transparent;
+  background: var(--bg-0);
+  border-radius: 5px;
+  height: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+.newl .icons button:hover {
+  color: var(--text);
+}
+.newl .icons button.on {
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+.newl .cols {
+  display: flex;
+  gap: 4px;
+}
+.newl .cols button {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  padding: 0;
+}
+.newl .cols button.on {
+  border-color: var(--text);
+  box-shadow: 0 0 0 1px var(--bg-3) inset;
+}
+.newl .prev {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.newl .acts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-top: 1px solid var(--line-strong);
+  margin-top: 4px;
+}
+.newl .acts .sp {
+  flex: 1;
+}
+.newl .acts button {
+  border: 1px solid var(--line-strong);
+  background: var(--bg-4);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.newl .acts button.pri {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.newl .acts button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.newl .acts button.del {
+  background: transparent;
+  color: var(--text-dim);
+}
+.newl .acts button.del:hover,
+.newl .acts button.del.sure {
+  color: var(--danger);
+  border-color: var(--danger);
+}
 .dragchip {
   position: fixed;
   z-index: 40;

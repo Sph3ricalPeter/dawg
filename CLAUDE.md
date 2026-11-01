@@ -77,6 +77,13 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   workers (`lib/wave-worker.ts`, shared drawing in `lib/wave-draw.ts`); a zoom only
   scales and cross-fades two levels' tiles, so draw nothing per pixel per
   frame there, and don't resize a canvas on every frame (it reallocates).
+  Browser library: labels and favourites are a layer over the folders,
+  never written into them. `lib/labels.ts` has the built-in labels (Type,
+  Shape, Character, Status: each a stable id, name, group, palette colour
+  and icon) and the `#label ★` search syntax; `stores/library-store.ts` keeps
+  custom labels and each file's labels and star, saved to `library.json`
+  beside the settings. Track categories should read Type labels from there.
+  The Browser UI for them is `components/BrowserLabels.tsx`.
   Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
   is the one styled tooltip (a stray `title` is converted on hover). `data-hint`
   is the status bar's longer hint.

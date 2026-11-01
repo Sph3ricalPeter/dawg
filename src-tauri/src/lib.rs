@@ -110,6 +110,8 @@ pub fn run() {
             settings::save_settings,
             settings::load_views,
             settings::save_views,
+            settings::load_library,
+            settings::save_library,
             commands::startup_file,
             commands::open_file,
             commands::new_project,

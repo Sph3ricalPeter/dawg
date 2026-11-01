@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { flushSettings } from "@/lib/settings";
+import { flushLibrary } from "@/stores/library-store";
 import { flushViews } from "@/lib/view-memory";
 import { errorMessage } from "@/lib/app-info";
 
@@ -125,7 +126,7 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     try {
       // Windows: exits here, the installer runs passively and relaunches the
       // app. Elsewhere install returns and we relaunch ourselves.
-      await Promise.all([flushSettings(), flushViews()]);
+      await Promise.all([flushSettings(), flushViews(), flushLibrary()]);
       await _update.install();
       await relaunch();
     } catch (err) {

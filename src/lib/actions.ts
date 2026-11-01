@@ -4,6 +4,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, apiMessage, isApiError, type Codec, type ExportOptions } from "./api";
 import { dirOf, stem } from "./format";
 import { flushSettings, setSetting, setting } from "./settings";
+import { flushLibrary } from "@/stores/library-store";
 import { flushViews } from "./view-memory";
 import { enqueue, useSession } from "@/stores/session-store";
 
@@ -343,7 +344,7 @@ function closeWindow() {
   void api
     .clearAutosave()
     .catch(() => undefined)
-    .then(() => Promise.all([flushSettings(), flushViews()]))
+    .then(() => Promise.all([flushSettings(), flushViews(), flushLibrary()]))
     .finally(() => void getCurrentWindow().destroy());
 }
 

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { loadSettings } from "@/lib/settings";
 import { loadViews } from "@/lib/view-memory";
+import { loadLibrary } from "@/stores/library-store";
 // Roboto Mono (OFL, Google) ships with the app so numbers look the
 // same on every machine, installed or not. Latin only keeps the bundle small.
 import "@fontsource/roboto-mono/latin-400.css";
@@ -15,7 +16,7 @@ void document.fonts?.load('10px "Roboto Mono"');
 
 // The stores read their saved settings as they are created, so App (and
 // with it every store) is imported only once the settings are in.
-void Promise.all([loadSettings(), loadViews()])
+void Promise.all([loadSettings(), loadViews(), loadLibrary()])
   .then(() => import("./App"))
   .then(({ App }) =>
     createRoot(document.getElementById("root")!).render(

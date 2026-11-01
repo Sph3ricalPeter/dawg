@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { api, apiMessage, type PreviewInfo } from "@/lib/api";
 import { Clock } from "@/lib/frame-loop";
+import { findLabel, parseQuery } from "@/lib/labels";
 import { setSetting, setting } from "@/lib/settings";
+import { type LibraryFilter, useLibrary } from "@/stores/library-store";
 import { useSession } from "@/stores/session-store";
 
 /** What the Browser remembers between launches. */
@@ -14,7 +16,7 @@ interface Saved {
   recent: string[];
   /** Expanded folders. */
   expanded: string[];
-  /** Collapsed sections: "pins", "recent", "folders". */
+  /** Collapsed sections: "pins", "recent", "labels", "folders". */
   shut: string[];
   /** Section order, top to bottom; collapsed ones sit at the bottom in this order. */
   order: string[];
@@ -24,12 +26,26 @@ interface Saved {
   /** Width from before panels; the first panel layout starts from it (the
    * layout keeps the Browser's size since, see `stores/layout-store.ts`). */
   width: number | null;
+  /** The Folders section shows the folder tree, or virtual folders by Type label. */
+  group: "folder" | "type";
 }
 
 /** The Browser's sections, in their default order. */
-export const SECTIONS = ["pins", "recent", "folders"];
+export const SECTIONS = ["pins", "recent", "labels", "folders"];
 
-const DEFAULT: Saved = { open: true, roots: [], pins: [], recent: [], expanded: [], shut: [], order: SECTIONS, autoPreview: true, typeIcons: true, width: null };
+const DEFAULT: Saved = {
+  open: true,
+  roots: [],
+  pins: [],
+  recent: [],
+  expanded: [],
+  shut: [],
+  order: SECTIONS,
+  autoPreview: true,
+  typeIcons: true,
+  width: null,
+  group: "folder",
+};
 const MAX_RECENT = 30;
 
 function load(): Saved {
@@ -37,8 +53,29 @@ function load(): Saved {
   const out = { ...DEFAULT, ...(v && typeof v === "object" ? v : {}) };
   // Keep only known sections, and add any a newer version introduced.
   const order = Array.isArray(out.order) ? out.order.filter((k) => SECTIONS.includes(k)) : [];
-  out.order = [...new Set([...order, ...SECTIONS])];
+  // A section a newer version introduced goes where the defaults have it:
+  // before the first default section after it that's already placed.
+  for (const k of SECTIONS) {
+    if (order.includes(k)) continue;
+    const next = SECTIONS.slice(SECTIONS.indexOf(k) + 1).find((x) => order.includes(x));
+    order.splice(next ? order.indexOf(next) : order.length, 0, k);
+  }
+  out.order = order;
+  if (out.group !== "type") out.group = "folder";
   return out;
+}
+
+/** Where the label picker or the label dialog opens. */
+export interface PopupAt {
+  x: number;
+  y: number;
+}
+
+/** The label dialog: a new label (applied to `path` when given), or editing one. */
+export interface LabelDialog extends PopupAt {
+  edit: string | null;
+  path: string | null;
+  name: string;
 }
 
 export interface Listing {
@@ -59,6 +96,15 @@ interface BrowserStore extends Saved {
   playing: boolean;
   /** Seconds into the preview being heard. */
   at: number;
+  /** Label filters picked in the Labels section (ids); they stack with search. */
+  filters: string[];
+  /** Only favourites (the ★ button). */
+  favOnly: boolean;
+  /** The label picker, for `path`. */
+  picker: (PopupAt & { path: string }) | null;
+  labelDialog: LabelDialog | null;
+  /** The panel is wide enough for four label icons on a row. */
+  wide: boolean;
 
   toggle: () => void;
   isOpen: () => boolean;
@@ -78,6 +124,14 @@ interface BrowserStore extends Saved {
   forgetRecent: (path: string) => void;
   setAutoPreview: (on: boolean) => void;
   setTypeIcons: (on: boolean) => void;
+  setGroup: (g: "folder" | "type") => void;
+  toggleFilter: (id: string) => void;
+  setFavOnly: (on: boolean) => void;
+  /** What the Browser is filtered by: the Labels section, ★, and `#label ★` in search. */
+  filter: () => LibraryFilter;
+  openPicker: (path: string, at: PopupAt) => void;
+  openLabelDialog: (d: Partial<LabelDialog> & PopupAt) => void;
+  closePopups: () => void;
 }
 
 /** "C:\\a\\b" → "b". */
@@ -145,6 +199,7 @@ export const useBrowser = create<BrowserStore>((set, get) => {
       autoPreview: s.autoPreview,
       typeIcons: s.typeIcons,
       width: s.width,
+      group: s.group,
     };
     setSetting("browser", keep);
   };
@@ -174,6 +229,11 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     info: null,
     playing: false,
     at: 0,
+    filters: [],
+    favOnly: false,
+    picker: null,
+    labelDialog: null,
+    wide: false,
 
     isOpen: () => (useSession.getState().session?.scratch ? get().openScratch : get().open),
     toggle: () => {
@@ -236,7 +296,10 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     search: (q) => {
       set({ query: q });
       window.clearTimeout(searchTimer);
+      // `#label` and ★ filter; only the rest is looked for by name.
+      q = parseQuery(q).words;
       if (!q.trim()) {
+        searchSeq++;
         set({ results: null });
         return;
       }
@@ -300,6 +363,22 @@ export const useBrowser = create<BrowserStore>((set, get) => {
     forgetRecent: (path) => update({ recent: get().recent.filter((p) => p !== path) }),
     setAutoPreview: (on) => update({ autoPreview: on }),
     setTypeIcons: (on) => update({ typeIcons: on }),
+    setGroup: (group) => update({ group }),
+    toggleFilter: (id) => {
+      const f = get().filters;
+      set({ filters: f.includes(id) ? f.filter((x) => x !== id) : [...f, id] });
+    },
+    setFavOnly: (favOnly) => set({ favOnly }),
+    filter: () => {
+      const q = parseQuery(get().query);
+      const all = useLibrary.getState().all();
+      // A label the search names that doesn't exist matches nothing.
+      const named = q.labels.map((t) => findLabel(all, t)?.id ?? `#${t}`);
+      return { labels: [...new Set([...get().filters, ...named])], fav: get().favOnly || q.fav };
+    },
+    openPicker: (path, at) => set({ picker: { path, ...at }, labelDialog: null }),
+    openLabelDialog: (d) => set({ labelDialog: { edit: null, path: null, name: "", ...d }, picker: null }),
+    closePopups: () => set({ picker: null, labelDialog: null }),
   };
 });
 

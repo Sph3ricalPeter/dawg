@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Browser } from "@/components/Browser";
+import { browserKey } from "@/lib/browser-keys";
 import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { TooltipLayer } from "@/components/Tooltip";
@@ -219,7 +220,9 @@ function useShortcuts() {
       else if (ctrl && k === "-") s.zoomAt(s.width / 2, 2);
       else if (!ctrl && e.key === " ") void s.togglePlay();
       else if (!ctrl && (e.key === "Delete" || e.key === "Backspace")) void s.deleteClips(s.selected);
-      else if (!ctrl && k === "e" && s.session) s.toggleEnvEdit();
+      else if (!ctrl && !e.altKey && (k === "f" || k === "l") && browserKey(k)) {
+        // Over the Browser, F favourites the previewed file and L opens its labels.
+      } else if (!ctrl && k === "e" && s.session) s.toggleEnvEdit();
       else if (!ctrl && k === "l" && s.session) s.toggleLoop();
       else if (!ctrl && e.key === "Home") {
         void s.stop();

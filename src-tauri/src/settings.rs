@@ -6,6 +6,11 @@
 //! `views.json` beside it remembers how each file was last shown (zoom,
 //! scroll, playhead, track heights), keyed by the file's path; the UI keeps
 //! it (`src/lib/view-memory.ts`).
+//!
+//! `library.json` is the Browser's library: custom labels, and each file's
+//! labels and favourite, keyed by path (`src/stores/library-store.ts`). It
+//! lives here rather than beside the audio, so nothing is ever written into
+//! the folders a user browses (a Unity project would import it).
 
 use std::fs;
 use std::path::Path;
@@ -15,6 +20,7 @@ use tauri::{AppHandle, Manager};
 
 const FILE: &str = "settings.json";
 const VIEWS: &str = "views.json";
+const LIBRARY: &str = "library.json";
 
 /// The saved settings, or None when there are none yet (first run, or a
 /// file that no longer parses).
@@ -67,6 +73,18 @@ pub fn save_views(app: AppHandle, views: Map<String, Value>) -> Result<(), Strin
     write_file(&dir, VIEWS, &views).map_err(|e| e.to_string())
 }
 
+/// The Browser's labels and favourites.
+#[tauri::command]
+pub fn load_library(app: AppHandle) -> Option<Map<String, Value>> {
+    read_file(&app.path().app_local_data_dir().ok()?, LIBRARY)
+}
+
+#[tauri::command]
+pub fn save_library(app: AppHandle, library: Map<String, Value>) -> Result<(), String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    write_file(&dir, LIBRARY, &library).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,8 +112,15 @@ mod tests {
         let mut v = Map::new();
         v.insert("song.dawg".into(), serde_json::json!({ "fpp": 100.0 }));
         write_file(&dir, VIEWS, &v).unwrap();
-        assert_eq!(read_file(&dir, VIEWS), Some(v));
+        assert_eq!(read_file(&dir, VIEWS), Some(v.clone()));
         assert_eq!(read(&dir), None);
+
+        // So does the library.
+        let mut l = Map::new();
+        l.insert("version".into(), serde_json::json!(1));
+        write_file(&dir, LIBRARY, &l).unwrap();
+        assert_eq!(read_file(&dir, LIBRARY), Some(l));
+        assert_eq!(read_file(&dir, VIEWS), Some(v));
         let _ = fs::remove_dir_all(&dir);
     }
 }
