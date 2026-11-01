@@ -341,6 +341,12 @@ fn file_name(path: &Path) -> String {
         .into_owned()
 }
 
+/// A new track's name: "Track 3" for the third. Tracks don't take their
+/// first clip's name; what a track holds is a category, not a file.
+fn track_name(n: usize) -> String {
+    format!("Track {n}")
+}
+
 fn file_stem(path: &Path) -> String {
     path.file_stem()
         .unwrap_or_default()
@@ -442,7 +448,7 @@ impl Session {
         project.sources.push(source.clone());
         project.tracks.push(Track {
             id: track,
-            name: file_stem(&path),
+            name: track_name(1),
             clips: vec![Clip {
                 id: clip,
                 ..Clip::new(source.clone(), 0)
@@ -1032,7 +1038,7 @@ impl Session {
                 None => {
                     let t = p.next_id;
                     Command::AddTrack {
-                        name: file_stem(path),
+                        name: track_name(p.tracks.len() + 1),
                     }
                     .apply_in_place(&mut p)?;
                     t
@@ -1597,12 +1603,12 @@ mod tests {
         assert_eq!(
             rows(&st.history),
             [
-                "eq | mem › EQ › Add band 1 | Bell 1.20 kHz +2.0 dB",
-                "eq | mem › EQ › Band 1 Bell | Q 9.49 → 3.20",
-                "volume | mem › mem › Gain | 0.0 → −6.0 dB",
-                "trim | mem › mem › Trim end | 0:01.00 → 0:00.50",
-                "mute | mem › Mute | Off → On",
-                "ai | mem › brighten | Volume, pan, EQ band 1",
+                "eq | Track 1 › EQ › Add band 1 | Bell 1.20 kHz +2.0 dB",
+                "eq | Track 1 › EQ › Band 1 Bell | Q 9.49 → 3.20",
+                "volume | Track 1 › mem › Gain | 0.0 → −6.0 dB",
+                "trim | Track 1 › mem › Trim end | 0:01.00 → 0:00.50",
+                "mute | Track 1 › Mute | Off → On",
+                "ai | Track 1 › brighten | Volume, pan, EQ band 1",
             ]
         );
         assert_eq!(st.history[5].changes, 3);
@@ -1611,7 +1617,7 @@ mod tests {
         let st = s.state();
         assert_eq!(
             rows(&st.future)[0],
-            "volume | mem › mem › Gain | 0.0 → −6.0 dB"
+            "volume | Track 1 › mem › Gain | 0.0 → −6.0 dB"
         );
     }
 
@@ -1892,7 +1898,8 @@ mod tests {
             .unwrap();
         let st = s.state();
         assert_eq!(st.tracks.len(), 2);
-        assert_eq!(st.tracks[1].name, "a");
+        // A dropped file makes a "Track 2", not a track named after it.
+        assert_eq!(st.tracks[1].name, "Track 2");
         let added = s.clip(r.clips[0]).unwrap();
         // 4800 frames at 48 kHz are 4410 at the session's 44.1 kHz.
         assert_eq!((added.start, added.len), (100, 4410));

@@ -322,7 +322,7 @@ fn diff(b: &Project, a: &Project, name: &dyn Fn(u64) -> String) -> Vec<Change> {
             split_from.insert(*lid);
             out.push(Change {
                 kind: "split",
-                place: vec![t.name.clone(), cname, "Split".into()],
+                place: clip_place(t, cname, "Split"),
                 field: "split",
                 text: format!("at {}", fmt_time(c.start, rate)),
                 nudge: false,
@@ -340,7 +340,7 @@ fn diff(b: &Project, a: &Project, name: &dyn Fn(u64) -> String) -> Vec<Change> {
         out.push(Change {
             kind: "add",
             place: if twin {
-                vec![t.name.clone(), cname.clone(), "Duplicate".into()]
+                clip_place(t, cname.clone(), "Duplicate")
             } else {
                 vec![t.name.clone(), "Add clip".into()]
             },
@@ -380,6 +380,17 @@ fn diff(b: &Project, a: &Project, name: &dyn Fn(u64) -> String) -> Vec<Change> {
         }
     }
     out
+}
+
+/// "Drums › kick › Fades": a clip's place under its track. The clip's name
+/// is left out when it's the track's too ("kick › Fades", not "kick › kick").
+fn clip_place(t: &Track, clip: String, part: &str) -> Vec<String> {
+    let mut place = vec![t.name.clone()];
+    if clip != t.name {
+        place.push(clip);
+    }
+    place.push(part.to_string());
+    place
 }
 
 /// Every clip by id, with its track.
@@ -562,10 +573,9 @@ fn clip_diff(
     name: &dyn Fn(u64) -> String,
     out: &mut Vec<Change>,
 ) {
-    let place = vec![at.name.clone(), name(a.source.id())];
+    let cname = name(a.source.id());
     let mut push = |kind, part: &str, field, text: String, nudge| {
-        let mut p = place.clone();
-        p.push(part.to_string());
+        let p = clip_place(at, cname.clone(), part);
         out.push(Change {
             kind,
             place: p,
@@ -864,6 +874,22 @@ mod tests {
             "Low shelf → High shelf"
         );
         assert_eq!(arrow(fmt_bpm(120.0), fmt_bpm(124.5)), "120 → 124.5 BPM");
+    }
+
+    #[test]
+    fn a_clip_named_like_its_track_is_named_once() {
+        let t = |name: &str| Track {
+            name: name.into(),
+            ..Track::default()
+        };
+        assert_eq!(
+            clip_place(&t("kick"), "kick".into(), "Fades"),
+            ["kick", "Fades"]
+        );
+        assert_eq!(
+            clip_place(&t("Drums"), "kick".into(), "Fades"),
+            ["Drums", "kick", "Fades"]
+        );
     }
 
     #[test]
