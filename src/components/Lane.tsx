@@ -11,8 +11,6 @@ import { Knob } from "./Knob";
 import { Playhead } from "./Playhead";
 
 const TITLE_H = 14;
-/** How long the zoom must rest before waveforms are worked out again. */
-const SETTLE_MS = 140;
 /** Grab width of the trim zones at each clip edge. */
 const EDGE = 6;
 /** Side of a fade handle's square, px. */
@@ -81,70 +79,36 @@ function paintWave(x: CanvasRenderingContext2D, w: number, h: number, clip: Clip
       for (let i = 0; i < pts.length; i += 2) x.fillRect(pts[i] - 1.5, pts[i + 1] - 1.5, 3, 3);
     }
   } else if (peaks) {
-    // Zoomed out, a smoothed outline like the mockup; zoomed in, the real
-    // min/max so single cycles show. The two blend over a range of zoom so
-    // there's no visible switch.
-    const outline = clamp((Math.log2(fpp) - 3.5) / 2, 0, 1);
-    const lo = new Float32Array(w + 1);
-    const hi = new Float32Array(w + 1);
-    const gains = new Float32Array(w + 1);
-    const known = new Uint8Array(w + 1);
-    for (let i = 0; i <= w; i++) {
-      // Each column's peak is centred on its pixel, so the edges between
-      // columns can be joined into one smooth, anti-aliased shape.
-      const t0 = f0 + (i - 0.5) * fpp;
-      const rel0 = t0 - clip.start;
-      // Stretched, the source passes under the clip at 1/stretch speed.
-      const s0 = clip.offset + rel0 / clip.stretch;
-      const p = peaks.at(s0, s0 + fpp / clip.stretch);
-      if (!p) continue;
-      known[i] = 1;
-      [lo[i], hi[i]] = p;
-      const rel = clamp(rel0 + fpp / 2, 0, clip.len - 1);
-      gains[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
-    }
-    if (outline > 0) {
-      const a = Float32Array.from(hi, (v, i) => Math.max(v, -lo[i]));
-      for (let i = 0; i <= w; i++) {
-        let m = 0;
-        let k = 0;
-        for (let j = Math.max(0, i - 2); j <= Math.min(w, i + 2); j++) {
-          m += a[j];
-          k++;
-        }
-        const o = m / k;
-        hi[i] += (o - hi[i]) * outline;
-        lo[i] += (-o - lo[i]) * outline;
+    // Points fixed in time (bucket centres), joined into one filled shape:
+    // while the view zooms they only slide, nothing is re-sampled per pixel.
+    const pts = peaks.points(spp, clip.offset + (f0 - clip.start) / clip.stretch - spp, clip.offset + (f0 + w * fpp - clip.start) / clip.stretch + spp);
+    if (pts && pts.s.length) {
+      const m = pts.s.length;
+      const xs = new Float32Array(m);
+      const gs = new Float32Array(m);
+      for (let i = 0; i < m; i++) {
+        const t = clip.start + (pts.s[i] - clip.offset) * clip.stretch;
+        xs[i] = (t - f0) / fpp;
+        const rel = clamp(t - clip.start, 0, clip.len - 1);
+        gs[i] = gain * fadeAt(clip, rel) * envelopeAt(clip.envelope, srcAt(clip, rel));
       }
-    }
-    // One filled path per run of known columns: the top edge left to right,
-    // the bottom edge back.
-    const shape = (g: (i: number) => number, cap: boolean) => {
-      x.beginPath();
-      let i = 0;
-      while (i <= w) {
-        if (!known[i]) {
-          i++;
-          continue;
-        }
-        let j = i;
-        while (j < w && known[j + 1]) j++;
-        const yt = (k: number) => mid - (cap ? Math.min(1, hi[k] * g(k)) : hi[k] * g(k)) * half;
-        const yb = (k: number) => mid - (cap ? Math.max(-1, lo[k] * g(k)) : lo[k] * g(k)) * half;
-        x.moveTo(i, yt(i));
-        for (let k = i + 1; k <= j; k++) x.lineTo(k, yt(k));
+      const shape = (g: (i: number) => number, cap: boolean) => {
+        const yt = (i: number) => mid - (cap ? Math.min(1, pts.hi[i] * g(i)) : pts.hi[i] * g(i)) * half;
+        const yb = (i: number) => mid - (cap ? Math.max(-1, pts.lo[i] * g(i)) : pts.lo[i] * g(i)) * half;
+        x.beginPath();
+        x.moveTo(xs[0], yt(0));
+        for (let i = 1; i < m; i++) x.lineTo(xs[i], yt(i));
         // Keep at least a hairline where it's silent.
-        for (let k = j; k >= i; k--) x.lineTo(k, Math.max(yb(k), yt(k) + 0.75));
+        for (let i = m - 1; i >= 0; i--) x.lineTo(xs[i], Math.max(yb(i), yt(i) + 0.75));
         x.closePath();
-        i = j + 1;
-      }
-      x.fill();
-    };
-    x.fillStyle = "rgba(16,16,16,.2)";
-    shape(() => 1, false);
-    x.fillStyle = "rgba(16,16,16,.8)";
-    shape((i) => gains[i], true);
-    for (let i = 0; i <= w; i++) if (known[i] && (hi[i] * gains[i] > 1 || lo[i] * gains[i] < -1)) over.push(i);
+        x.fill();
+      };
+      x.fillStyle = "rgba(16,16,16,.2)";
+      shape(() => 1, false);
+      x.fillStyle = "rgba(16,16,16,.8)";
+      shape((i) => gs[i], true);
+      for (let i = 0; i < m; i++) if (pts.hi[i] * gs[i] > 1 || pts.lo[i] * gs[i] < -1) over.push(Math.round(xs[i]));
+    }
   }
   // Anything over full scale.
   x.fillStyle = "#ff4d4d";
@@ -154,56 +118,12 @@ function paintWave(x: CanvasRenderingContext2D, w: number, h: number, clip: Clip
   }
 }
 
-/** A clip's waveform, rendered once at one zoom and then only stretched
- * and moved while the view scrolls and zooms; it is worked out again from
- * the peaks once the view settles. Re-sampling the peaks on every frame of
- * a zoom made them shimmer as neighbouring peaks merged and split. */
-class WaveLayer {
-  img = document.createElement("canvas");
-  /** Timeline frame of the image's left edge, its zoom, and size in px. */
-  f0 = 0;
-  fpp = 0;
-  w = 0;
-  h = 0;
-  key = "";
-  peaks: Peaks | null = null;
-  valid = false;
-
-  covers(f0: number, w: number, fpp: number, h: number, a: number, z: number): boolean {
-    if (!this.valid || h !== this.h) return false;
-    // The part of the view the clip is in, in timeline frames.
-    const v0 = Math.max(f0, a);
-    const v1 = Math.min(f0 + w * fpp, z);
-    return v0 >= this.f0 - this.fpp && v1 <= this.f0 + (this.w + 1) * this.fpp;
-  }
-
-  /** Renders the clip's frames `a..z` around the view, a screen either side. */
-  render(clip: ClipState, f0: number, w: number, fpp: number, h: number, peaks: Peaks | null, key: string) {
-    const span = w * fpp;
-    // On whole pixels of this zoom, so a re-render at the same zoom matches.
-    const r0 = Math.floor(Math.max(clip.start, f0 - span) / fpp) * fpp;
-    const r1 = Math.min(clip.start + clip.len, f0 + 2 * span);
-    const rw = Math.max(1, Math.min(16000, Math.ceil((r1 - r0) / fpp)));
-    const x = setupCanvas(this.img, rw, h);
-    if (x) paintWave(x, rw, h, clip, r0, fpp, peaks);
-    Object.assign(this, { f0: r0, fpp, w: rw, h, key, peaks, valid: true });
-  }
-
-  /** Draws the image into a view `f0`, `fpp`, stretched to that zoom. */
-  blit(x: CanvasRenderingContext2D, f0: number, fpp: number) {
-    const k = this.fpp / fpp;
-    x.imageSmoothingEnabled = true;
-    x.imageSmoothingQuality = "high";
-    x.drawImage(this.img, 0, 0, this.img.width, this.img.height, (this.f0 - f0) / fpp, 0, this.w * k, this.h);
-  }
-}
-
-/** Waveform (from `layer`), fades and envelope of one clip, `w` px wide
- * starting at timeline frame `f0`. */
-function drawClip(canvas: HTMLCanvasElement, w: number, h: number, clip: ClipState, f0: number, fpp: number, layer: WaveLayer, showEnv: boolean) {
+/** Waveform, fades and envelope of one clip, `w` px wide starting at timeline
+ * frame `f0`. */
+function drawClip(canvas: HTMLCanvasElement, w: number, h: number, clip: ClipState, f0: number, fpp: number, peaks: Peaks | null, showEnv: boolean) {
   const x = setupCanvas(canvas, w, h);
   if (!x) return;
-  layer.blit(x, f0, fpp);
+  paintWave(x, w, h, clip, f0, fpp, peaks);
 
   // Fades: shade outside the diagonal.
   const px = (f: number) => (f - f0) / fpp;
@@ -372,29 +292,9 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
 
   // Before paint: drawn in a passive effect, the waveform trailed the clip's
   // box by a frame and slid inside it while zooming.
-  const layer = useRef<WaveLayer | null>(null);
-  const moved = useRef({ at: 0, fpp: 0 });
-  const [settle, setSettle] = useState(0);
   useLayoutEffect(() => {
-    if (!canvas.current || w <= 0) return;
-    layer.current ??= new WaveLayer();
-    const l = layer.current;
-    const now = performance.now();
-    if (view.fpp !== moved.current.fpp) moved.current = { at: now, fpp: view.fpp };
-    // What the waveform is drawn from; a change to any of it redraws now.
-    const key = `${waveH}:${clip.start}:${clip.len}:${clip.offset}:${clip.stretch}:${clip.gainDb}:${clip.fadeIn}:${clip.fadeOut}:${clip.fadeInCurve}:${clip.fadeOutCurve}:${clip.reversed}:${JSON.stringify(clip.envelope)}`;
-    const zooming = now - moved.current.at < SETTLE_MS;
-    let timer = 0;
-    if (l.key !== key || !l.covers(f0, w, view.fpp, waveH, clip.start, clip.start + clip.len) || !l.peaks) {
-      l.render(clip, f0, w, view.fpp, waveH, peaks, key);
-    } else if (l.fpp !== view.fpp || l.peaks !== peaks) {
-      // A new zoom or finer peaks: worked out again once the zoom rests.
-      if (zooming) timer = window.setTimeout(() => setSettle((n) => n + 1), SETTLE_MS);
-      else l.render(clip, f0, w, view.fpp, waveH, peaks, key);
-    }
-    drawClip(canvas.current, w, waveH, clip, f0, view.fpp, l, envEdit || clip.envelope.length > 0);
-    return () => window.clearTimeout(timer);
-  }, [w, waveH, clip, f0, view.fpp, peaks, envEdit, settle]);
+    if (canvas.current && w > 0) drawClip(canvas.current, w, waveH, clip, f0, view.fpp, peaks, envEdit || clip.envelope.length > 0);
+  }, [w, waveH, clip, f0, view.fpp, peaks, envEdit]);
 
   if (w <= 0) return null;
   const store = useSession.getState;
