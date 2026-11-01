@@ -54,12 +54,13 @@ function coarser(l: Level): Level {
 
 /** The source's overview levels, finest first; null until fetched, and
  * `onReady` runs once they are. */
-function overview(source: number, rev: number, frames: number, onReady: () => void): Level[] | null {
-  const key = `${source}:${rev}`;
+function overview(tab: number | null, source: number, rev: number, frames: number, onReady: () => void): Level[] | null {
+  // Each tab keeps its own: source ids repeat from one session to the next.
+  const key = `${tab}:${source}:${rev}`;
   let o = overviews.get(key);
   if (!o) {
     // An older revision of the file is stale now.
-    for (const k of overviews.keys()) if (k.startsWith(`${source}:`)) overviews.delete(k);
+    for (const k of overviews.keys()) if (k.startsWith(`${tab}:${source}:`)) overviews.delete(k);
     const entry: Overview = { levels: null, wait: new Set() };
     o = entry;
     overviews.set(key, entry);
@@ -68,7 +69,7 @@ function overview(source: number, rev: number, frames: number, onReady: () => vo
     const per = pow2Ceil(frames / OVERVIEW_BUCKETS);
     const n = Math.max(1, Math.ceil(frames / per));
     void api
-      .peaks(source, 0, n * per, n)
+      .peaks(tab, source, 0, n * per, n)
       .then((data) => {
         const levels: Level[] = [{ from: 0, per, data }];
         while (levels[levels.length - 1].data.length / 2 > 512) levels.push(coarser(levels[levels.length - 1]));
@@ -170,13 +171,14 @@ class View implements Peaks {
 export function usePeaks(source: number, from: number, to: number, buckets: number, mirror: number | null = null): Peaks | null {
   const [, bump] = useState(0);
   const rev = useSession((s) => s.fileRev);
+  const tab = useSession((s) => s.activeTab);
   const frames = useSession((s) => s.session?.sources.find((x) => x.id === source)?.frames ?? 0);
-  const levels = overview(source, rev, frames, () => bump((n) => n + 1));
+  const levels = overview(tab, source, rev, frames, () => bump((n) => n + 1));
   const [detail, setDetail] = useState<(Level & { key: string }) | null>(null);
   const have = useRef<(Level & { key: string }) | null>(null);
   const busy = useRef(false);
   const want = useRef({ a: 0, z: 0, per: 0 });
-  const key = `${source}:${rev}`;
+  const key = `${tab}:${source}:${rev}`;
 
   // In raw source frames.
   const [ra, rz] = mirror === null ? [from, to] : [mirror - to, mirror - from];
@@ -186,7 +188,7 @@ export function usePeaks(source: number, from: number, to: number, buckets: numb
     want.current = { a: ra, z: rz, per };
     if (have.current && have.current.key !== key) have.current = null;
     const fetchDetail = () => {
-      const ov = overview(source, rev, frames, () => undefined);
+      const ov = overview(tab, source, rev, frames, () => undefined);
       const { a, z, per } = want.current;
       if (!ov || busy.current || frames <= 0 || per <= 0) return;
       // The overview is fine enough.
@@ -206,7 +208,7 @@ export function usePeaks(source: number, from: number, to: number, buckets: numb
       const wz = wa + n * step;
       busy.current = true;
       void api
-        .peaks(source, wa, wz, n)
+        .peaks(tab, source, wa, wz, n)
         .then((data) => {
           have.current = { key, from: wa, per: step, data };
           setDetail(have.current);
@@ -224,3 +226,10 @@ export function usePeaks(source: number, from: number, to: number, buckets: numb
   const d = detail?.key === key ? detail : null;
   return useMemo(() => (levels ? new View(levels, d, mirror) : null), [levels, d, mirror]);
 }
+
+// A closed tab's waveforms go with it.
+useSession.subscribe((st, prev) => {
+  if (st.tabs === prev.tabs) return;
+  const open = new Set(st.tabs.map((t) => String(t.id)));
+  for (const k of overviews.keys()) if (!open.has(k.split(":")[0])) overviews.delete(k);
+});

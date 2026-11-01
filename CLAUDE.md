@@ -38,7 +38,11 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   the app's own backups folder. The installer ships `dawg-cli.exe` next to
   `dawg.exe`: `beforeBundleCommand` builds it and `windows/hooks.nsh`
   installs it.
-- `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
+- `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC; the
+  open sessions as tabs, one in front: edits, playback and agent calls go to
+  the front tab, and opening a file gets a tab of its own unless the front
+  one is a blank project), `autosave.rs` (one snapshot per unsaved tab;
+  what a crash leaves is set aside as `recovered-*` and reopens as tabs),
   `audio.rs` (cpal output; a Browser preview swaps a one-file project into
   the player and the session's comes back on the next Play), `browser.rs`
   (folder listings, search, preview decode), `recent.rs` (recent projects), `settings.rs` (UI settings file), plugins,
@@ -64,6 +68,10 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   remounts it; give a new panel a `PanelHead` and an entry in `PANELS`.
   Volume: `components/Volume.tsx` is the one volume control (knob, value
   with dB, meter) for the master and every track; use it for any new one.
+  Tabs: `components/Tabs.tsx` is the row in the title bar; the session
+  store keeps the front tab's `session` and, per tab in the back, what it
+  was left showing (view, playhead, selection, EQ), and the waveform cache
+  is keyed by tab, since source ids repeat between sessions.
   Tooltips: put `data-tip` on an element, not `title`; `components/Tooltip.tsx`
   is the one styled tooltip (a stray `title` is converted on hover). `data-hint`
   is the status bar's longer hint.

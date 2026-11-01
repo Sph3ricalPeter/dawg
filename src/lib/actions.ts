@@ -32,12 +32,13 @@ function sessionDir(): string | undefined {
   return at ? dirOf(at) : undefined;
 }
 
-/** Open a WAV or MP3, or a project (asks before dropping unsaved edits).
- * Any further audio files go onto tracks of their own. */
+/** Open a WAV or MP3, or a project, in a tab of its own (or bring its tab
+ * to the front). Any further audio files go onto tracks of their own. */
 export function openPath(path: string, more: string[] = []) {
-  const s = useSession.getState();
-  s.guard(isProject(path) ? "open another project" : "open another file", () => {
-    void s.open(path).then((ok) => {
+  void useSession
+    .getState()
+    .open(path)
+    .then((ok) => {
       if (!ok) return;
       const now = useSession.getState().session;
       if (more.length && now?.scratch) {
@@ -45,7 +46,6 @@ export function openPath(path: string, more: string[] = []) {
       }
       if (now) offerLocate();
     });
-  });
 }
 
 /** Says when a project's audio files weren't found, with a way to find them. */
@@ -144,8 +144,33 @@ export function saveOrExport() {
   else void saveProject();
 }
 
+/** An empty project in a new tab. */
 export function newProject() {
-  useSession.getState().guard("start a new project", () => void useSession.getState().newProject());
+  void useSession.getState().newProject();
+}
+
+/** Closes the tab in front (asking about unsaved edits); with none open,
+ * the window. */
+export function closeFrontTab() {
+  const s = useSession.getState();
+  if (s.activeTab === null) requestClose();
+  else void s.closeTab(s.activeTab);
+}
+
+/** Ctrl+Tab and Ctrl+Shift+Tab: the next or previous tab, round the row. */
+export function cycleTab(by: number) {
+  const s = useSession.getState();
+  const i = s.tabs.findIndex((t) => t.id === s.activeTab);
+  if (i < 0 || s.tabs.length < 2) return;
+  void s.switchTab(s.tabs[(i + by + s.tabs.length) % s.tabs.length].id);
+}
+
+/** The tabs with unsaved edits; the front one's as it is now. */
+export function unsavedTabs() {
+  const s = useSession.getState();
+  return s.tabs
+    .map((t) => (t.id === s.activeTab && s.session ? { ...t, name: s.session.name, dirty: s.session.dirty } : t))
+    .filter((t) => t.dirty);
 }
 
 export async function openProjectDialog() {
@@ -312,15 +337,52 @@ export async function restoreLastReplace() {
   else await run();
 }
 
-/** Close the window, asking first about unsaved edits. */
-export function requestClose() {
+/** Closes the window for good. */
+function closeWindow() {
+  // Closing on purpose: nothing to recover next time.
+  void api
+    .clearAutosave()
+    .catch(() => undefined)
+    .then(() => Promise.all([flushSettings(), flushViews()]))
+    .finally(() => void getCurrentWindow().destroy());
+}
+
+/** Close the window, asking first about unsaved edits: one unsaved tab asks
+ * as closing that tab would, several ask once with the list. */
+export async function requestClose() {
   if (!isTauri()) return;
+  const unsaved = unsavedTabs();
+  if (!unsaved.length) {
+    closeWindow();
+    return;
+  }
+  if (unsaved.length > 1) {
+    useSession.getState().setDialog({ type: "quit", tabs: unsaved });
+    return;
+  }
+  await reviewUnsaved();
+}
+
+/** Asks about each unsaved tab in turn, then closes the window. */
+export async function reviewUnsaved() {
+  const s = useSession.getState();
+  const next = unsavedTabs()[0];
+  if (!next) {
+    closeWindow();
+    return;
+  }
+  await s.switchTab(next.id);
+  if (useSession.getState().activeTab !== next.id) return;
   useSession.getState().guard("close dawg", () => {
-    // Closing on purpose: nothing to recover next time.
-    void api
-      .clearAutosave()
-      .catch(() => undefined)
-      .then(() => Promise.all([flushSettings(), flushViews()]))
-      .finally(() => void getCurrentWindow().destroy());
+    // Saved or let go: this tab is done; on to the next.
+    void useSession
+      .getState()
+      .dropTab(next.id)
+      .then(() => void reviewUnsaved());
   });
+}
+
+/** Closes the window, letting every unsaved edit go. */
+export function discardAllAndClose() {
+  closeWindow();
 }

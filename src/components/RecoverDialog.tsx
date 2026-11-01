@@ -13,46 +13,60 @@ function when(ms: number): string {
   return today ? `today at ${time}` : `${d.toLocaleDateString()} at ${time}`;
 }
 
-/** Asks, at launch, about edits an earlier run didn't save (a crash, or
- * Windows shutting down), and keeps autosaving while this one runs. */
+/** Asks, at launch, about edits earlier runs didn't save (a crash, or
+ * Windows shutting down), and keeps autosaving every tab while this one
+ * runs. Recovered sessions open as tabs. */
 export function RecoverDialog() {
-  const [note, setNote] = useState<RecoveryNote | null>(null);
+  const [notes, setNotes] = useState<RecoveryNote[]>([]);
   const primary = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isTauri()) return;
     void api
       .recovery()
-      .then(setNote)
+      .then(setNotes)
       .catch(() => undefined);
     const timer = window.setInterval(() => {
-      if (useSession.getState().session) void api.autosave().catch(() => undefined);
+      if (useSession.getState().tabs.length) void api.autosave().catch(() => undefined);
     }, AUTOSAVE_MS);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    if (note) primary.current?.focus();
-  }, [note]);
+    if (notes.length) primary.current?.focus();
+  }, [notes]);
 
-  if (!note) return null;
+  if (!notes.length) return null;
   const discard = () => {
-    setNote(null);
+    setNotes([]);
     void api.discardRecovery().catch(() => undefined);
   };
   const recover = () => {
-    setNote(null);
-    const s = useSession.getState();
-    s.guard("recover the unsaved edits", () => void useSession.getState().recover());
+    setNotes([]);
+    void useSession.getState().recover(notes.map((n) => n.key));
   };
+  const one = notes.length === 1 ? notes[0] : null;
+  const latest = Math.max(...notes.map((n) => n.savedAt));
   return (
     <div className="scrim">
       <div className="dlg small" role="dialog" aria-label="Recover unsaved edits">
-        <header>Recover {note.name}?</header>
+        <header>{one ? `Recover ${one.name}?` : `Recover ${notes.length} unsaved sessions?`}</header>
         <div className="bd">
           <span className="dim">
-            dawg closed before your edits to {note.name} were saved. The last autosave is from {when(note.savedAt)}.
+            {one
+              ? `dawg closed before your edits to ${one.name} were saved. The last autosave is from ${when(one.savedAt)}.`
+              : `dawg closed before these were saved. Each opens in a tab of its own. The last autosave is from ${when(latest)}.`}
           </span>
+          {!one && (
+            <div className="ulist">
+              {notes.map((n) => (
+                <div key={n.key}>
+                  <b>{n.name}</b>
+                  <span className="dim">{when(n.savedAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <footer>
           <button className="btn ghost" onClick={discard}>

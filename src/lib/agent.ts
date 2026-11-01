@@ -34,14 +34,18 @@ export function followAgent(): () => void {
     window.clearTimeout(idle);
     idle = window.setTimeout(() => useAgent.setState({ busy: false }), 2000);
     if (!c.changed) return;
+    // It opened a file or started a project: a tab of its own, in front.
+    if (c.opened) {
+      void useSession.getState().syncTabs();
+      return;
+    }
     void api.sessionState().then((s) => {
       if (!s) return;
       const store = useSession.getState();
       const before = store.session?.history.length ?? 0;
-      if (c.opened) store.opened(s);
-      else store.adopt(s);
+      store.adopt(s);
       const last = s.history.at(-1);
-      if (!c.opened && last && s.history.length > before) store.showToast(`${last.label}`);
+      if (last && s.history.length > before) store.showToast(`${last.label}`);
     });
   });
   let sent = "";

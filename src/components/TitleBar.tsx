@@ -3,7 +3,9 @@ import { isTauri } from "@tauri-apps/api/core";
 import type { AppInfo } from "@/lib/app-info";
 import { exportDialog, requestClose } from "@/lib/actions";
 import { useBrowser } from "@/stores/browser-store";
+import { useCallback, useState } from "react";
 import { useSession } from "@/stores/session-store";
+import { Tabs } from "./Tabs";
 import { AppMenu } from "./AppMenu";
 import { HistoryPanel } from "./HistoryPanel";
 import { Master } from "./Master";
@@ -13,33 +15,6 @@ import { UpdateIndicator } from "./UpdateIndicator";
 function windowAction(action: "minimize" | "toggleMaximize") {
   if (!isTauri()) return;
   void getCurrentWindow()[action]();
-}
-
-function Doc() {
-  const session = useSession((s) => s.session);
-  if (!session) {
-    return (
-      <div className="doc">
-        <b>Untitled</b>
-        <span className="faint">no file open</span>
-      </div>
-    );
-  }
-  // As in the mockup: a scratch file is tagged, a project shows its file
-  // name, and an untitled one says it isn't saved.
-  return (
-    <div className="doc" data-tip={session.path ?? session.project ?? "Not saved yet"}>
-      <b>
-        {session.name}
-        {session.dirty && <span className="dirty"> •</span>}
-      </b>
-      {session.scratch ? (
-        <span className="pill">Scratch</span>
-      ) : (
-        !session.project && <span className="faint">not saved</span>
-      )}
-    </div>
-  );
 }
 
 function BrowserToggle() {
@@ -165,11 +140,14 @@ function Transport() {
 /** Custom title bar: the window has no native frame (Windows 11 still rounds it). */
 export function TitleBar({ info }: { info: AppInfo | null }) {
   const session = useSession((s) => s.session);
+  // Short of room for tabs, the menu keeps only the dog mark.
+  const [tight, setTight] = useState(false);
+  const onTight = useCallback((t: boolean) => setTight(t), []);
   return (
-    <header className="titlebar" data-tauri-drag-region>
+    <header className={`titlebar${tight ? " tight" : ""}`} data-tauri-drag-region>
       <div className="tleft" data-tauri-drag-region>
         <AppMenu info={info} />
-        <Doc />
+        <Tabs tight={tight} onTight={onTight} />
       </div>
       <Transport />
       <div className="tright" data-tauri-drag-region>
@@ -199,7 +177,7 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
           <button aria-label="Maximize" onClick={() => windowAction("toggleMaximize")}>
             <svg viewBox="0 0 10 10"><path d="M.5.5h9v9h-9z" /></svg>
           </button>
-          <button className="close" aria-label="Close" onClick={requestClose}>
+          <button className="close" aria-label="Close" onClick={() => void requestClose()}>
             <svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0 0 10" /></svg>
           </button>
         </div>

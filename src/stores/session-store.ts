@@ -4,6 +4,8 @@ import {
   apiMessage,
   type ClipState,
   type Command,
+  type Front,
+  type TabInfo,
   type Placement,
   type SessionState,
   type TrackState,
@@ -60,6 +62,8 @@ export type Dialog =
       then: () => void;
       verb: string;
     }
+  /** Closing the window with several tabs unsaved. */
+  | { type: "quit"; tabs: TabInfo[] }
   | null;
 
 /** What a drag in progress shows before the engine has it. */
@@ -75,6 +79,20 @@ export type Draft =
   | { kind: "tempo"; bpm: number };
 
 interface SessionStore {
+  /** Open sessions, in tab order. The front one's name and dirty mark come
+   * from `session`; the others' as they were when it was last in front. */
+  tabs: TabInfo[];
+  /** The tab in front, whose session is `session`. */
+  activeTab: number | null;
+  /** Brings a tab to the front, as it was left; playback stops. */
+  switchTab: (id: number) => Promise<void>;
+  /** Closes a tab, asking first about unsaved edits. */
+  closeTab: (id: number) => Promise<void>;
+  /** Closes a tab without asking. */
+  dropTab: (id: number) => Promise<void>;
+  moveTab: (id: number, index: number) => Promise<void>;
+  /** Catches up with tabs opened elsewhere (by an agent). */
+  syncTabs: () => Promise<void>;
   session: SessionState | null;
   draft: Draft | null;
   /** Selected clip ids. */
@@ -116,8 +134,8 @@ interface SessionStore {
   open: (path: string) => Promise<boolean>;
   /** Starts an empty, untitled project. */
   newProject: () => Promise<void>;
-  /** Opens what an earlier run left unsaved. */
-  recover: () => Promise<void>;
+  /** Opens what earlier runs left unsaved, each in a tab. */
+  recover: (keys: string[]) => Promise<void>;
   /** Adds files to the open session. */
   importFiles: (paths: string[], at: Placement) => Promise<void>;
   /** Ask first if there are unsaved edits. */
@@ -188,8 +206,6 @@ interface SessionStore {
   adopt: (s: SessionState | null) => void;
   /** The session's file was rewritten (Replace, Restore). */
   reloaded: (s: SessionState | null) => void;
-  /** A session opened elsewhere (by an agent): shown as if just opened. */
-  opened: (s: SessionState) => void;
 }
 
 /** Edits go to Rust one at a time and in order; a drag only sends its
@@ -312,6 +328,69 @@ export function shownTracks(s: SessionState, draft: Draft | null): TrackState[] 
 }
 
 export const useSession = create<SessionStore>((set, get) => ({
+  tabs: [],
+  activeTab: null,
+
+  switchTab: async (id) => {
+    if (id === get().activeTab || !get().tabs.some((t) => t.id === id)) return;
+    await get().commit();
+    await get().stop();
+    try {
+      show(await enqueue(() => api.switchTab(id)));
+    } catch (e) {
+      get().showToast(apiMessage(e), { error: true });
+    }
+  },
+
+  closeTab: async (id) => {
+    const tab = get().tabs.find((t) => t.id === id);
+    if (!tab) return;
+    const front = id === get().activeTab;
+    const dirty = front ? !!get().session?.dirty : tab.dirty;
+    if (!dirty) {
+      await get().dropTab(id);
+      return;
+    }
+    // Asks with the tab in front, so its name and edits are what's shown.
+    if (!front) await get().switchTab(id);
+    if (get().activeTab !== id) return;
+    get().guard("close this tab", () => void get().dropTab(id));
+  },
+
+  dropTab: async (id) => {
+    if (id === get().activeTab) {
+      await get().commit();
+      await get().stop();
+    }
+    try {
+      const f = await enqueue(() => api.closeTab(id));
+      memos.delete(id);
+      show(f);
+    } catch (e) {
+      get().showToast(apiMessage(e), { error: true });
+    }
+  },
+
+  moveTab: async (id, index) => {
+    const tabs = get().tabs.filter((t) => t.id !== id);
+    const tab = get().tabs.find((t) => t.id === id);
+    if (!tab) return;
+    tabs.splice(Math.max(0, Math.min(index, tabs.length)), 0, tab);
+    set({ tabs });
+    try {
+      const f = await enqueue(() => api.moveTab(id, index));
+      set({ tabs: f.tabs });
+    } catch {
+      // The row is only cosmetic until the next change.
+    }
+  },
+
+  syncTabs: async () => {
+    const f = await enqueue(() => api.tabs());
+    if (f.active !== get().activeTab) await get().stop();
+    show(f);
+  },
+
   session: null,
   draft: null,
   selected: [],
@@ -345,10 +424,13 @@ export const useSession = create<SessionStore>((set, get) => ({
   closeClipPanel: () => set({ clipPanel: null }),
 
   open: async (path) => {
+    await get().commit();
     await get().stop();
     set({ busy: "Opening…" });
     try {
-      start(await enqueue(() => api.openFile(path)));
+      const f = await enqueue(() => api.openFile(path));
+      show(f);
+      if (f.existing && f.state) get().showToast(`${f.state.name} is already open`);
       return true;
     } catch (e) {
       get().showToast(`Couldn't open ${path}: ${apiMessage(e)}`, { error: true });
@@ -358,19 +440,21 @@ export const useSession = create<SessionStore>((set, get) => ({
     }
   },
 
-  recover: async () => {
+  recover: async (keys) => {
+    await get().commit();
     await get().stop();
     try {
-      start(await enqueue(() => api.recover()), true);
+      show(await enqueue(() => api.recover(keys)), true);
     } catch (e) {
       get().showToast(`Couldn't recover: ${apiMessage(e)}`, { error: true });
     }
   },
 
   newProject: async () => {
+    await get().commit();
     await get().stop();
     try {
-      start(await enqueue(() => api.newProject()));
+      show(await enqueue(() => api.newProject()));
     } catch (e) {
       get().showToast(`Couldn't start a project: ${apiMessage(e)}`, { error: true });
     }
@@ -791,15 +875,13 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (s && before && songEnd(s) !== songEnd(before)) void get().retarget();
   },
 
-  opened: (s) => start(s),
-
   reloaded: (s) => {
     set({
       session: s,
       draft: null,
       range: null,
       selected: s?.simple ? allClips(s).map((c) => c.clip.id) : get().selected,
-      fileRev: get().fileRev + 1,
+      fileRev: ++revSeq,
     });
     if (s?.simple) {
       set({ playhead: 0, startPoint: 0 });
@@ -808,6 +890,82 @@ export const useSession = create<SessionStore>((set, get) => ({
     get().adopt(s);
   },
 }));
+
+/** Bumped for every (re)load of a tab's audio: with the tab id, it keys the
+ * waveform cache, so a tab brought back to the front draws at once. */
+let revSeq = 0;
+
+/** What each tab in the back was left showing. */
+interface Memo {
+  view: View;
+  playhead: number;
+  range: Range | null;
+  selected: number[];
+  heights: Record<number, number>;
+  scrollTop: number;
+  eqTrack: number | null;
+  fileRev: number;
+}
+const memos = new Map<number, Memo>();
+
+/** Shows the tab in front after a tab change: as it was left if it has been
+ * in front before, else as just opened. */
+function show(f: Front, recovered = false) {
+  const st = useSession.getState();
+  if (st.activeTab !== null && st.session && f.active !== st.activeTab && f.tabs.some((t) => t.id === st.activeTab)) {
+    memos.set(st.activeTab, {
+      view: st.view,
+      playhead: st.startPoint,
+      range: st.range,
+      selected: st.selected,
+      heights: st.heights,
+      scrollTop: tracksScroll.top,
+      eqTrack: st.eqTrack,
+      fileRev: st.fileRev,
+    });
+  }
+  for (const id of memos.keys()) if (!f.tabs.some((t) => t.id === id)) memos.delete(id);
+  const same = f.active === st.activeTab;
+  useSession.setState({ tabs: f.tabs, activeTab: f.active, clipPanel: null });
+  const s = f.state;
+  if (!s) {
+    follow(null, readView);
+    useSession.setState({ session: null, draft: null, range: null, selected: [], playhead: 0, startPoint: 0, eqTrack: null });
+    return;
+  }
+  // The same tab again (a file that was already open in front).
+  if (same && !f.existing && st.session) {
+    start(s, recovered);
+    return;
+  }
+  if (same) {
+    st.adopt(s);
+    return;
+  }
+  const m = f.active !== null ? memos.get(f.active) : undefined;
+  if (!m) {
+    start(s, recovered);
+    useSession.setState({ eqTrack: null });
+    return;
+  }
+  memos.delete(f.active!);
+  restored = true;
+  tracksScroll.top = m.scrollTop;
+  tracksScroll.pending = m.scrollTop;
+  const ids = new Set(allClips(s).map((c) => c.clip.id));
+  useSession.setState({
+    session: s,
+    draft: null,
+    view: m.view,
+    range: m.range,
+    playhead: m.playhead,
+    startPoint: m.playhead,
+    selected: m.selected.filter((id) => ids.has(id)),
+    heights: m.heights,
+    eqTrack: m.eqTrack,
+    fileRev: m.fileRev,
+  });
+}
 
 /** Where the session's view is remembered (see `lib/view-memory`). */
 function keyOf(s: SessionState | null): string | null {
@@ -856,7 +1014,7 @@ function start(s: SessionState, recovered = false) {
     playhead,
     startPoint: playhead,
     heights,
-    fileRev: st.fileRev + 1,
+    fileRev: ++revSeq,
   });
   if (v) {
     const fpp = clamp(v.fpp, ...fppRange(s, st.width));

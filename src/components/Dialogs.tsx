@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { exportDialog, saveProject } from "@/lib/actions";
+import { discardAllAndClose, exportDialog, reviewUnsaved, saveProject } from "@/lib/actions";
+import type { TabInfo } from "@/lib/api";
 import { useSession } from "@/stores/session-store";
 
 function useEscape(onEscape: () => void) {
@@ -107,9 +108,61 @@ function SaveDialog({ then }: { then: () => void }) {
   );
 }
 
+/** Closing the window with several tabs unsaved: once, with the list. */
+function QuitDialog({ tabs }: { tabs: TabInfo[] }) {
+  const setDialog = useSession((s) => s.setDialog);
+  const primary = useRef<HTMLButtonElement>(null);
+  const cancel = () => setDialog(null);
+  useEscape(cancel);
+  useEffect(() => primary.current?.focus(), []);
+  return (
+    <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
+      <div className="dlg small" role="dialog" aria-label="Unsaved tabs">
+        <header>{tabs.length} tabs have unsaved changes</header>
+        <div className="bd">
+          <div className="ulist">
+            {tabs.map((t) => (
+              <div key={t.id}>
+                <b>{t.name}</b>
+                <span className="dim">{t.scratch ? "edit not exported" : t.path ? "edited since saving" : "never saved"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <footer>
+          <button className="btn ghost" onClick={cancel}>
+            Cancel
+          </button>
+          <span className="spacer" />
+          <button
+            ref={primary}
+            className="btn"
+            onClick={() => {
+              setDialog(null);
+              void reviewUnsaved();
+            }}
+          >
+            Review each…
+          </button>
+          <button
+            className="btn"
+            onClick={() => {
+              setDialog(null);
+              discardAllAndClose();
+            }}
+          >
+            Discard all and close
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 export function Dialogs() {
   const dialog = useSession((s) => s.dialog);
   const scratch = useSession((s) => s.session?.scratch ?? true);
   if (!dialog) return null;
+  if (dialog.type === "quit") return <QuitDialog tabs={dialog.tabs} />;
   return scratch ? <DiscardDialog verb={dialog.verb} then={dialog.then} /> : <SaveDialog then={dialog.then} />;
 }

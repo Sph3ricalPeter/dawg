@@ -145,29 +145,197 @@ body.panning * {
 .tright {
   justify-content: flex-end;
 }
-.doc {
+/* session tabs: where the file name was, one per open file or project */
+.tabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 6px;
+}
+.tlist {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+}
+.stab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  flex: none;
+  padding: 0 4px 0 10px;
+  border-left: 1px solid var(--line);
   color: var(--text-dim);
   white-space: nowrap;
-  padding: 0 10px 0 6px;
-  overflow: hidden;
-  min-width: 0;
+  cursor: default;
+  user-select: none;
+  touch-action: none;
 }
-.doc b {
+.stab:hover {
+  background: var(--bg-3);
+}
+.stab.on {
+  background: var(--bg-0);
   color: var(--text);
-  font-weight: 600;
+}
+/* the front tab opens onto the work area below */
+.stab.on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.stab.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--bg-0);
+}
+.stab.drag {
+  opacity: 0.6;
+}
+.stab .nm {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
 }
-.doc .dirty {
+.stab .nm .dot {
   color: var(--text-dim);
 }
-.doc .pill {
+.stab .pill {
+  flex: none;
+  font-size: 9px;
+  padding: 0 4px;
   border-color: var(--accent);
   color: var(--accent);
+}
+.stab:not(.on) .pill {
+  opacity: 0.6;
+}
+.stab .gap {
+  flex: 1;
+}
+.stab .x {
+  width: 18px;
+  height: 18px;
   flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.stab .x:hover {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.stab .x svg {
+  width: 8px;
+  height: 8px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+/* an unsaved tab in the back shows a dot where its close button goes */
+.stab .x i {
+  display: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.stab:not(.on):not(:hover) .x svg {
+  display: none;
+}
+.stab.dirty:not(.on):not(:hover) .x i {
+  display: block;
+}
+.notab {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+.tadd {
+  width: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.tadd:hover {
+  color: var(--text);
+  background: var(--bg-3);
+}
+.tadd svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.tabmore-wrap {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+.tmore {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tmore:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
+.tmore .car {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.menu-item.on {
+  font-weight: 600;
+}
+.titlebar.tight .logo .lw {
+  display: none;
+}
+.dlg .ulist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dlg .ulist > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dlg .ulist b {
+  font-weight: 600;
 }
 
 /* transport */

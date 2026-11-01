@@ -238,8 +238,29 @@ export interface Spectrum {
   db: number[];
 }
 
-/** Mirrors `autosave::Note` in the app crate. */
+/** Mirrors `commands::TabInfo` in the app crate: a tab in the title bar. */
+export interface TabInfo {
+  id: number;
+  name: string;
+  scratch: boolean;
+  dirty: boolean;
+  /** The audio file a scratch tab edits, or the project's file. */
+  path: string | null;
+}
+
+/** Mirrors `commands::Front`: the tabs and the one in front, with its state. */
+export interface Front {
+  tabs: TabInfo[];
+  active: number | null;
+  state: SessionState | null;
+  /** It was already open, so its tab came to the front instead. */
+  existing: boolean;
+}
+
+/** Mirrors `autosave::Recovered` in the app crate. */
 export interface RecoveryNote {
+  /** Names it for `recover`. */
+  key: string;
   name: string;
   project: string | null;
   /** ms since the Unix epoch. */
@@ -265,9 +286,17 @@ export interface PreviewInfo {
 
 export const api = {
   startupFile: () => invoke<string | null>("startup_file"),
-  /** A WAV or MP3 as a scratch session, or a .dawg project. */
-  openFile: (path: string) => invoke<SessionState>("open_file", { path }),
-  newProject: () => invoke<SessionState>("new_project"),
+  /** A WAV or MP3 as a scratch session, or a .dawg project, in a tab of its
+   * own (or the tab it's already open in). */
+  openFile: (path: string) => invoke<Front>("open_file", { path }),
+  /** An empty project in a new tab. */
+  newProject: () => invoke<Front>("new_project"),
+  tabs: () => invoke<Front>("tabs"),
+  /** Brings a tab to the front; playback stops. */
+  switchTab: (id: number) => invoke<Front>("switch_tab", { id }),
+  /** Closes a tab, unsaved edits and all. */
+  closeTab: (id: number) => invoke<Front>("close_tab", { id }),
+  moveTab: (id: number, index: number) => invoke<Front>("move_tab", { id, index }),
   /** Saves as a project at `path`, or where it was last saved. */
   saveProject: (path: string | null) => invoke<SessionState>("save_project", { path }),
   relinkSource: (source: number, path: string) =>
@@ -298,9 +327,9 @@ export const api = {
   jumpHistory: (done: number) => invoke<SessionState>("jump_history", { done }),
   importFiles: (paths: string[], at: Placement) =>
     invoke<{ state: SessionState; imported: Imported }>("import_files", { paths, at }),
-  /** `buckets` (min, max) pairs over frames `from..to` of a source. */
-  peaks: async (source: number, from: number, to: number, buckets: number) =>
-    new Float32Array(await invoke<ArrayBuffer>("peaks", { source, from, to, buckets })),
+  /** `buckets` (min, max) pairs over frames `from..to` of a tab's source. */
+  peaks: async (tab: number | null, source: number, from: number, to: number, buckets: number) =>
+    new Float32Array(await invoke<ArrayBuffer>("peaks", { tab, source, from, to, buckets })),
   /** Plays `from..to`; with `looping`, jumps back there at `to` until stopped. */
   play: (from: number, to: number, looping: number | null) => invoke<void>("play", { from, to, looping }),
   /** Moves where the playback in progress stops or loops back, without seeking
@@ -323,9 +352,10 @@ export const api = {
   /** Snapshots unsaved edits for crash recovery (clears it when saved). */
   autosave: () => invoke<void>("autosave"),
   clearAutosave: () => invoke<void>("clear_autosave"),
-  /** What an earlier run left unsaved. */
-  recovery: () => invoke<RecoveryNote | null>("recovery"),
-  recover: () => invoke<SessionState>("recover"),
+  /** What earlier runs left unsaved. */
+  recovery: () => invoke<RecoveryNote[]>("recovery"),
+  /** Opens those, each in a tab of its own. */
+  recover: (keys: string[]) => invoke<Front>("recover", { keys }),
   discardRecovery: () => invoke<void>("discard_recovery"),
   /** Shows the file in Explorer. */
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),

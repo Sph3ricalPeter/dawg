@@ -18,6 +18,8 @@ import { TitleBar } from "@/components/TitleBar";
 import { api, type RecentProject } from "@/lib/api";
 import {
   addFilesDialog,
+  closeFrontTab,
+  cycleTab,
   exportDialog,
   isAudio,
   isProject,
@@ -183,7 +185,13 @@ function useShortcuts() {
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
       let handled = true;
-      if (ctrl && e.altKey && k === "b") useBrowser.getState().toggle();
+      if (ctrl && e.key === "Tab") cycleTab(e.shiftKey ? -1 : 1);
+      else if (ctrl && (e.key === "PageDown" || e.key === "PageUp")) cycleTab(e.key === "PageUp" ? -1 : 1);
+      else if (ctrl && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+        // Ctrl+1..8 the tab at that place, Ctrl+9 the last, as browsers do.
+        const t = e.key === "9" ? s.tabs.at(-1) : s.tabs[Number(e.key) - 1];
+        if (t) void s.switchTab(t.id);
+      } else if (ctrl && e.altKey && k === "b") useBrowser.getState().toggle();
       else if (ctrl && e.shiftKey && k === "o") void addFilesDialog();
       else if (ctrl && e.shiftKey && k === "t") void s.addTrack();
       else if (ctrl && e.shiftKey && k === "s") void saveProjectAs();
@@ -205,7 +213,7 @@ function useShortcuts() {
         const to = i + (e.key === "ArrowUp" ? -1 : 1);
         if (i >= 0 && to >= 0 && to < tracks.length) void s.apply({ type: "move_track", track: tracks[i].id, index: to });
       }
-      else if (ctrl && k === "w") requestClose();
+      else if (ctrl && k === "w") closeFrontTab();
       else if (ctrl && (k === "0" || k === "f")) s.fit();
       else if (ctrl && (k === "=" || k === "+")) s.zoomAt(s.width / 2, 0.5);
       else if (ctrl && k === "-") s.zoomAt(s.width / 2, 2);
@@ -333,7 +341,7 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
         // Either way through requestClose, which asks about unsaved edits
         // and clears the crash-recovery snapshot.
         e.preventDefault();
-        requestClose();
+        void requestClose();
       })
       .then((u) => unlisten.push(u));
     return () => unlisten.forEach((u) => u());
