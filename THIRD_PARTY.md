@@ -11,3 +11,9 @@ dawg is MIT licensed. Two audio codecs it links have their own licenses:
   <https://github.com/pdeljanov/Symphonia>.
 
 MP3 patents have expired worldwide, so no patent license is needed.
+
+The app also bundles one font:
+
+- **Monaspace Argon** (numbers, LCD readouts), SIL Open Font License 1.1,
+  © 2023 GitHub: <https://github.com/githubnext/monaspace>. Packaged from
+  `@fontsource/monaspace-argon`; the license ships in that package.
