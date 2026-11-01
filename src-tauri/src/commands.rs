@@ -150,10 +150,27 @@ impl Inner {
 
 /// The first argument that isn't a flag: Explorer runs `dawg.exe "<file>"`.
 /// A relative path is taken from `cwd`, the launching process's folder.
+///
+/// The arguments can arrive split at spaces: after a Windows update the
+/// installer relaunches dawg with the arguments it was started with, but
+/// loses their quotes on the way, so `"Sph3rical - Wave3.wav"` comes back
+/// as `Sph3rical`, `-`, `Wave3.wav`. When the first argument isn't a file,
+/// the ones after it are joined back on, one at a time, until they are.
 pub fn file_from_args(args: impl Iterator<Item = OsString>, cwd: &Path) -> Option<PathBuf> {
-    args.map(PathBuf::from)
-        .find(|a| !a.to_string_lossy().starts_with('-'))
-        .map(|p| cwd.join(p))
+    let args: Vec<String> = args.map(|a| a.to_string_lossy().into_owned()).collect();
+    let first = args.iter().position(|a| !a.starts_with('-'))?;
+    let mut joined = args[first].clone();
+    for more in &args[first + 1..] {
+        if cwd.join(&joined).is_file() {
+            break;
+        }
+        joined.push(' ');
+        joined.push_str(more);
+        if cwd.join(&joined).is_file() {
+            return Some(cwd.join(joined));
+        }
+    }
+    Some(cwd.join(&args[first]))
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, Error> {
@@ -561,6 +578,26 @@ mod tests {
         let args = [OsString::from("--flag"), abs.clone().into()];
         assert_eq!(file_from_args(args.into_iter(), Path::new("x")), Some(abs));
         assert_eq!(file_from_args(std::iter::empty(), &cwd), None);
+    }
+
+    #[test]
+    fn rejoins_a_file_argument_split_at_spaces() {
+        // What the Windows updater's relaunch hands over for
+        // `dawg.exe "<dir>\Sph3rical - Wave3.wav"`.
+        let dir = std::env::temp_dir().join(format!("dawg-args-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Sph3rical - Wave3.wav");
+        std::fs::write(&file, b"").unwrap();
+        let split = format!("{}", dir.join("Sph3rical").display());
+        let args = [split.as_str(), "-", "Wave3.wav"].map(OsString::from);
+        assert_eq!(
+            file_from_args(args.into_iter(), Path::new("x")),
+            Some(file.clone())
+        );
+        // A file that really is there isn't joined with what follows.
+        let args = [file.as_os_str().to_owned(), OsString::from("extra")];
+        assert_eq!(file_from_args(args.into_iter(), Path::new("x")), Some(file));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
