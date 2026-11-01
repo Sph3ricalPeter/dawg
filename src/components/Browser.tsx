@@ -263,7 +263,7 @@ function Preview() {
   if (!current) {
     return (
       <div className="preview">
-        <div className="pvw empty">
+        <div className="pvw none">
           <span className="hintx">Click a file to hear it here</span>
         </div>
       </div>

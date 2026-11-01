@@ -2343,7 +2343,7 @@ body.rsizing * {
   overflow: hidden;
   cursor: pointer;
 }
-.pvw.empty {
+.pvw.none {
   cursor: default;
   display: flex;
   align-items: center;
