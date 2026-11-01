@@ -616,9 +616,9 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
       onPointerMove={onHover}
       onContextMenu={(e) => {
         e.preventDefault();
-        void store().deleteClips([clip.id]);
+        store().openClipPanel(clip.id, e.clientX, e.clientY);
       }}
-      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click deletes, right-click the title for clip settings · Shift+drag slips the audio inside the clip · Ctrl+B duplicates"
+      data-hint="Drag to move (the selection moves together, onto other tracks too; snaps to clip edges, 0 and the playhead, Alt skips) · Ctrl+click adds to the selection · click the line to add an envelope point · right-click for the clip menu (Delete is there, or press Del) · Shift+drag slips the audio inside the clip · Ctrl+B duplicates"
     >
       <div
         className="ct"
