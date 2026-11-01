@@ -70,6 +70,8 @@ export class Clock {
   private pos = 0;
   private at = 0;
   private running = false;
+  /** Until when a far-off report is ignored rather than snapped to. */
+  private settleUntil = 0;
   /** Units per second. */
   rate: number;
   /** Where a raw extrapolated position really is (loop, end). */
@@ -92,6 +94,9 @@ export class Clock {
     this.pos = pos;
     this.at = performance.now();
     this.running = running;
+    // Right after a seek the engine may still report where it was for a
+    // block or two (it fades out before jumping).
+    this.settleUntil = this.at + 120;
   }
 
   stop() {
@@ -119,6 +124,7 @@ export class Clock {
       err = ((((err + period / 2) % period) + period) % period) - period / 2;
     }
     if (Math.abs(err) > this.snapSec * this.rate) {
+      if (now < this.settleUntil) return;
       this.pos = pos;
     } else {
       // Reports come in blocks of an audio buffer and a poll late, so each
