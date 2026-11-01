@@ -1,6 +1,7 @@
 mod agent;
 mod audio;
 mod autosave;
+mod browser;
 mod commands;
 mod recent;
 
@@ -72,6 +73,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(browser::Previews::default())
         .manage(commands::AppState::new(commands::file_from_args(
             std::env::args_os().skip(1),
             &cwd,
@@ -105,6 +107,12 @@ pub fn run() {
             commands::end_gesture,
             commands::set_selection,
             commands::cli_path,
+            browser::list_dir,
+            browser::search_files,
+            browser::preview_info,
+            browser::preview_play,
+            browser::preview_stop,
+            browser::preview_status,
             commands::undo,
             commands::redo,
             commands::jump_history,

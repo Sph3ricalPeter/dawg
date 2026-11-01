@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use dawg_cli::tools::{self, Ctx, Selection, Take, Tools};
 use dawg_core::file::Codec;
@@ -11,7 +11,7 @@ use dawg_core::save::{self, Replaced};
 use dawg_core::session::{
     self, ExportOptions, Imported, Placement, SavePreview, Session, SessionState,
 };
-use dawg_core::Command;
+use dawg_core::{Command, Project};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -95,6 +95,26 @@ impl AppState {
         (r, changed.then_some(replaces))
     }
 
+    /// Plays `project` (a browser preview) from `from` to `to`, leaving the
+    /// session to play again on the next Play.
+    pub fn preview(
+        &self,
+        project: Arc<Project>,
+        from: u64,
+        to: u64,
+    ) -> std::result::Result<(), String> {
+        self.lock().audio.preview(project, from, to)
+    }
+
+    pub fn preview_stop(&self) {
+        self.lock().audio.stop_preview();
+    }
+
+    /// Whether a preview plays, and its frame.
+    pub fn preview_status(&self) -> (bool, u64) {
+        self.lock().audio.preview_status()
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         // A panic mid-command leaves nothing half-applied worth refusing.
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
@@ -166,7 +186,7 @@ pub struct Error {
 }
 
 impl Error {
-    fn new(kind: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: &'static str, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -174,7 +194,7 @@ impl Error {
     }
 }
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// The file waiting to be opened, if any. The UI asks once on load and again
 /// whenever the backend emits [`OPEN_REQUESTED`].

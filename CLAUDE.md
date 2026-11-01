@@ -39,13 +39,16 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   `dawg.exe`: `beforeBundleCommand` builds it and `windows/hooks.nsh`
   installs it.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
-  `audio.rs` (cpal output), `recent.rs` (recent projects), plugins,
+  `audio.rs` (cpal output; a Browser preview swaps a one-file project into
+  the player and the session's comes back on the next Play), `browser.rs`
+  (folder listings, search, preview decode), `recent.rs` (recent projects), plugins,
   installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`
   file association).
 - `integrations/unity`: Unity package (git URL install) that opens audio clips in dawg on
   double-click.
 - `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
-  `src/styles.css`; zustand stores in `src/stores`.
+  `src/styles.css`; zustand stores in `src/stores` (`browser-store.ts`
+  keeps the Browser's folders, pins and recent files in localStorage).
 - `.github/workflows`: `ci.yml` (checks, tests, Windows "dawg dev" installer
   artifact) and `release.yml` (tag → signed installer + `latest.json`).
 

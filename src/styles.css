@@ -2100,3 +2100,345 @@ body.rsizing * {
     opacity: 0.25;
   }
 }
+
+/* The Browser: pinned folders, recent files, folder tree, preview. */
+.workarea {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.workarea > .arrangement {
+  min-width: 0;
+}
+.browser {
+  position: relative;
+  width: 208px;
+  flex: none;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-size: 12px;
+}
+.browser.shut {
+  width: 26px;
+}
+.browser .rail {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.browser .rail:hover {
+  color: var(--text);
+  background: var(--bg-3);
+}
+.browser .phead {
+  height: 26px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 4px;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.browser .phead .x {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+.browser .phead .x:hover {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.browser .bauto {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 11px;
+  gap: 5px;
+}
+.browser .search {
+  margin: 8px;
+  height: 24px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-faint);
+}
+.browser .search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.browser .search:focus-within {
+  border-color: var(--line-strong);
+}
+.blist {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+.bsec {
+  padding: 8px 10px 3px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+.bsec:hover:not(.nohover) {
+  color: var(--text-dim);
+}
+.bsec.nohover {
+  cursor: default;
+}
+.bsec .chev,
+.bi .tw {
+  width: 10px;
+  flex: none;
+  margin-right: 3px;
+  display: inline-flex;
+  transition: transform 0.12s;
+}
+.bsec .chev svg,
+.bi .tw svg {
+  width: 8px;
+  height: 8px;
+  fill: currentColor;
+}
+.bsec.shut .chev,
+.bi.closed .tw {
+  transform: rotate(-90deg);
+}
+.bsec .bst {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bi {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.bi:hover {
+  background: var(--bg-3);
+}
+.bi.cur {
+  background: var(--bg-4);
+}
+.bi .tw {
+  width: 8px;
+  margin-right: -3px;
+  color: var(--text-faint);
+}
+.bi .ic {
+  width: 12px;
+  flex: none;
+  color: var(--text-faint);
+  display: flex;
+  justify-content: center;
+}
+.bi .ic:has(.ft) {
+  width: 26px;
+}
+.bi .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.bi .rp {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bi .pinm {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.bi.bnote,
+.bi.bnote:hover {
+  color: var(--text-faint);
+  cursor: default;
+  background: none;
+  font-size: 11px;
+  white-space: normal;
+}
+.bi.badd {
+  color: var(--text-faint);
+}
+.bi.badd:hover {
+  color: var(--text);
+}
+.ft {
+  font: 700 7.5px/1 var(--font);
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+  width: 26px;
+  text-align: center;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+.ft-mp3 {
+  color: #9ec8ea;
+}
+.bi:hover .ft,
+.bi.cur .ft {
+  opacity: 1;
+}
+.preview {
+  border-top: 1px solid var(--line-strong);
+  flex: none;
+}
+.pvw {
+  position: relative;
+  height: 96px;
+  background: var(--bg-0);
+  overflow: hidden;
+  cursor: pointer;
+}
+.pvw.empty {
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pvw .hintx {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.pvw canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.pvw .pvph {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text);
+  pointer-events: none;
+}
+.pvw > span {
+  position: absolute;
+  font: 9.5px/1 var(--mono);
+  color: var(--text-dim);
+  background: rgba(13, 13, 13, 0.7);
+  padding: 2px 4px;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.pvw .tl {
+  left: 4px;
+  top: 4px;
+  max-width: calc(100% - 72px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pvw .pvname {
+  color: var(--text);
+  font: 10.5px/1.15 var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pvw .pvfmt {
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pvw .tr {
+  right: 4px;
+  top: 4px;
+}
+.pvw .tr.hot {
+  color: var(--danger);
+}
+.pvw .bl {
+  left: 4px;
+  bottom: 4px;
+}
+.pvplay {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 22px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(13, 13, 13, 0.7);
+  color: var(--text);
+  font-size: 9px;
+  cursor: pointer;
+}
+.pvplay:hover {
+  background: var(--bg-4);
+}
+.dragchip {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.dragchip .dl {
+  color: var(--text-dim);
+}

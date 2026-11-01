@@ -253,6 +253,16 @@ export interface RecentProject {
   exists: boolean;
 }
 
+/** The Browser's preview pane. */
+export interface PreviewInfo {
+  seconds: number;
+  rate: number;
+  channels: number;
+  format: string;
+  peakDb: number | null;
+  peaks: number[];
+}
+
 export const api = {
   startupFile: () => invoke<string | null>("startup_file"),
   /** A WAV or MP3 as a scratch session, or a .dawg project. */
@@ -268,6 +278,15 @@ export const api = {
   apply: (command: Command, transient: boolean) =>
     invoke<SessionState>("apply", { command, transient }),
   endGesture: () => invoke<SessionState>("end_gesture"),
+  /** A folder's subfolders and audio files, by name. */
+  listDir: (path: string) => invoke<{ dirs: string[]; files: string[] }>("list_dir", { path }),
+  /** Audio files under `roots` whose names hold every word of `query`. */
+  searchFiles: (roots: string[], query: string) => invoke<string[]>("search_files", { roots, query }),
+  previewInfo: (path: string, buckets: number) => invoke<PreviewInfo>("preview_info", { path, buckets }),
+  /** Plays a file on its own from `from` seconds; the session stays put. */
+  previewPlay: (path: string, from: number) => invoke<void>("preview_play", { path, from }),
+  previewStop: () => invoke<void>("preview_stop"),
+  previewStatus: () => invoke<{ playing: boolean; seconds: number }>("preview_status"),
   /** The installed dawg-cli, if it's next to the app. */
   cliPath: () => invoke<string | null>("cli_path"),
   /** What an agent's `get_selection` sees: clip ids and the ruler range. */

@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@tauri-apps/api/core";
 import type { AppInfo } from "@/lib/app-info";
 import { exportDialog, requestClose } from "@/lib/actions";
+import { useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
 import { AppMenu } from "./AppMenu";
 import { HistoryPanel } from "./HistoryPanel";
@@ -41,6 +42,18 @@ function Doc() {
   );
 }
 
+function BrowserToggle() {
+  const scratch = useSession((s) => !!s.session?.scratch);
+  const open = useBrowser((s) => (scratch ? s.openScratch : s.open));
+  return (
+    <button className={`tb${open ? " on" : ""}`} id="tBrowser" title="Browser (Ctrl+Alt+B)" onClick={() => useBrowser.getState().toggle()}>
+      <svg viewBox="0 0 16 16">
+        <path d="M2 3h12v10H2zM3.5 4.5v7h3v-7z" />
+      </svg>
+    </button>
+  );
+}
+
 function Transport() {
   const session = useSession((s) => s.session);
   const playing = useSession((s) => s.playing);
@@ -52,6 +65,9 @@ function Transport() {
   const store = useSession.getState;
   return (
     <div className="transport">
+      <div className="tg">
+        <BrowserToggle />
+      </div>
       <div className="tg">
         <button
           className={`tb${playing ? " on" : ""}`}

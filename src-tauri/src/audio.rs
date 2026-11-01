@@ -24,12 +24,18 @@ struct Output {
 pub struct Audio {
     output: Option<Output>,
     project: Option<Arc<Project>>,
+    /// The player holds a browser preview, not the session.
+    previewing: bool,
 }
 
 impl Audio {
     /// The project to play from now on.
     pub fn set_project(&mut self, project: Arc<Project>) {
         self.project = Some(project.clone());
+        if self.previewing {
+            // Play swaps it in.
+            return;
+        }
         if let Some(out) = &mut self.output {
             out.handle.send(PlayerMsg::Project(project));
         }
@@ -37,6 +43,20 @@ impl Audio {
 
     pub fn play(&mut self, from: u64, to: u64, looping: Option<u64>) -> Result<(), String> {
         let project = self.project.clone().ok_or("nothing to play")?;
+        self.ready(project.clone())?;
+        let out = self.output.as_mut().expect("output is open");
+        if self.previewing {
+            out.handle.send(PlayerMsg::Project(project));
+            self.previewing = false;
+        }
+        if !out.handle.send(PlayerMsg::Play { from, to, looping }) {
+            return Err("the audio device stopped responding".into());
+        }
+        Ok(())
+    }
+
+    /// The open output, opened (or reopened) with `project` if need be.
+    fn ready(&mut self, project: Arc<Project>) -> Result<&mut Output, String> {
         let dead = self
             .output
             .as_ref()
@@ -44,12 +64,41 @@ impl Audio {
         if dead {
             self.output = None;
             self.output = Some(open(project)?);
+            self.previewing = false;
         }
-        let out = self.output.as_mut().expect("output just opened");
-        if !out.handle.send(PlayerMsg::Play { from, to, looping }) {
+        Ok(self.output.as_mut().expect("output just opened"))
+    }
+
+    /// Plays `project` (a file from the browser) from `from` to `to` in
+    /// place of the session, which comes back on the next [`Audio::play`].
+    pub fn preview(&mut self, project: Arc<Project>, from: u64, to: u64) -> Result<(), String> {
+        let out = self.ready(project.clone())?;
+        out.handle.send(PlayerMsg::Project(project));
+        if !out.handle.send(PlayerMsg::Play {
+            from,
+            to,
+            looping: None,
+        }) {
             return Err("the audio device stopped responding".into());
         }
+        self.previewing = true;
         Ok(())
+    }
+
+    pub fn stop_preview(&mut self) {
+        if self.previewing {
+            self.stop();
+        }
+    }
+
+    pub fn preview_status(&mut self) -> (bool, u64) {
+        match &mut self.output {
+            Some(out) if self.previewing => {
+                out.handle.collect();
+                (out.handle.playing(), out.handle.position())
+            }
+            _ => (false, 0),
+        }
     }
 
     pub fn stop(&mut self) {
@@ -63,6 +112,11 @@ impl Audio {
     pub fn status(&mut self) -> (bool, u64, Vec<[f32; 2]>, [f32; 2]) {
         let tracks = self.project.as_ref().map_or(0, |p| p.tracks.len());
         match &mut self.output {
+            // A preview isn't the session playing.
+            Some(out) if self.previewing => {
+                out.handle.collect();
+                (false, 0, Vec::new(), [0.0; 2])
+            }
             Some(out) => {
                 out.handle.collect();
                 (

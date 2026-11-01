@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Browser } from "@/components/Browser";
 import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { Editor } from "@/components/Editor";
@@ -27,7 +28,9 @@ import {
 } from "@/lib/actions";
 import { followAgent, useAgent } from "@/lib/agent";
 import { getAppInfo, type AppInfo } from "@/lib/app-info";
+import { dropTarget } from "@/lib/drop";
 import { fmtFormat } from "@/lib/format";
+import { useBrowser } from "@/stores/browser-store";
 import { useSession } from "@/stores/session-store";
 import { CHECK_INTERVAL_MS, DEV_CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
 
@@ -172,7 +175,8 @@ function useShortcuts() {
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
       let handled = true;
-      if (ctrl && e.shiftKey && k === "o") void addFilesDialog();
+      if (ctrl && e.altKey && k === "b") useBrowser.getState().toggle();
+      else if (ctrl && e.shiftKey && k === "o") void addFilesDialog();
       else if (ctrl && e.shiftKey && k === "t") void s.addTrack();
       else if (ctrl && e.shiftKey && k === "s") void saveProjectAs();
       else if (ctrl && k === "o") void openFileDialog();
@@ -237,17 +241,6 @@ function usePlayheadPolling() {
 
 /** Where a drop at window point (x, y) lands: onto a track at a time, or
  * onto new tracks. */
-function dropTarget(x: number, y: number): { track: number | null; start: number; over: boolean } {
-  const s = useSession.getState();
-  const el = document.elementFromPoint(x, y);
-  const lane = el?.closest<HTMLElement>(".lane");
-  if (!lane || !s.session) return { track: null, start: 0, over: false };
-  const r = lane.getBoundingClientRect();
-  const start = Math.max(0, Math.round(s.view.start + (x - r.left) * s.view.fpp));
-  const track = lane.dataset.track ? Number(lane.dataset.track) : null;
-  return { track, start, over: true };
-}
-
 export type DropState = { files: number; track: string | null } | null;
 
 /** Dropped files open, or join the open session; the close button asks
@@ -285,7 +278,14 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
           const audio = p.paths.filter(isAudio);
           const s = useSession.getState();
           if (!audio.length) {
-            if (p.paths.length) s.showToast("Only WAV and MP3 files and dawg projects open here for now", { error: true });
+            // Folders join the Browser.
+            void useBrowser
+              .getState()
+              .addRoots(p.paths)
+              .then((n) => {
+                if (n) s.showToast(n === 1 ? "Added the folder to the Browser" : `Added ${n} folders to the Browser`);
+                else if (p.paths.length) s.showToast("Only WAV and MP3 files, folders and dawg projects open here", { error: true });
+              });
             return;
           }
           if (!s.session) {
@@ -372,6 +372,8 @@ export function App() {
   return (
     <div className="app" onMouseOver={onOver} onContextMenu={(e) => e.preventDefault()}>
       <TitleBar info={info} />
+      <div className="workarea">
+      <Browser />
       <main className="arrangement">
         {session && (session.scratch || session.tracks.length > 0) ? <Editor /> : <EmptyState dropping={dropping} />}
         {session && drop && (
@@ -384,6 +386,7 @@ export function App() {
           </div>
         )}
       </main>
+      </div>
       {session && <EqPanel />}
       <StatusBar hint={hint} />
       <ClipPanel />
