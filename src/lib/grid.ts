@@ -82,3 +82,39 @@ export function parsePosition(text: string, rate: number, bpm: number, units: Un
   if (time) return Math.round(((time[1] ? Number(time[1]) * 60 : 0) + Number(time[2])) * rate);
   return null;
 }
+
+/** x positions (px from the view's left edge) of the lanes' grid lines,
+ * on the ruler's ticks at the current zoom. `strong` are bars in bars mode
+ * (or the labelled ticks once a label spans more than a bar), and the
+ * labelled ticks in time mode; `weak` are the rest of the ruler's ticks. */
+export function gridLines(
+  units: Units,
+  rate: number,
+  bpm: number,
+  start: number,
+  fpp: number,
+  width: number,
+): { strong: number[]; weak: number[] } {
+  const strong: number[] = [];
+  const weak: number[] = [];
+  // Ticks per strong line, the tick's width in frames, and the first tick.
+  let tick: number;
+  let per: number;
+  if (units === "bars") {
+    const beat = beatFrames(rate, bpm);
+    const step = barStep(beat / fpp);
+    tick = (step / 4) * beat;
+    per = Math.round(Math.max(step, BEATS_PER_BAR) / (step / 4));
+  } else {
+    const step = rulerStep(rate / fpp);
+    tick = (step / 5) * rate;
+    per = 5;
+  }
+  const end = start + width * fpp;
+  for (let k = Math.max(0, Math.floor(start / tick)); k * tick <= end; k++) {
+    const x = (k * tick - start) / fpp;
+    if (x < 0) continue;
+    (k % per === 0 ? strong : weak).push(x);
+  }
+  return { strong, weak };
+}

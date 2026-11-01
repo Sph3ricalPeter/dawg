@@ -4,8 +4,8 @@ import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
 import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, shiftEnvelope, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
-import { MIN_LEN, allClips, snapStep, useSession, type View } from "@/stores/session-store";
-import { snapTo } from "@/lib/grid";
+import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/stores/session-store";
+import { gridLines, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 
 const TITLE_H = 14;
@@ -798,6 +798,24 @@ export function GainReadout({ clip, track, className }: { clip: ClipState; track
   );
 }
 
+/** The lane's vertical grid behind the clips: the ruler's ticks, stronger
+ * on bars (or on the labelled seconds in time mode). */
+function Grid({ view, width }: { view: View; width: number }) {
+  const rate = useSession((s) => s.session?.rate ?? 0);
+  const bpm = useSession((s) => s.session?.bpm ?? 120);
+  const units = useSession((s) => gridOf(s).units);
+  if (!rate || width <= 0) return null;
+  const { strong, weak } = gridLines(units, rate, bpm, view.start, view.fpp, width);
+  // Half-pixel x keeps each 1 px line crisp.
+  const d = (xs: number[]) => xs.map((x) => `M${Math.round(x) + 0.5} 0V1`).join("");
+  return (
+    <svg className="lgrid" width={width} height="100%" viewBox={`0 0 ${width} 1`} preserveAspectRatio="none">
+      <path d={d(weak)} className="beat" />
+      <path d={d(strong)} className="bar" />
+    </svg>
+  );
+}
+
 /** One track's lane: its clips, the range and the playhead. */
 export function Lane({ track, index }: { track: TrackState; index: number }) {
   const view = useSession((s) => s.view);
@@ -848,6 +866,7 @@ export function Lane({ track, index }: { track: TrackState; index: number }) {
       onPointerDown={onBackground}
       data-hint="Drag to select clips · click to deselect · drop files to add clips · the playhead moves from the ruler · wheel scrolls tracks, Shift+wheel scrolls time, Ctrl+wheel zooms time, Alt+wheel zooms track height"
     >
+      <Grid view={view} width={width} />
       {ghost && <Ghost clip={ghost} view={view} width={width} height={height} />}
       {track.clips.map((c) => (
         <ClipView

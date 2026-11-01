@@ -12,6 +12,8 @@
   --knob-track: #333333;
   --line: #1e1e1e;
   --line-strong: #262626;
+  --grid-bar: #202020;
+  --grid-beat: #141414;
   --range: rgba(255, 255, 255, 0.05);
   --playhead: #f0f0f0;
   --warn: #ffd23f;
@@ -906,6 +908,24 @@ body.rsizing * {
   overflow: hidden;
   background: var(--bg-2b);
   cursor: default;
+}
+/* The lane's grid sits under everything else in the lane. */
+.lane .lgrid {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.lane .lgrid path {
+  fill: none;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.lane .lgrid .beat {
+  stroke: var(--grid-beat);
+}
+.lane .lgrid .bar {
+  stroke: var(--grid-bar);
 }
 .marquee {
   position: fixed;
