@@ -6,7 +6,9 @@
 //! independently. All channels share one set of phase advances, taken from
 //! their sum, so the stereo image holds still. The audio is cut at its
 //! onsets and each piece is stretched on its own, starting from its own
-//! phases, so a hit never smears back into the silence before it.
+//! phases, so a hit never smears back into the silence before it. Around
+//! each cut the sound fades briefly through the unstretched input, so the
+//! pieces meet without a click.
 //!
 //! It runs when a clip's stretch or pitch changes, never on the audio
 //! thread: the clip keeps the result (see [`crate::Clip::audio`]) and the
@@ -70,18 +72,50 @@ fn fft_size(rate: u32) -> usize {
 /// same pitch, onset to onset.
 fn vocode(input: &[f32], ch: usize, factor: f64, n: usize) -> Vec<f32> {
     let frames_in = input.len() / ch;
-    let total = (frames_in as f64 * factor).ceil() as usize;
     let mut cuts = onsets(input, ch, n);
     cuts.push(frames_in);
-    let mut out = Vec::with_capacity(total * ch);
+    join(input, ch, factor, n, &cuts)
+}
+
+/// `input` vocoded piece by piece, cut at `cuts` (0 first, the input's
+/// length last).
+fn join(input: &[f32], ch: usize, factor: f64, n: usize, cuts: &[usize]) -> Vec<f32> {
+    let frames_in = input.len() / ch;
+    let total = (frames_in as f64 * factor).ceil() as usize;
+    // The pieces run on different phases, and a hard cut from one to the
+    // next clicks. So around each cut the sound fades through the input as
+    // it is, which the next piece starts from. Those moments hold nothing
+    // of the hit, which starts at least 32 frames after the cut.
+    let fade = 128;
+    let mut out: Vec<f32> = Vec::with_capacity(total * ch);
     for w in cuts.windows(2) {
         let (a, b) = (w[0], w[1]);
-        let len = if b == frames_in {
+        let at = out.len() / ch;
+        let lead = fade.min(at).min(a);
+        let start = (at - lead) * ch;
+        let dry = &input[(a - lead) * ch..a * ch];
+        for (i, (o, &v)) in out[start..].iter_mut().zip(dry).enumerate() {
+            let x = (i / ch) as f32 + 0.5;
+            let g = 0.5 - 0.5 * (PI as f32 * x / lead as f32).cos();
+            *o = *o * (1.0 - g) + v * g;
+        }
+        let end = if b == frames_in {
             total
         } else {
             (b as f64 * factor).round() as usize
-        } - out.len() / ch;
-        out.extend(vocode_piece(&input[a * ch..b * ch], ch, factor, n, len));
+        };
+        out.extend(vocode_piece(&input[..b * ch], ch, a, factor, n, end - at));
+        // ...and into the piece over its first few frames, which come before
+        // the hit too.
+        if lead > 0 {
+            let post = 32.min(end - at).min(b - a);
+            let dry = &input[a * ch..(a + post) * ch];
+            for (i, (o, &v)) in out[at * ch..].iter_mut().zip(dry).enumerate() {
+                let x = (i / ch) as f32 + 0.5;
+                let g = 0.5 - 0.5 * (PI as f32 * x / post as f32).cos();
+                *o = v * (1.0 - g) + *o * g;
+            }
+        }
     }
     out
 }
@@ -118,9 +152,24 @@ fn onsets(input: &[f32], ch: usize, gap: usize) -> Vec<usize> {
     out
 }
 
-/// Phase vocoder: one piece of `input`, made `frames_out` frames long.
-fn vocode_piece(input: &[f32], ch: usize, factor: f64, n: usize, frames_out: usize) -> Vec<f32> {
+/// Phase vocoder: `input` from frame `from` to its end, made `frames_out`
+/// frames long. Windows may look back before `from` but never past the end,
+/// so a hit just after the piece never smears back into it: near the end
+/// the windows stop at the last `n` frames and play them on.
+fn vocode_piece(
+    input: &[f32],
+    ch: usize,
+    from: usize,
+    factor: f64,
+    n: usize,
+    frames_out: usize,
+) -> Vec<f32> {
     let frames_in = input.len() / ch;
+    let last = if frames_in - from >= n {
+        (frames_in - n / 2) as i64
+    } else {
+        i64::MAX
+    };
     let half = n / 2;
     let bins = half + 1;
     // Output hop; the analysis hop is this over `factor`, rounded per frame
@@ -154,7 +203,7 @@ fn vocode_piece(input: &[f32], ch: usize, factor: f64, n: usize, frames_out: usi
         if centre > frames_out + half {
             break;
         }
-        let pos = (centre as f64 / factor).round() as i64;
+        let pos = (from as i64 + (centre as f64 / factor).round() as i64).min(last);
 
         // Windowed analysis around `pos`, per channel.
         for (c, s) in spec.iter_mut().enumerate() {
@@ -339,6 +388,48 @@ mod tests {
             .map(|f| (f[0] - f[1]).abs())
             .fold(0f32, f32::max);
         assert!(worst < 1e-5, "channels drifted apart by {worst}");
+    }
+}
+
+#[cfg(test)]
+mod joins {
+    use super::*;
+
+    /// A steady 300 Hz tone (one period is 160 frames), cut every 6000
+    /// frames as if there were a hit at each.
+    fn tone_in_pieces(stretch: f64) -> Vec<f32> {
+        let x: Vec<f32> = (0..96_000)
+            .map(|i| (0.5 * (2.0 * PI * 300.0 * i as f64 / 48_000.0).sin()) as f32)
+            .collect();
+        let cuts: Vec<usize> = (0..=x.len()).step_by(6000).collect();
+        join(&x, 1, stretch, 2048, &cuts)
+    }
+
+    #[test]
+    fn pieces_join_without_a_click() {
+        // The tone's own second difference peaks at about 0.0008; a hard
+        // cut between pieces made steps of 0.05 to 0.3.
+        for stretch in [0.25, 0.5, 0.8, 1.5, 2.0] {
+            let y = tone_in_pieces(stretch);
+            let worst = (2048..y.len() - 2048)
+                .map(|i| (y[i + 1] - 2.0 * y[i] + y[i - 1]).abs())
+                .fold(0f32, f32::max);
+            assert!(worst < 0.003, "{stretch}: step of {worst}");
+        }
+    }
+
+    #[test]
+    fn pieces_keep_their_level_to_the_end() {
+        for stretch in [0.25, 0.5, 0.8, 1.5, 2.0] {
+            let y = tone_in_pieces(stretch);
+            // Crossfading two copies of the tone a little out of phase dips
+            // it slightly; fading out at each piece's end dipped it 7 dB.
+            for (k, b) in y[2048..y.len() - 2048].chunks_exact(160).enumerate() {
+                let rms = (b.iter().map(|v| v * v).sum::<f32>() / 160.0).sqrt();
+                let db = 20.0 * (rms / 0.3536).log10();
+                assert!(db.abs() < 3.0, "{stretch}: {db:.1} dB at block {k}");
+            }
+        }
     }
 }
 
