@@ -104,6 +104,7 @@ pub fn run() {
             commands::apply,
             commands::end_gesture,
             commands::set_selection,
+            commands::cli_path,
             commands::undo,
             commands::redo,
             commands::jump_history,

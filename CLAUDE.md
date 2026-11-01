@@ -33,8 +33,11 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   is open, `dawg-cli mcp` runs each tool there instead (a per-user local
   pipe named after the app id, `src-tauri/src/agent.rs`), so edits land
   live and the UI shows them (AI chip, `AI` history badge). `tools.rs` is
-  shared by both sides. Backups go to the app's own backups folder. CI
-  uploads `dawg-cli.exe` as an artifact; not in the installer yet.
+  shared by both sides, including takes (`begin_take`/`end_take`: applies
+  fold into one "AI: ..." step via `Session::merge_last`). Backups go to
+  the app's own backups folder. The installer ships `dawg-cli.exe` next to
+  `dawg.exe`: `beforeBundleCommand` builds it and `windows/hooks.nsh`
+  installs it.
 - `src-tauri`: the Tauri app crate (`dawg`). `commands.rs` (IPC),
   `audio.rs` (cpal output), `recent.rs` (recent projects), plugins,
   installer config (`windows/hooks.nsh`: "Edit in dawg" and the `.dawg`

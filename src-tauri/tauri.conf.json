@@ -8,7 +8,8 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5177",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": "cargo build --release -p dawg-cli"
   },
   "app": {
     "windows": [

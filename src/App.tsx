@@ -110,15 +110,22 @@ function AiChip() {
     <button
       className={`aichip${busy ? " busy" : ""}${last ? "" : " off"}`}
       data-hint="An AI agent works in this window through dawg-cli mcp: add it as an MCP server in Claude Code or Claude Desktop"
-      onClick={() =>
-        useSession
-          .getState()
-          .showToast(
-            last?.error
-              ? `The agent's last call (${last.tool}) failed: ${last.error}`
-              : "Add `dawg-cli mcp` as an MCP server in your agent (Claude Code: claude mcp add dawg -- dawg-cli mcp). Its edits land here as AI steps you can undo.",
-          )
-      }
+      onClick={() => {
+        const toast = useSession.getState().showToast;
+        if (last?.error) {
+          toast(`The agent's last call (${last.tool}) failed: ${last.error}`);
+          return;
+        }
+        void api
+          .cliPath()
+          .catch(() => null)
+          .then((path) => {
+            const cmd = `claude mcp add dawg -- ${path ? `"${path}"` : "dawg-cli"} mcp`;
+            toast(`Connect an agent with: ${cmd}. Its edits land here as AI steps you can undo.`, {
+              action: { label: "Copy", run: () => void navigator.clipboard.writeText(cmd).catch(() => undefined) },
+            });
+          });
+      }}
     >
       <span className="d" />
       <span>{text}</span>

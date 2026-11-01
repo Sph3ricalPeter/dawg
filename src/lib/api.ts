@@ -268,6 +268,8 @@ export const api = {
   apply: (command: Command, transient: boolean) =>
     invoke<SessionState>("apply", { command, transient }),
   endGesture: () => invoke<SessionState>("end_gesture"),
+  /** The installed dawg-cli, if it's next to the app. */
+  cliPath: () => invoke<string | null>("cli_path"),
   /** What an agent's `get_selection` sees: clip ids and the ruler range. */
   setSelection: (clips: number[], range: [number, number] | null) =>
     invoke<void>("set_selection", { clips, range }),

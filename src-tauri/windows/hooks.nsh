@@ -11,6 +11,16 @@
 !define DAWG_PROGID_KEY "Software\Classes\${DAWG_PROGID}"
 !define DAWG_EXT_KEY "Software\Classes\.dawg"
 
+; dawg-cli.exe (the CLI and MCP server) installs next to the app. The
+; build's beforeBundleCommand makes it; this file sits in src-tauri/windows.
+!if /FileExists "${__FILEDIR__}\..\..\target\release\dawg-cli.exe"
+  !define DAWG_CLI "${__FILEDIR__}\..\..\target\release\dawg-cli.exe"
+!else if /FileExists "..\..\dawg-cli.exe"
+  !define DAWG_CLI "..\..\dawg-cli.exe"
+!else
+  !error "dawg-cli.exe isn't built: run cargo build --release -p dawg-cli"
+!endif
+
 !macro NSIS_HOOK_PREINSTALL
   ; Claude Desktop and other MCP clients keep dawg-cli.exe running as the MCP
   ; server, and Windows won't replace a running exe. The client restarts it
@@ -20,6 +30,9 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  SetOutPath "$INSTDIR"
+  File "/oname=dawg-cli.exe" "${DAWG_CLI}"
+
   ; Per-user "Edit in dawg" entry on .wav and .mp3 files (classic menu on
   ; Windows 11).
   WriteRegStr HKCU "${DAWG_VERB_KEY}" "" "Edit in ${PRODUCTNAME}"
@@ -47,6 +60,9 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  nsExec::Exec 'taskkill /F /IM dawg-cli.exe'
+  Pop $0
+  Delete "$INSTDIR\dawg-cli.exe"
   DeleteRegKey HKCU "${DAWG_VERB_KEY}"
   DeleteRegKey HKCU "${DAWG_MP3_VERB_KEY}"
   DeleteRegKey HKCU "${DAWG_PROGID_KEY}"

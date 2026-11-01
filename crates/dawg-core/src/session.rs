@@ -819,6 +819,26 @@ impl Session {
         self.redo.clear();
     }
 
+    /// Edits that can be undone.
+    pub fn undo_len(&self) -> usize {
+        self.undo.len()
+    }
+
+    /// Folds the last edit into the one before it, named `label`: how an
+    /// agent's take becomes one undo step as it goes. False when there
+    /// aren't two edits to fold.
+    pub fn merge_last(&mut self, label: String) -> bool {
+        self.end_gesture();
+        if self.undo.len() < 2 {
+            return false;
+        }
+        self.undo.pop();
+        if let Some(s) = self.undo.last_mut() {
+            s.label = label;
+        }
+        true
+    }
+
     pub fn undo(&mut self) -> bool {
         self.end_gesture();
         let Some(s) = self.undo.pop() else {

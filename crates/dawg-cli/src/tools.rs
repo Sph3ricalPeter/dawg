@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 
 use dawg_core::file::Codec;
 use dawg_core::session::{is_project, ExportOptions, Placement, Session};
-use dawg_core::{save, Command};
+use dawg_core::{save, Command, Project};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 use crate::{frames, open, png};
 
@@ -34,6 +35,8 @@ pub struct Ctx<'a> {
 pub const REPLACES: &[&str] = &["open", "new_project"];
 /// Tools that only read; the rest may change the session.
 pub const READS: &[&str] = &[
+    "begin_take",
+    "end_take",
     "get_project",
     "get_selection",
     "analyze",
@@ -44,7 +47,32 @@ pub const READS: &[&str] = &[
 /// The tools on one session slot.
 pub struct Tools<'a> {
     pub slot: &'a mut Option<Session>,
+    /// The take under way, kept between calls next to the session.
+    pub take: &'a mut Option<Take>,
     pub ctx: Ctx<'a>,
+}
+
+/// An agent's take: its applies fold into one undo step as they land. If
+/// the user edits in between, that edit stays its own step and the take
+/// carries on as a new step marked "(cont.)".
+#[derive(Debug, Clone)]
+pub struct Take {
+    label: String,
+    cont: bool,
+    edits: usize,
+    /// The session state and history length right after the take's last
+    /// edit, to tell whether anyone edited since.
+    last: Option<(Arc<Project>, usize)>,
+}
+
+impl Take {
+    fn step(&self) -> String {
+        if self.cont {
+            format!("AI: {} (cont.)", self.label)
+        } else {
+            format!("AI: {}", self.label)
+        }
+    }
 }
 
 impl Tools<'_> {
@@ -60,10 +88,12 @@ impl Tools<'_> {
             "open" => {
                 let path = PathBuf::from(str_arg(a, "path")?);
                 *self.slot = Some(open(&path)?);
+                *self.take = None;
                 self.state()
             }
             "new_project" => {
                 *self.slot = Some(Session::new_project());
+                *self.take = None;
                 self.state()
             }
             "get_project" => self.state(),
@@ -104,15 +134,76 @@ impl Tools<'_> {
                     .and_then(Value::as_str)
                     .filter(|l| !l.trim().is_empty())
                     .unwrap_or("edit");
-                let batch = Command::Batch {
-                    commands,
-                    label: Some(format!("AI: {}", label.trim())),
-                };
-                let s = self.session()?;
+                let slot = &mut *self.slot;
+                let s = slot
+                    .as_mut()
+                    .ok_or("nothing is open: call open or new_project first")?;
                 // An agent's edit is its own step, even mid-drag in the app.
                 s.end_gesture();
+                let before = s.undo_len();
+                let ours = match self.take.as_mut() {
+                    Some(t) => {
+                        let ours = t
+                            .last
+                            .as_ref()
+                            .is_some_and(|(p, n)| Arc::ptr_eq(p, s.project()) && *n == before);
+                        if t.last.is_some() && !ours {
+                            t.cont = true;
+                        }
+                        Some(ours)
+                    }
+                    None => None,
+                };
+                let step = match self.take.as_ref() {
+                    Some(t) => t.step(),
+                    None => format!("AI: {}", label.trim()),
+                };
+                let batch = Command::Batch {
+                    commands,
+                    label: Some(step.clone()),
+                };
                 s.apply(&batch, false).map_err(|e| e.to_string())?;
+                if let Some(t) = self.take.as_mut() {
+                    if s.undo_len() > before {
+                        if ours == Some(true) {
+                            s.merge_last(step);
+                        }
+                        t.edits += 1;
+                    }
+                    t.last = Some((s.project().clone(), s.undo_len()));
+                }
                 self.state()
+            }
+            "begin_take" => {
+                let label = str_arg(a, "label")?.trim().to_string();
+                if label.is_empty() {
+                    return Err("label is required".into());
+                }
+                self.session()?;
+                let ended = self.take.replace(Take {
+                    label: label.clone(),
+                    cont: false,
+                    edits: 0,
+                    last: None,
+                });
+                let mut msg = format!("take \"{label}\" started: each apply lands in one undo step named \"AI: {label}\" until end_take");
+                if let Some(t) = ended {
+                    msg = format!("ended take \"{}\" ({} edits); {msg}", t.label, t.edits);
+                }
+                Ok(vec![text(&msg)])
+            }
+            "end_take" => {
+                let t = self.take.take().ok_or("no take is under way")?;
+                Ok(vec![text(&format!(
+                    "take \"{}\" done: {} edit(s){}; one undo takes it back",
+                    t.label,
+                    t.edits,
+                    if t.cont {
+                        ", split around your user's own edits"
+                    } else {
+                        ""
+                    }
+                ))])
             }
             "undo" | "redo" => {
                 let s = self.session()?;
@@ -412,8 +503,11 @@ pub fn list() -> Value {
         { "name": "apply", "description": format!("Edit the session: the commands apply together as one undo step named \"AI: <label>\", or none do.\n{COMMANDS}"),
           "inputSchema": obj(json!({
               "commands": { "type": "array", "items": { "type": "object" } },
-              "label": { "type": "string", "description": "A few words for the history, like \"tighten kick tail\"." }
-          }), &["commands", "label"]) },
+              "label": { "type": "string", "description": "A few words for the history, like \"tighten kick tail\". Inside a take, the take's label is used." }
+          }), &["commands"]) },
+        { "name": "begin_take", "description": "Start a take: every apply until end_take folds into one undo step named \"AI: <label>\", so the user can undo the whole idea at once. If the user edits meanwhile, their edit stays separate and the take continues as \"(cont.)\".",
+          "inputSchema": obj(json!({ "label": { "type": "string", "description": "What the take does, like \"swell into the drop\"." } }), &["label"]) },
+        { "name": "end_take", "description": "Finish the take started with begin_take.", "inputSchema": obj(json!({}), &[]) },
         { "name": "undo", "description": "Undo the last edit.", "inputSchema": obj(json!({}), &[]) },
         { "name": "redo", "description": "Redo the last undone edit.", "inputSchema": obj(json!({}), &[]) },
         { "name": "analyze", "description": "Measure the mix, a track or a clip: peak, RMS, integrated and short-term LUFS, crest factor, where sound starts and ends, onsets, spectral centroid, and an RMS curve in 100 ms steps.",

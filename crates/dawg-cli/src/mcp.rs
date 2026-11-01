@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use dawg_core::session::Session;
 use serde_json::{json, Value};
 
-use crate::tools::{self, text, Ctx, Tools};
+use crate::tools::{self, text, Ctx, Take, Tools};
 use crate::{backup_dir, pipe};
 
 const PROTOCOLS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -49,6 +49,7 @@ pub fn serve() -> Result<(), String> {
 pub struct Server {
     /// The headless session, while the app isn't open.
     session: Option<Session>,
+    take: Option<Take>,
     /// Look for the open app before each call.
     attach: bool,
     backups: PathBuf,
@@ -62,6 +63,7 @@ impl Server {
     pub fn new(attach: bool) -> Server {
         Server {
             session: None,
+            take: None,
             attach,
             backups: backup_dir(),
         }
@@ -106,6 +108,7 @@ impl Server {
                 let r = app.unwrap_or_else(|| {
                     Tools {
                         slot: &mut self.session,
+                        take: &mut self.take,
                         ctx: Ctx {
                             backups: &self.backups,
                             attached: false,
@@ -303,6 +306,63 @@ mod tests {
         assert_eq!(tool(&mut s, "undo", json!({}))["isError"], false);
         tool(&mut s, "open", json!({ "path": project }));
         assert_eq!(s.session.as_ref().unwrap().state().end, 48_000);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_take_is_one_undo_step_around_the_users_edits() {
+        let dir = tmp("take");
+        let a = wav(&dir, "hit.wav");
+        let mut s = Server::new(false);
+        tool(&mut s, "open", json!({ "path": a }));
+        let clip = s.session.as_ref().unwrap().state().tracks[0].clips[0].id;
+        let gain = |db: f64| json!({ "commands": [{ "type": "set_clip_gain", "clip": clip, "gain_db": db }] });
+        assert_eq!(
+            tool(&mut s, "begin_take", json!({ "label": "duck it" }))["isError"],
+            false
+        );
+        tool(&mut s, "apply", gain(-3.0));
+        tool(&mut s, "apply", gain(-6.0));
+        let labels = |s: &Server| -> Vec<String> {
+            s.session
+                .as_ref()
+                .unwrap()
+                .state()
+                .history
+                .into_iter()
+                .map(|e| e.label)
+                .collect()
+        };
+        assert_eq!(labels(&s), ["AI: duck it"]);
+        // The user edits mid-take: theirs stays separate.
+        s.session
+            .as_mut()
+            .unwrap()
+            .apply(
+                &dawg_core::Command::SetClipFades {
+                    clip,
+                    fade_in: 10,
+                    fade_out: 0,
+                    curve_in: None,
+                    curve_out: None,
+                },
+                false,
+            )
+            .unwrap();
+        tool(&mut s, "apply", gain(-9.0));
+        tool(&mut s, "apply", gain(-12.0));
+        assert_eq!(labels(&s), ["AI: duck it", "Fades", "AI: duck it (cont.)"]);
+        let r = tool(&mut s, "end_take", json!({}));
+        assert!(r["content"][0]["text"].as_str().unwrap().contains("4 edit"));
+        assert_eq!(tool(&mut s, "end_take", json!({}))["isError"], true);
+        tool(&mut s, "apply", gain(-1.0));
+        assert_eq!(labels(&s).last().unwrap(), "AI: edit");
+        tool(&mut s, "undo", json!({}));
+        tool(&mut s, "undo", json!({}));
+        assert_eq!(
+            s.session.as_ref().unwrap().clip(clip).unwrap().gain,
+            10f32.powf(-6.0 / 20.0)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

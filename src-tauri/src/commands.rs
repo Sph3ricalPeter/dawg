@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use dawg_cli::tools::{self, Ctx, Selection, Tools};
+use dawg_cli::tools::{self, Ctx, Selection, Take, Tools};
 use dawg_core::file::Codec;
 use dawg_core::save::{self, Replaced};
 use dawg_core::session::{
@@ -31,6 +31,8 @@ struct Inner {
     pending_file: Option<PathBuf>,
     /// The UI's selection, for an agent's `get_selection`.
     selection: Selection,
+    /// An agent's take under way.
+    take: Option<Take>,
 }
 
 impl AppState {
@@ -41,6 +43,7 @@ impl AppState {
                 audio: Audio::default(),
                 pending_file: startup_file,
                 selection: Selection::default(),
+                take: None,
             }),
         }
     }
@@ -70,8 +73,10 @@ impl AppState {
             return (Err(msg.into()), None);
         }
         let selection = s.selection.clone();
+        let Inner { session, take, .. } = &mut *s;
         let r = Tools {
-            slot: &mut s.session,
+            slot: session,
+            take,
             ctx: Ctx {
                 backups,
                 attached: true,
@@ -265,6 +270,18 @@ pub fn apply(state: State<AppState>, command: Command, transient: bool) -> Resul
         .map_err(|e| Error::new("command", e.to_string()))?;
     s.publish();
     Ok(s.state().expect("session is open"))
+}
+
+/// The installed `dawg-cli` next to this app, for the MCP setup hint.
+#[tauri::command]
+pub fn cli_path() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "dawg-cli.exe"
+    } else {
+        "dawg-cli"
+    };
+    let p = std::env::current_exe().ok()?.with_file_name(name);
+    p.exists().then_some(p)
 }
 
 /// The selected clips and ruler range, as an agent's `get_selection` sees
