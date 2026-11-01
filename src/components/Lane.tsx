@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type ClipState, type EnvPoint, type FadeCurve, type TrackState } from "@/lib/api";
 import { startDrag } from "@/lib/drag";
 import { locateSource } from "@/lib/actions";
-import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
+import { clamp, dbToGain, envelopeAt, fadeAt, fadeShape, fmtDb, fmtMs, MAX_GAIN_DB, fmtPitch, fmtStretch, maxLen, srcAt, stem } from "@/lib/format";
 import { ENV_MAX, envY, trackColor } from "@/lib/timeline";
 import { MIN_LEN, allClips, snapStep, useSession, type View } from "@/stores/session-store";
 import { snapTo } from "@/lib/grid";
+import { Knob } from "./Knob";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
@@ -755,7 +756,9 @@ export function PitchReadout({ clip, track }: { clip: ClipState; track: number }
   );
 }
 
-/** Clip gain, FL style: drag up or down, double-click for 0 dB. */
+/** Clip gain, FL style: drag up or down, double-click for 0 dB. In the clip's
+ * title bar it carries the mockup's small bipolar knob (0 dB centred, ±24 dB
+ * at the ends); the pill on the waveform stays text. */
 export function GainReadout({ clip, track, className }: { clip: ClipState; track: number; className: string }) {
   const onDown = (e: React.PointerEvent) => {
     const g0 = clip.gainDb <= -96 ? -60 : clip.gainDb;
@@ -778,6 +781,7 @@ export function GainReadout({ clip, track, className }: { clip: ClipState; track
       onDoubleClick={() => void useSession.getState().apply({ type: "set_clip_gain", clip: clip.id, gain_db: 0 })}
       data-hint="Clip gain · drag up or down (Shift for fine, Alt skips the 0 dB snap) · double-click for 0 dB"
     >
+      {className === "gain" && <Knob f={clamp(clip.gainDb / MAX_GAIN_DB, -1, 1)} bipolar size={12} />}
       {fmtDb(clip.gainDb, false)}
     </span>
   );

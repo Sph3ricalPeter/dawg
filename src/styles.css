@@ -1013,9 +1013,14 @@ body.rsizing * {
 .clip .gain {
   margin-left: auto;
   font-size: 10px;
-  padding: 0 4px;
+  padding: 0 3px 0 4px;
   border-radius: 2px;
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  --knob: #141414;
+  --knob-track: rgba(0, 0, 0, 0.2);
 }
 .clip .gain:hover {
   background: rgba(0, 0, 0, 0.12);
