@@ -875,6 +875,12 @@ body.rsizing * {
   position: fixed;
   z-index: 30;
   min-width: 190px;
+  max-width: 280px;
+}
+.menu.ctx .menu-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tinfo {
   display: flex;

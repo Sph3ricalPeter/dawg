@@ -34,6 +34,8 @@ interface MenuState {
   x: number;
   y: number;
   title: string;
+  /** The full path, shown on hover over the title. */
+  path: string;
   items: MenuEntry[];
 }
 
@@ -422,7 +424,7 @@ export function Browser() {
       { label: "Copy path", run: () => void navigator.clipboard.writeText(path).catch(() => undefined) },
       ...(isRecent ? ["-" as const, { label: "Remove from Recent files", run: () => b().forgetRecent(path) }] : []),
     ];
-    setMenu({ x: e.clientX, y: e.clientY, title: baseName(path), items });
+    setMenu({ x: e.clientX, y: e.clientY, title: baseName(path), path, items });
   };
   const folderMenu = (e: React.MouseEvent, path: string, isRoot: boolean) => {
     e.preventDefault();
@@ -436,7 +438,7 @@ export function Browser() {
       { label: "Show in Explorer", run: () => void api.revealPath(path) },
       { label: "Copy path", run: () => void navigator.clipboard.writeText(path).catch(() => undefined) },
     ];
-    setMenu({ x: e.clientX, y: e.clientY, title: path, items });
+    setMenu({ x: e.clientX, y: e.clientY, title: baseName(path), path, items });
   };
 
   return (
@@ -523,7 +525,9 @@ export function Browser() {
       {menu && (
         <div className="menu ctx" role="menu" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
           <div className="menu-head">
-            <b>{menu.title}</b>
+            <b className="menu-title" data-tip={menu.path}>
+              {menu.title}
+            </b>
           </div>
           {menu.items.map((it, i) =>
             it === "-" ? (
