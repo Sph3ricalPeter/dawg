@@ -6,8 +6,11 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::eq::{Eq, EqBand, MAX_BANDS};
-use crate::model::{Clip, EnvPoint, FadeCurve, Project, Track, ENV_MAX, MAX_BPM, MIN_BPM};
+use crate::device::{Device, DeviceKind, DeviceParams, MAX_DEVICES};
+use crate::eq::{EqBand, MAX_BANDS};
+use crate::model::{
+    Clip, EnvPoint, FadeCurve, Project, Send, Track, ENV_MAX, MASTER, MAX_BPM, MIN_BPM,
+};
 use crate::stretch::{MAX_PITCH, MAX_STRETCH, MIN_STRETCH};
 
 /// Shortest clip a trim or split can leave, in frames.
@@ -92,13 +95,84 @@ pub enum Command {
     DuplicateClip {
         clip: u64,
     },
-    /// A new empty track at the bottom.
+    /// A new empty channel at the end, sending to the master. With `lane`
+    /// false it is a mixer-only channel (a return or bus): no timeline lane.
     AddTrack {
         name: String,
+        #[serde(default = "yes", skip_serializing_if = "is_true")]
+        lane: bool,
     },
-    /// A track and every clip on it.
+    /// A channel and every clip on it. Sends and sidechains from other
+    /// channels into it go too; a channel left with no output falls back
+    /// to the master.
     DeleteTrack {
         track: u64,
+    },
+    /// A copy of a channel right after it: its devices, sends, volume and
+    /// pan, without clips.
+    DuplicateTrack {
+        track: u64,
+    },
+    /// Show a channel in the timeline, or keep it to the mixer.
+    SetTrackLane {
+        track: u64,
+        lane: bool,
+    },
+    /// Add a device to a channel's chain (`channel` 0 is the master) at
+    /// `index` (the end when left out), with its default settings or
+    /// `params`.
+    AddDevice {
+        channel: u64,
+        kind: DeviceKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        params: Option<DeviceParams>,
+    },
+    /// Change a device's settings (all of them, of its own kind, clamped
+    /// into range) and/or turn it on or off (bypass).
+    SetDevice {
+        device: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        params: Option<DeviceParams>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<bool>,
+    },
+    /// Move a device to position `index` of `channel`'s chain (its own or
+    /// another's; 0 is the master).
+    MoveDevice {
+        device: u64,
+        channel: u64,
+        index: usize,
+    },
+    /// Copy a device to position `index` of `channel`'s chain.
+    CopyDevice {
+        device: u64,
+        channel: u64,
+        index: usize,
+    },
+    RemoveDevice {
+        device: u64,
+    },
+    /// Where a compressor listens ("Input from"): a channel id, or `None`
+    /// for its own input. Fails if it would make a loop.
+    SetSidechain {
+        device: u64,
+        #[serde(default)]
+        from: Option<u64>,
+    },
+    /// Send channel `from` into channel `to` (0 is the master) at `gain_db`
+    /// (-96 to +6), after `from`'s volume and pan; adds the send or sets
+    /// its level. Fails if it would make a loop.
+    SetSend {
+        from: u64,
+        to: u64,
+        gain_db: f32,
+    },
+    /// Stop sending `from` into `to`. A channel with no sends is silent.
+    RemoveSend {
+        from: u64,
+        to: u64,
     },
     RenameTrack {
         track: u64,
@@ -117,9 +191,10 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         solo: Option<bool>,
     },
-    /// Replace a track's EQ bands (at most 12; values are clamped into
-    /// range). `bypass` turns the whole EQ off and on, keeping the bands; left
-    /// out, it stays as it is.
+    /// Replace the bands of a track's first EQ device, adding one at the
+    /// start of its chain if it has none (at most 12 bands; values are
+    /// clamped into range). `bypass` turns that EQ off and on, keeping the
+    /// bands; left out, it stays as it is.
     SetTrackEq {
         track: u64,
         bands: Vec<EqBand>,
@@ -178,6 +253,17 @@ impl fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
+fn yes() -> bool {
+    true
+}
+
+fn is_true(v: &bool) -> bool {
+    *v
+}
+
+/// Loudest a send goes.
+pub const MAX_SEND_DB: f32 = 6.0;
+
 pub const MIN_GAIN_DB: f32 = -96.0;
 pub const MAX_GAIN_DB: f32 = 24.0;
 /// Loudest a track fader goes.
@@ -235,6 +321,30 @@ impl Command {
             Command::DuplicateClip { .. } => "Duplicate clip",
             Command::AddTrack { .. } => "Add track",
             Command::DeleteTrack { .. } => "Delete track",
+            Command::DuplicateTrack { .. } => "Duplicate channel",
+            Command::SetTrackLane { lane: true, .. } => "Show in timeline",
+            Command::SetTrackLane { .. } => "Hide from timeline",
+            Command::AddDevice { kind, .. } => return format!("Add {}", kind.name()),
+            Command::SetDevice {
+                params: None,
+                on: Some(true),
+                ..
+            } => "Device on",
+            Command::SetDevice {
+                params: None,
+                on: Some(false),
+                ..
+            } => "Bypass device",
+            Command::SetDevice {
+                params: Some(p), ..
+            } => p.kind().name(),
+            Command::SetDevice { .. } => "Device",
+            Command::MoveDevice { .. } => "Move device",
+            Command::CopyDevice { .. } => "Copy device",
+            Command::RemoveDevice { .. } => "Delete device",
+            Command::SetSidechain { .. } => "Sidechain",
+            Command::SetSend { .. } => "Send",
+            Command::RemoveSend { .. } => "Remove send",
             Command::RenameTrack { .. } => "Rename track",
             Command::SetTrackMix {
                 gain_db,
@@ -464,17 +574,159 @@ impl Command {
                 c.id = p.new_id();
                 p.tracks[t].clips.insert(i + 1, c);
             }
-            Command::AddTrack { name } => {
+            Command::AddTrack { name, lane } => {
                 let id = p.new_id();
                 p.tracks.push(Track {
                     id,
                     name: name.clone(),
+                    lane: *lane,
                     ..Track::default()
                 });
             }
             Command::DeleteTrack { track } => {
                 let t = track_index(p, *track)?;
-                p.tracks.remove(t);
+                let id = p.tracks.remove(t).id;
+                unlink(p, id);
+            }
+            Command::DuplicateTrack { track } => {
+                let t = track_index(p, *track)?;
+                let src = p.tracks[t].clone();
+                let id = p.new_id();
+                let chain = src
+                    .chain
+                    .iter()
+                    .map(|d| {
+                        let mut d = d.clone();
+                        d.id = p.new_id();
+                        d
+                    })
+                    .collect();
+                let name = copy_name(p, &src.name);
+                p.tracks.insert(
+                    t + 1,
+                    Track {
+                        id,
+                        name,
+                        clips: Vec::new(),
+                        chain,
+                        solo: false,
+                        ..src
+                    },
+                );
+            }
+            Command::SetTrackLane { track, lane } => {
+                let t = track_index(p, *track)?;
+                p.tracks[t].lane = *lane;
+            }
+            Command::AddDevice {
+                channel,
+                kind,
+                index,
+                params,
+            } => {
+                let rate = p.sample_rate;
+                let params = params.clone().unwrap_or(DeviceParams::default_for(*kind));
+                if params.kind() != *kind {
+                    return err("the settings are for another kind of device");
+                }
+                let id = p.new_id();
+                let chain = chain_mut(p, *channel)?;
+                if chain.len() >= MAX_DEVICES {
+                    return err(format!("a chain holds at most {MAX_DEVICES} devices"));
+                }
+                let at = index.unwrap_or(chain.len()).min(chain.len());
+                chain.insert(at, Device::new(id, params, rate));
+            }
+            Command::SetDevice { device, params, on } => {
+                let rate = p.sample_rate;
+                let (c, i) = device_index(p, *device)?;
+                let d = &mut chain_mut(p, c)?[i];
+                if let Some(params) = params {
+                    if !d.set_params(params.clone(), rate) {
+                        return err(format!(
+                            "device {device} is a {}, not a {}",
+                            d.kind().name(),
+                            params.kind().name()
+                        ));
+                    }
+                }
+                if let Some(on) = on {
+                    d.on = *on;
+                }
+            }
+            Command::MoveDevice {
+                device,
+                channel,
+                index,
+            }
+            | Command::CopyDevice {
+                device,
+                channel,
+                index,
+            } => {
+                let copy = matches!(self, Command::CopyDevice { .. });
+                let (c, i) = device_index(p, *device)?;
+                chain_mut(p, *channel)?;
+                let mut d = chain_mut(p, c)?[i].clone();
+                if let Some(src) = d.sidechain {
+                    if p.would_loop(src, *channel) {
+                        d.sidechain = None;
+                    }
+                }
+                if copy {
+                    d.id = p.new_id();
+                } else {
+                    chain_mut(p, c)?.remove(i);
+                }
+                let to = chain_mut(p, *channel)?;
+                if to.len() >= MAX_DEVICES && (copy || c != *channel) {
+                    return err(format!("a chain holds at most {MAX_DEVICES} devices"));
+                }
+                let at = (*index).min(to.len());
+                to.insert(at, d);
+            }
+            Command::RemoveDevice { device } => {
+                let (c, i) = device_index(p, *device)?;
+                chain_mut(p, c)?.remove(i);
+            }
+            Command::SetSidechain { device, from } => {
+                let (c, i) = device_index(p, *device)?;
+                if !chain_mut(p, c)?[i].kind().has_sidechain() {
+                    return err("this device has no sidechain input");
+                }
+                if let Some(src) = from {
+                    track_index(p, *src)?;
+                    if p.would_loop(*src, c) {
+                        return err(loop_message(p, *src, c));
+                    }
+                }
+                chain_mut(p, c)?[i].sidechain = *from;
+            }
+            Command::SetSend { from, to, gain_db } => {
+                let db = finite(*gain_db, "send level")?.clamp(MIN_GAIN_DB, MAX_SEND_DB);
+                let f = track_index(p, *from)?;
+                if *to != MASTER {
+                    track_index(p, *to)?;
+                }
+                let gain = db_to_gain(db);
+                let sends = &mut p.tracks[f].sends;
+                if let Some(s) = sends.iter_mut().find(|s| s.to == *to) {
+                    s.gain = gain;
+                } else {
+                    if p.would_loop(*from, *to) {
+                        return err(loop_message(p, *from, *to));
+                    }
+                    p.tracks[f].sends.push(Send { to: *to, gain });
+                }
+            }
+            Command::RemoveSend { from, to } => {
+                let f = track_index(p, *from)?;
+                let sends = &mut p.tracks[f].sends;
+                let before = sends.len();
+                sends.retain(|s| s.to != *to);
+                if sends.len() == before {
+                    return err(format!("channel {from} doesn't send to {to}"));
+                }
             }
             Command::RenameTrack { track, name } => {
                 let t = track_index(p, *track)?;
@@ -513,8 +765,30 @@ impl Command {
                 }
                 let rate = p.sample_rate;
                 let t = track_index(p, *track)?;
-                let tr = &mut p.tracks[t];
-                tr.eq = Eq::new(bands, bypass.unwrap_or(tr.eq.bypass()), rate);
+                let params = DeviceParams::Eq {
+                    bands: bands.clone(),
+                };
+                let i = match p.tracks[t]
+                    .chain
+                    .iter()
+                    .position(|d| d.kind() == DeviceKind::Eq)
+                {
+                    Some(i) => i,
+                    None => {
+                        if p.tracks[t].chain.len() >= MAX_DEVICES {
+                            return err(format!("a chain holds at most {MAX_DEVICES} devices"));
+                        }
+                        let id = p.new_id();
+                        let d = Device::new(id, params.clone(), rate);
+                        p.tracks[t].chain.insert(0, d);
+                        0
+                    }
+                };
+                let d = &mut p.tracks[t].chain[i];
+                d.set_params(params, rate);
+                if let Some(b) = bypass {
+                    d.on = !b;
+                }
             }
             Command::MoveTrack { track, index } => {
                 let from = track_index(p, *track)?;
@@ -553,6 +827,78 @@ impl Command {
         }
         Ok(())
     }
+}
+
+/// The chain of channel `id`; 0 is the master's.
+fn chain_mut(p: &mut Project, id: u64) -> Result<&mut Vec<Device>, CommandError> {
+    p.chain_mut(id)
+        .ok_or_else(|| CommandError(format!("no channel {id}")))
+}
+
+/// The channel holding device `id` (0 for the master) and its position.
+fn device_index(p: &Project, id: u64) -> Result<(u64, usize), CommandError> {
+    if let Some(i) = p.master_chain.iter().position(|d| d.id == id) {
+        return Ok((MASTER, i));
+    }
+    p.tracks
+        .iter()
+        .find_map(|t| t.chain.iter().position(|d| d.id == id).map(|i| (t.id, i)))
+        .ok_or_else(|| CommandError(format!("no device {id}")))
+}
+
+/// A channel's name, or "Master".
+fn channel_name(p: &Project, id: u64) -> String {
+    if id == MASTER {
+        return "Master".into();
+    }
+    p.track(id)
+        .map_or_else(|| format!("channel {id}"), |t| t.name.clone())
+}
+
+fn loop_message(p: &Project, from: u64, to: u64) -> String {
+    if from == to {
+        return format!("{} can't feed itself", channel_name(p, from));
+    }
+    format!(
+        "that would make a loop: {} already feeds {}",
+        channel_name(p, to),
+        channel_name(p, from)
+    )
+}
+
+/// Takes deleted channel `id` out of the routing: sends into it and
+/// sidechains from it go, and a channel left with no output falls back to
+/// the master.
+fn unlink(p: &mut Project, id: u64) {
+    for t in &mut p.tracks {
+        let had = !t.sends.is_empty();
+        t.sends.retain(|s| s.to != id);
+        if had && t.sends.is_empty() {
+            t.sends.push(Send::master());
+        }
+        for d in &mut t.chain {
+            if d.sidechain == Some(id) {
+                d.sidechain = None;
+            }
+        }
+    }
+    for d in &mut p.master_chain {
+        if d.sidechain == Some(id) {
+            d.sidechain = None;
+        }
+    }
+}
+
+/// "Kick 2" for a copy of "Kick", or the next free number.
+fn copy_name(p: &Project, name: &str) -> String {
+    let base = name
+        .rsplit_once(' ')
+        .filter(|(_, n)| n.parse::<u32>().is_ok())
+        .map_or(name, |(b, _)| b);
+    (2..)
+        .map(|k| format!("{base} {k}"))
+        .find(|n| !p.tracks.iter().any(|t| &t.name == n))
+        .unwrap_or_default()
 }
 
 fn track_index(p: &Project, id: u64) -> Result<usize, CommandError> {
@@ -914,14 +1260,182 @@ mod tests {
             bands: vec![bell; n],
             bypass,
         };
+        let eq = |p: &Project| p.tracks[0].chain[0].clone();
         let p = set(2, None).apply(&project()).unwrap();
-        assert_eq!(p.tracks[0].eq.bands().len(), 2);
-        assert!(p.tracks[0].eq.active());
+        assert_eq!(p.tracks[0].chain.len(), 1);
+        assert_eq!(eq(&p).eq_filters().bands().len(), 2);
+        assert!(eq(&p).active());
         let q = set(2, Some(true)).apply(&p).unwrap();
-        assert!(!q.tracks[0].eq.active() && q.tracks[0].eq.bypass());
-        // Bypass stays when left out.
-        assert!(set(1, None).apply(&q).unwrap().tracks[0].eq.bypass());
+        assert!(!eq(&q).active() && !eq(&q).on);
+        // Bypass stays when left out, and the same device is used.
+        let r = set(1, None).apply(&q).unwrap();
+        assert!(!eq(&r).on && eq(&r).id == eq(&p).id && r.tracks[0].chain.len() == 1);
         assert!(set(MAX_BANDS + 1, None).apply(&p).is_err());
+    }
+
+    #[test]
+    fn devices_are_added_moved_copied_and_removed() {
+        let add = |channel, kind| Command::AddDevice {
+            channel,
+            kind,
+            index: None,
+            params: None,
+        };
+        let p = Command::Batch {
+            commands: vec![
+                add(1, DeviceKind::Eq),
+                add(1, DeviceKind::Compressor),
+                add(MASTER, DeviceKind::Utility),
+            ],
+            label: None,
+        }
+        .apply(&project())
+        .unwrap();
+        let ids: Vec<u64> = p.tracks[0].chain.iter().map(|d| d.id).collect();
+        assert_eq!(ids, vec![5, 6]);
+        assert_eq!(p.master_chain[0].id, 7);
+        // Reorder: the compressor first.
+        let q = Command::MoveDevice {
+            device: 6,
+            channel: 1,
+            index: 0,
+        }
+        .apply(&p)
+        .unwrap();
+        assert_eq!(q.tracks[0].chain[0].id, 6);
+        // Copy the EQ onto track 4, then bypass and delete.
+        let q = Command::CopyDevice {
+            device: 5,
+            channel: 4,
+            index: 0,
+        }
+        .apply(&q)
+        .unwrap();
+        assert_eq!(q.tracks[1].chain[0].kind(), DeviceKind::Eq);
+        assert_ne!(q.tracks[1].chain[0].id, 5);
+        let q = Command::SetDevice {
+            device: 5,
+            params: None,
+            on: Some(false),
+        }
+        .apply(&q)
+        .unwrap();
+        assert!(!q.tracks[0].chain[1].on);
+        let q = Command::RemoveDevice { device: 5 }.apply(&q).unwrap();
+        assert_eq!(q.tracks[0].chain.len(), 1);
+        // The wrong kind of settings is refused.
+        assert!(Command::SetDevice {
+            device: 6,
+            params: Some(DeviceParams::default_for(DeviceKind::Eq)),
+            on: None,
+        }
+        .apply(&q)
+        .is_err());
+    }
+
+    #[test]
+    fn sends_and_sidechains_never_loop() {
+        let send = |from, to| Command::SetSend {
+            from,
+            to,
+            gain_db: -6.0,
+        };
+        // 1 → 4.
+        let p = send(1, 4).apply(&project()).unwrap();
+        assert_eq!(p.tracks[0].sends.len(), 2);
+        assert!((gain_to_db(p.tracks[0].sends[1].gain) + 6.0).abs() < 1e-4);
+        // 4 → 1 would loop, as would 1 → 1.
+        let e = send(4, 1).apply(&p).unwrap_err();
+        assert!(e.0.contains("loop"), "{e}");
+        assert!(send(1, 1).apply(&p).is_err());
+        // A compressor on 1 keyed by 4 would loop too; on 4 keyed by 1 is fine.
+        let p = Command::Batch {
+            commands: vec![
+                Command::AddDevice {
+                    channel: 1,
+                    kind: DeviceKind::Compressor,
+                    index: None,
+                    params: None,
+                },
+                Command::AddDevice {
+                    channel: 4,
+                    kind: DeviceKind::Compressor,
+                    index: None,
+                    params: None,
+                },
+            ],
+            label: None,
+        }
+        .apply(&p)
+        .unwrap();
+        let sc = |device, from| Command::SetSidechain {
+            device,
+            from: Some(from),
+        };
+        assert!(sc(5, 4).apply(&p).is_err());
+        let q = sc(6, 1).apply(&p).unwrap();
+        assert_eq!(q.tracks[1].chain[0].sidechain, Some(1));
+        // Deleting 4 takes 1's send to it away; 1 still has the master.
+        let r = Command::DeleteTrack { track: 4 }.apply(&q).unwrap();
+        assert_eq!(r.tracks[0].sends, vec![Send::master()]);
+        // A channel whose only send was to a deleted one falls back to the
+        // master.
+        let p = Command::Batch {
+            commands: vec![
+                send(1, 4),
+                Command::RemoveSend {
+                    from: 1,
+                    to: MASTER,
+                },
+                Command::DeleteTrack { track: 4 },
+            ],
+            label: None,
+        }
+        .apply(&project())
+        .unwrap();
+        assert_eq!(p.tracks[0].sends, vec![Send::master()]);
+        // Deleting a send can leave a channel with no output.
+        let p = Command::RemoveSend {
+            from: 4,
+            to: MASTER,
+        }
+        .apply(&project())
+        .unwrap();
+        assert!(p.tracks[1].sends.is_empty());
+    }
+
+    #[test]
+    fn channels_without_lanes_and_copies() {
+        let p = Command::AddTrack {
+            name: "Verb".into(),
+            lane: false,
+        }
+        .apply(&project())
+        .unwrap();
+        assert!(!p.tracks[2].lane);
+        let json = serde_json::to_value(Command::AddTrack {
+            name: "T".into(),
+            lane: true,
+        })
+        .unwrap();
+        assert!(json.get("lane").is_none());
+        let q = Command::Batch {
+            commands: vec![
+                Command::AddDevice {
+                    channel: 1,
+                    kind: DeviceKind::Utility,
+                    index: None,
+                    params: None,
+                },
+                Command::DuplicateTrack { track: 1 },
+            ],
+            label: None,
+        }
+        .apply(&project())
+        .unwrap();
+        let (a, b) = (&q.tracks[0], &q.tracks[1]);
+        assert!(b.name.ends_with('2'));
+        assert!(b.clips.is_empty() && b.chain.len() == 1 && b.chain[0].id != a.chain[0].id);
     }
 
     #[test]

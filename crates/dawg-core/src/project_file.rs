@@ -18,7 +18,8 @@
 //! Versions: 1 the first; 2 adds clip `stretch` and `pitch` and track `eq`
 //! and `eqBypass`; 3 adds clip `fadeInCurve`, `fadeOutCurve` and `reversed`;
 //! 4 adds `masterGain`; 5 adds `bpm` and track `color`; 6 adds track
-//! `category`.
+//! `category`; 7 adds track `chain`, `sends` and `lane` and the
+//! `masterChain` (a version 2 to 6 track `eq` opens as an EQ device).
 
 use std::fmt;
 use std::io;
@@ -26,11 +27,12 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::device::DeviceEntry;
 use crate::eq::EqBand;
-use crate::model::{EnvPoint, FadeCurve, Project, DEFAULT_BPM};
+use crate::model::{EnvPoint, FadeCurve, Project, Send, DEFAULT_BPM};
 
 /// The format this build writes, and the newest it reads.
-pub const FORMAT_VERSION: u32 = 6;
+pub const FORMAT_VERSION: u32 = 7;
 /// File extension, without the dot.
 pub const EXTENSION: &str = "dawg";
 /// The `format` tag, so a stray JSON file isn't taken for a project.
@@ -53,6 +55,9 @@ pub struct ProjectFile {
     /// Tempo of the grid.
     #[serde(default = "default_bpm", skip_serializing_if = "is_default_bpm")]
     pub bpm: f64,
+    /// The master's devices.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub master_chain: Vec<DeviceEntry>,
     pub sources: Vec<SourceEntry>,
     pub tracks: Vec<TrackEntry>,
 }
@@ -89,10 +94,20 @@ pub struct TrackEntry {
     #[serde(default)]
     pub solo: bool,
     pub clips: Vec<ClipEntry>,
+    /// Before version 7: the track's EQ, now an EQ device.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub eq: Vec<EqBand>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub eq_bypass: bool,
+    /// Devices in signal order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<DeviceEntry>,
+    /// Where the channel's output goes; left out, to the master at 0 dB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sends: Option<Vec<Send>>,
+    /// False for a mixer-only channel.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub lane: bool,
     /// Clip palette index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<u8>,
@@ -136,6 +151,14 @@ pub struct ClipEntry {
 fn is_linear(v: &FadeCurve) -> bool {
     *v == FadeCurve::Linear
 }
+fn yes() -> bool {
+    true
+}
+
+fn is_true(v: &bool) -> bool {
+    *v
+}
+
 fn is_false(v: &bool) -> bool {
     !*v
 }
@@ -236,6 +259,7 @@ impl ProjectFile {
             next_id: project.next_id,
             master_gain: project.master_gain,
             bpm: project.bpm,
+            master_chain: project.master_chain.iter().map(DeviceEntry::of).collect(),
             sources,
             tracks: project
                 .tracks
@@ -247,8 +271,11 @@ impl ProjectFile {
                     pan: t.pan,
                     muted: t.muted,
                     solo: t.solo,
-                    eq: t.eq.bands().to_vec(),
-                    eq_bypass: t.eq.bypass(),
+                    eq: Vec::new(),
+                    eq_bypass: false,
+                    chain: t.chain.iter().map(DeviceEntry::of).collect(),
+                    sends: (t.sends != [Send::master()]).then(|| t.sends.clone()),
+                    lane: t.lane,
                     color: t.color,
                     category: t.category.clone(),
                     clips: t
@@ -391,6 +418,7 @@ mod tests {
             next_id: 2,
             master_gain: 1.0,
             bpm: DEFAULT_BPM,
+            master_chain: Vec::new(),
             sources: vec![SourceEntry {
                 id: 1,
                 file: "Samples/kick.wav".into(),

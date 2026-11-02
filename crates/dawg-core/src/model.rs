@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::eq::Eq;
+use crate::device::Device;
 use crate::stretch;
 
 /// Decoded audio, interleaved `f32`, at the project sample rate.
@@ -385,6 +385,29 @@ impl Clip {
     }
 }
 
+/// The master's channel id in sends and sidechains. Tracks get ids from 1.
+pub const MASTER: u64 = 0;
+
+/// A channel's output into another channel (or the master), after the
+/// sender's volume and pan.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Send {
+    /// A channel id, or [`MASTER`].
+    pub to: u64,
+    /// Linear gain.
+    pub gain: f32,
+}
+
+impl Send {
+    /// Straight to the master at 0 dB: where a new channel goes.
+    pub const fn master() -> Send {
+        Send {
+            to: MASTER,
+            gain: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Track {
     /// Stable id, unique in the project.
@@ -398,8 +421,15 @@ pub struct Track {
     pub pan: f32,
     pub muted: bool,
     pub solo: bool,
-    /// Runs on the clips' sum, before volume and pan.
-    pub eq: Eq,
+    /// Devices in signal order. They run on the clips and incoming sends,
+    /// before volume and pan.
+    pub chain: Vec<Device>,
+    /// Where the channel's output goes, after its volume and pan. Empty is
+    /// silent ("No output").
+    pub sends: Vec<Send>,
+    /// Has a lane in the timeline. A mixer-only channel (a return or a bus
+    /// made in the mixer) has none.
+    pub lane: bool,
     /// Index into the UI's clip palette; `None` colours by position.
     pub color: Option<u8>,
     /// What the track holds: an id from [`crate::category::CATEGORIES`]
@@ -417,7 +447,9 @@ impl Default for Track {
             pan: 0.0,
             muted: false,
             solo: false,
-            eq: Eq::default(),
+            chain: Vec::new(),
+            sends: vec![Send::master()],
+            lane: true,
             color: None,
             category: None,
         }
@@ -442,8 +474,9 @@ impl Track {
             && self.pan == b.pan
             && self.muted == b.muted
             && self.solo == b.solo
-            && self.eq.bands() == b.eq.bands()
-            && self.eq.bypass() == b.eq.bypass()
+            && self.chain == b.chain
+            && self.sends == b.sends
+            && self.lane == b.lane
             && self.color == b.color
             && self.clips.len() == b.clips.len()
             && self.clips.iter().zip(&b.clips).all(|(x, y)| x.same_edit(y))
@@ -460,6 +493,8 @@ pub struct Project {
     pub next_id: u64,
     /// Master volume, linear, on the sum of every track.
     pub master_gain: f32,
+    /// The master's devices, before its volume.
+    pub master_chain: Vec<Device>,
     /// Tempo for the bars-and-beats grid. Playback doesn't depend on it.
     pub bpm: f64,
 }
@@ -472,6 +507,7 @@ impl Project {
             sources: Vec::new(),
             next_id: 1,
             master_gain: 1.0,
+            master_chain: Vec::new(),
             bpm: DEFAULT_BPM,
         }
     }
@@ -514,15 +550,103 @@ impl Project {
             .flat_map(|t| t.clips.iter().map(move |c| (t, c)))
     }
 
-    /// Whether a track is heard: not muted, and soloed if anything is.
+    /// Whether a track is heard: not muted, and soloed if anything is. A
+    /// channel feeding a soloed one, or fed by one, counts as soloed, so
+    /// soloing a bus plays what goes into it and soloing a track plays it
+    /// through its buses.
     pub fn audible(&self, track: &Track) -> bool {
-        !track.muted && (track.solo || !self.tracks.iter().any(|t| t.solo))
+        if track.muted {
+            return false;
+        }
+        if !self.tracks.iter().any(|t| t.solo) {
+            return true;
+        }
+        track.solo
+            || self
+                .tracks
+                .iter()
+                .filter(|t| t.solo)
+                .any(|s| self.feeds(s.id, track.id) || self.feeds(track.id, s.id))
+    }
+
+    /// Channel index by id; [`MASTER`] has none.
+    pub fn channel(&self, id: u64) -> Option<usize> {
+        if id == MASTER {
+            return None;
+        }
+        self.tracks.iter().position(|t| t.id == id)
+    }
+
+    /// The channels whose signal channel `id` takes: senders, and the
+    /// sources of its devices' sidechains.
+    fn inputs(&self, id: u64) -> Vec<u64> {
+        let mut v: Vec<u64> = self
+            .tracks
+            .iter()
+            .filter(|t| t.sends.iter().any(|s| s.to == id))
+            .map(|t| t.id)
+            .collect();
+        let chain = if id == MASTER {
+            Some(&self.master_chain)
+        } else {
+            self.track(id).map(|t| &t.chain)
+        };
+        if let Some(chain) = chain {
+            v.extend(chain.iter().filter_map(|d| d.sidechain));
+        }
+        v
+    }
+
+    /// Whether `from`'s signal reaches `to` through sends and sidechains.
+    pub fn feeds(&self, from: u64, to: u64) -> bool {
+        let mut seen = vec![to];
+        let mut stack = vec![to];
+        while let Some(at) = stack.pop() {
+            for i in self.inputs(at) {
+                if i == from {
+                    return true;
+                }
+                if !seen.contains(&i) {
+                    seen.push(i);
+                    stack.push(i);
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether a connection from `from` into `to` (a send, or a sidechain
+    /// on one of `to`'s devices) would make a loop.
+    pub fn would_loop(&self, from: u64, to: u64) -> bool {
+        from == to || from == MASTER || self.feeds(to, from)
+    }
+
+    /// Every device and the channel it's on ([`MASTER`] for the master).
+    pub fn devices(&self) -> impl Iterator<Item = (u64, &Device)> {
+        self.master_chain.iter().map(|d| (MASTER, d)).chain(
+            self.tracks
+                .iter()
+                .flat_map(|t| t.chain.iter().map(move |d| (t.id, d))),
+        )
+    }
+
+    /// A channel's chain by channel id; [`MASTER`] is the master's.
+    pub fn chain_mut(&mut self, id: u64) -> Option<&mut Vec<Device>> {
+        if id == MASTER {
+            Some(&mut self.master_chain)
+        } else {
+            self.tracks
+                .iter_mut()
+                .find(|t| t.id == id)
+                .map(|t| &mut t.chain)
+        }
     }
 
     /// Same edit state as `other`, clip by clip.
     pub fn same_edit(&self, other: &Project) -> bool {
         self.sample_rate == other.sample_rate
             && self.master_gain == other.master_gain
+            && self.master_chain == other.master_chain
             && self.bpm == other.bpm
             && self.tracks.len() == other.tracks.len()
             && self

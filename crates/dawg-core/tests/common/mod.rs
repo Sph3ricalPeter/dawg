@@ -5,7 +5,10 @@
 
 use std::sync::Arc;
 
-use dawg_core::{BandKind, Clip, EnvPoint, Eq, EqBand, Project, Source, Track};
+use dawg_core::device::{CompParams, UtilityParams};
+use dawg_core::{
+    BandKind, Clip, Device, DeviceParams, EnvPoint, EqBand, Project, Send, Source, Track, MASTER,
+};
 
 pub const RATE: u32 = 48_000;
 
@@ -190,21 +193,25 @@ pub fn scenes() -> Vec<Scene> {
                             stereo(&noise(4800, 23, 0.5), &triangle(4800, 71, 0.6)),
                             0,
                         )],
-                        eq: Eq::new(
+                        chain: vec![Device::eq(
+                            1,
                             &[
                                 band(BandKind::LowCut, 300.0, 0.0, 24),
                                 band(BandKind::Bell, 2500.0, 9.0, 12),
                                 band(BandKind::HighShelf, 9000.0, -6.0, 12),
                             ],
-                            false,
                             RATE,
-                        ),
+                        )],
                         pan: 0.3,
                         ..Track::default()
                     },
                     Track {
                         clips: vec![Clip::new(mono(noise(3000, 29, 0.3)), 900)],
-                        eq: Eq::new(&[band(BandKind::HighCut, 1200.0, 0.0, 18)], false, RATE),
+                        chain: vec![Device::eq(
+                            2,
+                            &[band(BandKind::HighCut, 1200.0, 0.0, 18)],
+                            RATE,
+                        )],
                         ..Track::default()
                     },
                 ],
@@ -241,6 +248,11 @@ pub fn scenes() -> Vec<Scene> {
             )),
             frames: 4800,
         },
+        Scene {
+            name: "bus_sidechain_master",
+            project: Arc::new(routed()),
+            frames: 4800,
+        },
     ]
 }
 
@@ -262,4 +274,82 @@ fn retimed(mut clip: Clip, stretch: f64, pitch: f32) -> Clip {
     clip.len = clip.len.min(clip.max_len(clip.offset));
     clip.retime(RATE, None);
     clip
+}
+
+/// A kick ducking a pad through a sidechained compressor; the pad also sends
+/// into a mixer-only bus with a Utility and an EQ; a compressor on the
+/// master.
+pub fn routed() -> Project {
+    let kick: Vec<f32> = (0..4800)
+        .map(|i| match (i % 1200 < 300, (i / 40) % 2 == 0) {
+            (true, true) => 0.8,
+            (true, false) => -0.8,
+            _ => 0.0,
+        })
+        .collect();
+    let comp = |id, threshold_db, ratio, attack_ms| {
+        Device::new(
+            id,
+            DeviceParams::Compressor(CompParams {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms: 60.0,
+                knee_db: 4.0,
+                makeup_db: 1.5,
+                mix: 0.9,
+            }),
+            RATE,
+        )
+    };
+    let mut ducker = comp(10, -30.0, 8.0, 1.0);
+    ducker.sidechain = Some(1);
+    let util = Device::new(
+        11,
+        DeviceParams::Utility(UtilityParams {
+            gain_db: -3.0,
+            width: 0.5,
+            flip_r: true,
+            dc: true,
+            ..UtilityParams::default()
+        }),
+        RATE,
+    );
+    let mut p = Project::with_tracks(
+        RATE,
+        vec![
+            Track {
+                id: 1,
+                clips: vec![Clip::new(mono(kick), 0)],
+                ..Track::default()
+            },
+            Track {
+                id: 2,
+                clips: vec![Clip::new(
+                    stereo(&noise(4800, 37, 0.4), &triangle(4800, 53, 0.5)),
+                    0,
+                )],
+                chain: vec![ducker],
+                sends: vec![Send::master(), Send { to: 3, gain: 0.5 }],
+                pan: -0.2,
+                ..Track::default()
+            },
+            Track {
+                id: 3,
+                lane: false,
+                chain: vec![
+                    util,
+                    Device::eq(12, &[band(BandKind::HighCut, 3000.0, 0.0, 12)], RATE),
+                ],
+                sends: vec![Send {
+                    to: MASTER,
+                    gain: 0.8,
+                }],
+                ..Track::default()
+            },
+        ],
+    );
+    p.master_chain = vec![comp(13, -12.0, 2.0, 5.0)];
+    p.next_id = 14;
+    p
 }

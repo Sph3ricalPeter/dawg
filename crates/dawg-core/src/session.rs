@@ -24,11 +24,11 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::command::{fit_fades, gain_to_db, Command, CommandError};
-use crate::eq::{Eq, EqBand};
+use crate::device::{Device, DeviceEntry, MAX_DEVICES};
 use crate::file::{AudioFile, Codec, FileError};
 use crate::history::{self, Detail};
 use crate::model::{
-    Clip, EnvPoint, FadeCurve, Project, Source, Track, DEFAULT_BPM, MAX_BPM, MIN_BPM,
+    Clip, EnvPoint, FadeCurve, Project, Send, Source, Track, DEFAULT_BPM, MASTER, MAX_BPM, MIN_BPM,
 };
 use crate::mp3::{self, Tags};
 use crate::peaks::Peaks;
@@ -213,6 +213,8 @@ pub struct SessionState {
     pub tracks: Vec<TrackState>,
     /// Master volume.
     pub master_db: f32,
+    /// The master's devices.
+    pub master_chain: Vec<DeviceEntry>,
     /// Tempo of the bars-and-beats grid.
     pub bpm: f64,
     pub sources: Vec<SourceState>,
@@ -249,8 +251,21 @@ pub struct TrackState {
     pub muted: bool,
     pub solo: bool,
     pub clips: Vec<ClipState>,
-    pub eq: Vec<EqBand>,
-    pub eq_bypass: bool,
+    /// Has a timeline lane; mixer-only channels don't.
+    pub lane: bool,
+    /// Devices in signal order.
+    pub chain: Vec<DeviceEntry>,
+    /// Where its output goes (0 is the master).
+    pub sends: Vec<SendState>,
+}
+
+/// One of a channel's sends, as the UI shows it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendState {
+    /// A channel id, or 0 for the master.
+    pub to: u64,
+    pub gain_db: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -287,6 +302,28 @@ pub struct SourceState {
     pub rate: u32,
     /// The project's file wasn't found; its clips play silence.
     pub missing: bool,
+}
+
+/// Keeps channel `id` and what feeds it, sending `id` straight to the
+/// master and muting the rest.
+fn isolate(p: &mut Project, id: u64) {
+    let ups: Vec<u64> = p
+        .tracks
+        .iter()
+        .filter(|t| t.id == id || p.feeds(t.id, id))
+        .map(|t| t.id)
+        .collect();
+    for t in &mut p.tracks {
+        t.solo = false;
+        if t.id == id {
+            t.sends = vec![Send::master()];
+            t.muted = false;
+        } else if ups.contains(&t.id) {
+            t.sends.retain(|s| ups.contains(&s.to));
+        } else {
+            t.muted = true;
+        }
+    }
 }
 
 /// What saving would produce.
@@ -598,6 +635,9 @@ impl Session {
                 }
                 clips.push(clip);
             }
+            for d in &t.chain {
+                top = top.max(d.id + 1);
+            }
             project.tracks.push(Track {
                 id: t.id,
                 name: t.name.clone(),
@@ -606,15 +646,59 @@ impl Session {
                 pan: t.pan,
                 muted: t.muted,
                 solo: t.solo,
-                eq: Eq::new(&t.eq, t.eq_bypass, rate),
+                chain: t
+                    .chain
+                    .iter()
+                    .take(MAX_DEVICES)
+                    .map(|d| d.device(rate))
+                    .collect(),
+                sends: t.sends.clone().unwrap_or_else(|| vec![Send::master()]),
+                lane: t.lane,
                 color: t.color,
                 category: t.category.clone(),
             });
         }
+        for d in &file.master_chain {
+            top = top.max(d.id + 1);
+        }
+        project.master_chain = file
+            .master_chain
+            .iter()
+            .take(MAX_DEVICES)
+            .map(|d| d.device(rate))
+            .collect();
         for s in &file.sources {
             top = top.max(s.id + 1);
         }
         project.next_id = top;
+        // Before chains: a track EQ that does something becomes an EQ
+        // device at the start of the chain.
+        for (t, entry) in project.tracks.iter_mut().zip(&file.tracks) {
+            if entry.chain.is_empty() && entry.eq.iter().any(|b| b.on) {
+                let id = project.next_id;
+                project.next_id += 1;
+                let mut d = Device::eq(id, &entry.eq, rate);
+                d.on = !entry.eq_bypass;
+                t.chain.insert(0, d);
+            }
+        }
+        // Routing that points nowhere (a hand-edited file) goes.
+        let ids: Vec<u64> = project.tracks.iter().map(|t| t.id).collect();
+        let known = |id: u64| id == MASTER || ids.contains(&id);
+        for t in &mut project.tracks {
+            let had = !t.sends.is_empty();
+            t.sends
+                .retain(|s| known(s.to) && s.to != t.id && s.gain.is_finite());
+            if had && t.sends.is_empty() {
+                t.sends.push(Send::master());
+            }
+            for d in &mut t.chain {
+                d.sidechain = d.sidechain.filter(|&s| s != MASTER && known(s));
+            }
+        }
+        for d in &mut project.master_chain {
+            d.sidechain = d.sidechain.filter(|&s| s != MASTER && known(s));
+        }
         project.bpm = if file.bpm.is_finite() {
             file.bpm.clamp(MIN_BPM, MAX_BPM)
         } else {
@@ -750,7 +834,9 @@ impl Session {
         (alone
             && clip.source.id() == origin.source
             && !clip.retimed()
-            && !track.eq.active()
+            && !track.chain.iter().any(|d| d.active())
+            && !p.master_chain.iter().any(|d| d.active())
+            && track.sends == [crate::model::Send::master()]
             && p.master_gain == 1.0
             && track.gain == 1.0
             && track.pan == 0.0
@@ -777,6 +863,7 @@ impl Session {
             frames: o.map_or(0, |o| o.file.frames()),
             rate: p.sample_rate,
             master_db: gain_to_db(p.master_gain),
+            master_chain: p.master_chain.iter().map(DeviceEntry::of).collect(),
             bpm: p.bpm,
             tracks: p
                 .tracks
@@ -790,8 +877,16 @@ impl Session {
                     pan: t.pan,
                     muted: t.muted,
                     solo: t.solo,
-                    eq: t.eq.bands().to_vec(),
-                    eq_bypass: t.eq.bypass(),
+                    lane: t.lane,
+                    chain: t.chain.iter().map(DeviceEntry::of).collect(),
+                    sends: t
+                        .sends
+                        .iter()
+                        .map(|s| SendState {
+                            to: s.to,
+                            gain_db: gain_to_db(s.gain),
+                        })
+                        .collect(),
                     clips: t
                         .clips
                         .iter()
@@ -1037,7 +1132,12 @@ impl Session {
             if self.origin.is_none() && p.sources.is_empty() && p.clips().next().is_none() {
                 p.sample_rate = rate;
                 for t in &mut p.tracks {
-                    t.eq = t.eq.at_rate(rate);
+                    for d in &mut t.chain {
+                        *d = d.at_rate(rate);
+                    }
+                }
+                for d in &mut p.master_chain {
+                    *d = d.at_rate(rate);
                 }
             }
             let source = Arc::new(resample(&file.decode(), rate, p.sample_rate).with_id(id));
@@ -1047,7 +1147,8 @@ impl Session {
                 None => {
                     let t = p.next_id;
                     Command::AddTrack {
-                        name: track_name(p.tracks.len() + 1),
+                        name: track_name(p.tracks.iter().filter(|t| t.lane).count() + 1),
+                        lane: true,
                     }
                     .apply_in_place(&mut p)?;
                     t
@@ -1226,10 +1327,12 @@ impl Session {
         }
     }
 
-    /// The sound of one track or one clip alone (or the whole mix), over
+    /// The sound of one channel or one clip alone (or the whole mix), over
     /// `range` or where it plays: interleaved stereo at the session's rate,
-    /// and the timeline frame it starts at. Track volume, pan and EQ apply;
-    /// solo and mute elsewhere don't matter.
+    /// and the timeline frame it starts at. The channel's devices, volume
+    /// and pan apply, with what it takes from other channels (a bus's
+    /// sources, a compressor's key); it goes straight to the master, so
+    /// its sends don't matter, nor do solo and mute elsewhere.
     pub fn render_part(
         &self,
         range: Option<(u64, u64)>,
@@ -1241,19 +1344,16 @@ impl Session {
             let (t, _) = p
                 .clip(c)
                 .ok_or_else(|| CommandError(format!("no clip {c}")))?;
-            for (i, tr) in p.tracks.iter_mut().enumerate() {
+            let id = p.tracks[t].id;
+            for tr in &mut p.tracks {
                 tr.clips.retain(|x| x.id == c);
-                tr.muted = i != t;
-                tr.solo = false;
             }
+            isolate(&mut p, id);
         } else if let Some(t) = track {
             if p.track(t).is_none() {
                 return Err(CommandError(format!("no track {t}")));
             }
-            for tr in &mut p.tracks {
-                tr.muted = tr.id != t;
-                tr.solo = false;
-            }
+            isolate(&mut p, t);
         }
         let (a, b) = match range {
             Some((a, b)) if b > a => (a, b),
@@ -1266,6 +1366,35 @@ impl Session {
             return Err(CommandError("that's over an hour; pick a range".into()));
         }
         Ok((a, render(Arc::new(p), a, (b - a) as usize)))
+    }
+
+    /// The most gain reduction (dB) each compressor applies to the mix over
+    /// `range` (or where it plays), by device id.
+    pub fn reduction(&self, range: Option<(u64, u64)>) -> Vec<(u64, f32)> {
+        let p = self.project.clone();
+        let Some((a, b)) = range.or_else(|| p.audible_span()) else {
+            return Vec::new();
+        };
+        let mut r = crate::render::Renderer::new(p, a);
+        let mut buf = vec![0.0; 4096 * OUT_CHANNELS];
+        let mut most: Vec<(u64, f32)> = Vec::new();
+        let mut at = a;
+        while at < b.min(a + 3600 * self.project.sample_rate as u64) {
+            r.process(&mut buf);
+            at += 4096;
+            r.take_reduction(|_, id, gr| match most.iter_mut().find(|m| m.0 == id) {
+                Some(m) => m.1 = m.1.max(gr),
+                None => most.push((id, gr)),
+            });
+        }
+        let comps: Vec<u64> = self
+            .project
+            .devices()
+            .filter(|(_, d)| d.kind() == crate::device::DeviceKind::Compressor)
+            .map(|(_, d)| d.id)
+            .collect();
+        most.retain(|m| comps.contains(&m.0));
+        most
     }
 
     /// Measures the mix, a track or a clip; see [`Session::render_part`].
@@ -1623,7 +1752,7 @@ mod tests {
         assert_eq!(
             rows(&st.history),
             [
-                "eq | Track 1 › EQ › Add band 1 | Bell 1.20 kHz +2.0 dB",
+                "eq | Track 1 › EQ | Bell 1.20 kHz +2.0 dB",
                 "eq | Track 1 › EQ › Band 1 Bell | Q 9.49 → 3.20",
                 "volume | Track 1 › mem › Gain | 0.0 → −6.0 dB",
                 "trim | Track 1 › mem › Trim end | 0:01.00 → 0:00.50",
@@ -2056,7 +2185,7 @@ mod tests {
                     },
                     Command::SetTrackEq {
                         track: t0,
-                        bands: vec![EqBand {
+                        bands: vec![crate::eq::EqBand {
                             kind: crate::eq::BandKind::Bell,
                             freq: 800.0,
                             gain_db: 4.0,
@@ -2107,6 +2236,43 @@ mod tests {
             false,
         )
         .unwrap();
+        // Routing: a mixer-only bus the second track sends to, a compressor
+        // on it keyed by the first track, and a Utility on the master.
+        let bus = s.project().next_id;
+        s.apply(
+            &Command::Batch {
+                label: None,
+                commands: vec![
+                    Command::AddTrack {
+                        name: "Bus".into(),
+                        lane: false,
+                    },
+                    Command::SetSend {
+                        from: t,
+                        to: bus,
+                        gain_db: -6.0,
+                    },
+                    Command::AddDevice {
+                        channel: bus,
+                        kind: crate::device::DeviceKind::Compressor,
+                        index: None,
+                        params: None,
+                    },
+                    Command::AddDevice {
+                        channel: MASTER,
+                        kind: crate::device::DeviceKind::Utility,
+                        index: None,
+                        params: None,
+                    },
+                    Command::SetSidechain {
+                        device: bus + 1,
+                        from: Some(t0),
+                    },
+                ],
+            },
+            false,
+        )
+        .unwrap();
         let mix = s.render_file(Codec::Wav).unwrap();
         assert!(s.state().scratch);
 
@@ -2138,15 +2304,59 @@ mod tests {
         assert_eq!(r.state().bpm, 140.0);
         let tracks = |s: &Session| serde_json::to_value(s.state().tracks).unwrap();
         assert_eq!(tracks(&r), tracks(&s));
+        assert_eq!(r.state().master_chain, s.state().master_chain);
+        assert!(!r.state().tracks.iter().find(|t| t.id == bus).unwrap().lane);
         assert!(!r.dirty());
         assert_eq!(r.render_file(Codec::Wav).unwrap(), mix);
         // New ids don't collide with saved ones.
-        r.apply(&Command::AddTrack { name: "new".into() }, false)
-            .unwrap();
+        r.apply(
+            &Command::AddTrack {
+                name: "new".into(),
+                lane: true,
+            },
+            false,
+        )
+        .unwrap();
         let ids: Vec<u64> = r.project().tracks.iter().map(|t| t.id).collect();
         assert!(ids[..ids.len() - 1]
             .iter()
             .all(|&id| id < ids[ids.len() - 1]));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_version_6_track_eq_opens_as_an_eq_device() {
+        let dir = temp_dir("v6");
+        write_wav(&dir.join("a.wav"), 1, 48_000, 960, 0.25);
+        let bell = r#"{"kind":"bell","freq":800.0,"gainDb":4.0,"q":2.0}"#;
+        let off = r#"{"kind":"bell","freq":800.0,"gainDb":4.0,"q":2.0,"on":false}"#;
+        let track = |id: u64, eq: &str, bypass: bool| {
+            format!(
+                r#"{{"id":{id},"name":"t{id}","gain":1.0,"pan":0.0,"clips":[],"eq":[{eq}],"eqBypass":{bypass}}}"#
+            )
+        };
+        let json = format!(
+            r#"{{"format":"dawg project","version":6,"sampleRate":48000,"nextId":9,
+            "sources":[{{"id":1,"file":"a.wav","frames":960,"channels":1,"rate":48000}}],
+            "tracks":[{},{},{}]}}"#,
+            track(2, bell, false),
+            track(3, bell, true),
+            track(4, off, false)
+        );
+        let path = dir.join("old.dawg");
+        fs::write(&path, json).unwrap();
+        let s = Session::open_project(&path).unwrap();
+        let p = s.project();
+        let d = &p.tracks[0].chain[0];
+        assert_eq!(d.kind(), crate::device::DeviceKind::Eq);
+        assert!(d.on && d.active() && d.id >= 9);
+        // Bypassed: kept, off. Only off bands: dropped.
+        assert!(!p.tracks[1].chain[0].on);
+        assert!(p.tracks[2].chain.is_empty());
+        assert!(p
+            .tracks
+            .iter()
+            .all(|t| t.sends == [Send::master()] && t.lane));
         let _ = fs::remove_dir_all(&dir);
     }
 

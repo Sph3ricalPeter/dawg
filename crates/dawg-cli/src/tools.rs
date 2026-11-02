@@ -214,6 +214,11 @@ impl Tools<'_> {
                 }
                 self.state()
             }
+            "get_mix" => {
+                let (range, _, _) = self.part(a)?;
+                let s = self.session()?;
+                Ok(vec![text(&mix(s, range).to_string())])
+            }
             "analyze" => {
                 let (range, track, clip) = self.part(a)?;
                 let x = self
@@ -331,6 +336,62 @@ impl Tools<'_> {
             a.get("clip").and_then(Value::as_u64),
         ))
     }
+}
+
+/// What `get_mix` returns.
+fn mix(s: &Session, range: Option<(u64, u64)>) -> Value {
+    let st = s.state();
+    let gr = s.reduction(range);
+    let reading = |track: Option<u64>| {
+        s.analyze(range, track, None).ok().map(|a| {
+            json!({ "peakDb": a.peak_db, "rmsDb": a.rms_db, "lufs": a.lufs, "maxShortTermLufs": a.max_short_term_lufs })
+        })
+    };
+    let chain = |c: &[dawg_core::DeviceEntry]| -> Vec<Value> {
+        c.iter()
+            .map(|d| {
+                let mut v = json!(d);
+                if let Some(g) = gr.iter().find(|g| g.0 == d.id) {
+                    v["gainReductionDb"] = json!(g.1);
+                }
+                v
+            })
+            .collect()
+    };
+    let name = |id: u64| {
+        if id == 0 {
+            "Master".to_string()
+        } else {
+            st.tracks
+                .iter()
+                .find(|t| t.id == id)
+                .map_or_else(String::new, |t| t.name.clone())
+        }
+    };
+    let channels: Vec<Value> = st
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            json!({
+                "channel": format!("C{}", i + 1),
+                "id": t.id,
+                "name": t.name,
+                "lane": t.lane,
+                "volumeDb": t.gain_db,
+                "pan": t.pan,
+                "muted": t.muted,
+                "solo": t.solo,
+                "sends": t.sends.iter().map(|x| json!({ "to": x.to, "toName": name(x.to), "gainDb": x.gain_db })).collect::<Vec<_>>(),
+                "chain": chain(&t.chain),
+                "reading": reading(Some(t.id)),
+            })
+        })
+        .collect();
+    json!({
+        "master": { "channel": "C0", "volumeDb": st.master_db, "chain": chain(&st.master_chain), "reading": reading(None) },
+        "channels": channels,
+    })
 }
 
 pub fn text(s: &str) -> Value {
@@ -452,9 +513,15 @@ frames are at the session's rate; dB values are numbers.
 - stretch_clip {clip, stretch, start?} (timeline frames per source frame, 0.25..4, keeps pitch)
 - set_clip_pitch {clip, semitones} (-24..24, keeps length)
 - add_clip {source, track, start}, delete_clip {clip}, split_clip {clip, at}, duplicate_clip {clip}
-- add_track {name}, delete_track {track}, rename_track {track, name}, move_track {track, index}
+- add_track {name, lane?} (lane false: a mixer-only channel, e.g. a reverb return or bus), delete_track {track}, duplicate_track {track}, set_track_lane {track, lane}, rename_track {track, name}, move_track {track, index}
 - set_track_mix {track, gain_db?, pan?, muted?, solo?} (gain -96..12, pan -1..1)
-- set_track_eq {track, bands: [{kind, freq, gainDb, q, slope}], bypass?} (kind: \"bell\"|\"low_shelf\"|\"high_shelf\"|\"low_cut\"|\"high_cut\"|\"notch\"|\"band_pass\"; slope: dB/octave for cuts)
+Every track is a mixer channel: clips and incoming sends → its chain of devices → volume → pan → its sends. Channel 0 is the master.
+- set_send {from, to, gain_db} (adds or sets; to 0 is the master; -96..6, after the sender's volume), remove_send {from, to}. A new track sends to the master at 0 dB; a channel with no sends is silent. Sends and sidechains can't loop: such a call fails naming the channels.
+- add_device {channel, kind, index?, params?} (kind \"eq\"|\"compressor\"|\"utility\"; channel 0 is the master), set_device {device, params?, on?} (params: all of the device's settings, as get_project shows them), move_device {device, channel, index}, copy_device {device, channel, index}, remove_device {device}, set_sidechain {device, from} (a compressor's key channel, or null)
+  eq params: {kind: \"eq\", bands: [{kind, freq, gainDb, q, slope, on}]} (band kind: \"bell\"|\"low_shelf\"|\"high_shelf\"|\"low_cut\"|\"high_cut\"|\"notch\"|\"band_pass\"; slope: dB/octave for cuts; up to 12 bands)
+  compressor params: {kind: \"compressor\", thresholdDb (-60..0), ratio (1..20), attackMs (0.05..200), releaseMs (5..2000), kneeDb (0..24), makeupDb (-12..24), mix (0..1)}
+  utility params: {kind: \"utility\", gainDb (-48..24), width (0..2, 1 as is), mono, flipL, flipR, dc}
+- set_track_eq {track, bands, bypass?}: shorthand for the bands of the track's first EQ device (added if it has none)
 - set_track_color {track, color} (0..7 or null), set_track_category {track, category} (drums, perc, bass, leads, pads, vox, fx, foley, ambience, music, ui, or null; names a \"Track N\" after it), set_tempo {bpm}, set_master_gain {gain_db} (-96..12)";
 
 fn range_props() -> Value {
@@ -512,6 +579,7 @@ pub fn list() -> Value {
         { "name": "end_take", "description": "Finish the take started with begin_take.", "inputSchema": obj(json!({}), &[]) },
         { "name": "undo", "description": "Undo the last edit.", "inputSchema": obj(json!({}), &[]) },
         { "name": "redo", "description": "Redo the last undone edit.", "inputSchema": obj(json!({}), &[]) },
+        { "name": "get_mix", "description": "The mixer as numbers: every channel (C1, C2… in order; the master is C0) with its volume, pan, mute, solo, sends, devices and their settings in real units, plus what it measures over the range (peak, RMS, LUFS of the channel's own output with its inputs, before the master) and each compressor's most gain reduction. How to hear the mix without listening.", "inputSchema": obj(json!({ "from": range_props()["from"], "to": range_props()["to"] }), &[]) },
         { "name": "analyze", "description": "Measure the mix, a track or a clip: peak, RMS, integrated and short-term LUFS, crest factor, where sound starts and ends, onsets, spectral centroid, and an RMS curve in 100 ms steps.",
           "inputSchema": obj(range_props(), &[]) },
         { "name": "render_image", "description": "A waveform picture of the mix (one lane per track), a track or a clip. Red marks samples past 0 dBFS; faint lines are seconds.",

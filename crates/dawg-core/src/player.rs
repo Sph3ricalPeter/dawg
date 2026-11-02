@@ -16,7 +16,7 @@ use realfft::RealFftPlanner;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::model::Project;
-use crate::render::{Renderer, METER_TRACKS, NO_TAP, OUT_CHANNELS};
+use crate::render::{Renderer, DEVICE_STATES, METER_TRACKS, NO_TAP, OUT_CHANNELS};
 
 /// Frames rendered per block.
 const BLOCK: usize = 256;
@@ -57,8 +57,11 @@ pub struct PlayerShared {
     peaks: [[AtomicU32; 2]; METER_TRACKS],
     /// The same for the master output, after the master volume.
     master: [AtomicU32; 2],
-    /// The track the analyser listens to, or [`NO_TAP`].
-    tap_track: AtomicU64,
+    /// The device the analyser listens to, or [`NO_TAP`].
+    tap_device: AtomicU64,
+    /// Per device state: its device's id and the most gain reduction
+    /// (dB, as `f32` bits) since the last read.
+    reduction: [(AtomicU64, AtomicU32); DEVICE_STATES],
 }
 
 impl Default for PlayerShared {
@@ -66,7 +69,8 @@ impl Default for PlayerShared {
         Self {
             playing: AtomicBool::new(false),
             position: AtomicU64::new(0),
-            tap_track: AtomicU64::new(NO_TAP),
+            tap_device: AtomicU64::new(NO_TAP),
+            reduction: std::array::from_fn(|_| (AtomicU64::new(NO_TAP), AtomicU32::new(0))),
             peaks: std::array::from_fn(|_| [AtomicU32::new(0), AtomicU32::new(0)]),
             master: [AtomicU32::new(0), AtomicU32::new(0)],
         }
@@ -140,13 +144,14 @@ impl PlayerHandle {
 
     /// Peak level (linear, left and right) of each of the first `tracks`
     /// tracks since the last call, which resets them.
-    /// The spectrum of `track` after its EQ, from what played since the last
-    /// call, or `None` when nothing new played. Starts listening to that
-    /// track; `None` stops listening.
-    pub fn spectrum(&mut self, track: Option<u64>, rate: u32) -> Option<Spectrum> {
+    /// The spectrum after `device`, from what played since the last call,
+    /// or `None` when nothing new played. Starts listening to that device;
+    /// `None` stops listening.
+    pub fn spectrum(&mut self, device: Option<u64>, rate: u32) -> Option<Spectrum> {
+        let track = device;
         self.shared
-            .tap_track
-            .store(track.unwrap_or(NO_TAP), Ordering::Relaxed);
+            .tap_device
+            .store(device.unwrap_or(NO_TAP), Ordering::Relaxed);
         let a = &mut self.analyser;
         let mut n = 0;
         while let Ok(x) = a.rx.pop() {
@@ -207,6 +212,20 @@ impl PlayerHandle {
             .master
             .each_ref()
             .map(|a| f32::from_bits(a.swap(0, Ordering::Relaxed)))
+    }
+
+    /// Each compressor's most gain reduction (dB, 0 or above) since the
+    /// last call, by device id.
+    pub fn take_reduction(&self) -> Vec<(u64, f32)> {
+        self.shared
+            .reduction
+            .iter()
+            .filter_map(|(id, gr)| {
+                let id = id.load(Ordering::Relaxed);
+                let gr = f32::from_bits(gr.swap(0, Ordering::Relaxed));
+                (id != NO_TAP).then_some((id, gr))
+            })
+            .collect()
     }
 
     pub fn take_peaks(&self, tracks: usize) -> Vec<[f32; 2]> {
@@ -478,7 +497,7 @@ impl Player {
         }
         if self.block_pos == self.block_len {
             self.renderer
-                .tap_track(self.shared.tap_track.load(Ordering::Relaxed));
+                .tap_device(self.shared.tap_device.load(Ordering::Relaxed));
             self.renderer.process(&mut self.block);
             while let Some(p) = self.renderer.released() {
                 self.free(p);
@@ -487,6 +506,14 @@ impl Player {
                 shared[0].fetch_max(peak[0].to_bits(), Ordering::Relaxed);
                 shared[1].fetch_max(peak[1].to_bits(), Ordering::Relaxed);
             }
+            let reduction = &self.shared.reduction;
+            self.renderer.take_reduction(|i, id, gr| {
+                let (sid, sgr) = &reduction[i];
+                if sid.swap(id, Ordering::Relaxed) != id {
+                    sgr.store(0, Ordering::Relaxed);
+                }
+                sgr.fetch_max(gr.max(0.0).to_bits(), Ordering::Relaxed);
+            });
             let (mut ml, mut mr) = (0.0f32, 0.0f32);
             for f in self.block.as_chunks::<OUT_CHANNELS>().0 {
                 ml = ml.max(f[0].abs());
@@ -801,7 +828,8 @@ mod tests {
 
     #[test]
     fn the_analyser_hears_the_tapped_track() {
-        // A 1500 Hz sine (32 frames a cycle), on track 7.
+        // A 1500 Hz sine (32 frames a cycle), on track 7 through a flat EQ,
+        // device 70.
         let samples: Vec<f32> = (0..24_000)
             .map(|i| (0.5 * (2.0 * std::f64::consts::PI * i as f64 / 32.0).sin()) as f32)
             .collect();
@@ -810,11 +838,12 @@ mod tests {
             vec![Track {
                 id: 7,
                 clips: vec![Clip::new(Arc::new(Source::new(1, samples)), 0)],
+                chain: vec![crate::device::Device::eq(70, &[], 48_000)],
                 ..Track::default()
             }],
         ));
         let (mut pl, mut handle) = player(p.clone(), 48_000, 2);
-        assert!(handle.spectrum(Some(7), 48_000).is_none());
+        assert!(handle.spectrum(Some(70), 48_000).is_none());
         handle.send(PlayerMsg::Play {
             from: 0,
             to: 24_000,
@@ -824,7 +853,7 @@ mod tests {
         for _ in 0..30 {
             pl.fill(&mut out);
         }
-        let s = handle.spectrum(Some(7), 48_000).unwrap();
+        let s = handle.spectrum(Some(70), 48_000).unwrap();
         let (i, top) =
             s.db.iter()
                 .enumerate()
@@ -835,7 +864,7 @@ mod tests {
         // Tapping doesn't change what plays (no EQ here, so it's exact
         // to within float rounding).
         let (mut pl, mut handle) = player(p.clone(), 48_000, 2);
-        handle.spectrum(Some(7), 48_000);
+        handle.spectrum(Some(70), 48_000);
         handle.send(PlayerMsg::Play {
             from: 0,
             to: 960,

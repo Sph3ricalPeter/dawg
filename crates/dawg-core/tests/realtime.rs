@@ -153,7 +153,7 @@ fn player_fill_does_not_allocate_or_free() {
 
 #[test]
 fn ramps_and_eq_crossfades_do_not_allocate() {
-    use dawg_core::{BandKind, Eq, EqBand};
+    use dawg_core::{BandKind, Device, DeviceKind, DeviceParams, EqBand};
 
     for scene in common::scenes() {
         // Every live value changed at once: volume, pan, mute, clip gain,
@@ -170,9 +170,9 @@ fn ramps_and_eq_crossfades_do_not_allocate() {
                 c.start += 100;
                 c.len = c.len.saturating_sub(50).max(1);
             }
-            t.eq = if t.eq.active() {
-                Eq::new(t.eq.bands(), true, next.sample_rate)
-            } else {
+            // Devices turned off where on, and an EQ and a compressor added
+            // where there were none; sends changed.
+            if t.chain.is_empty() {
                 let band = EqBand {
                     kind: BandKind::Bell,
                     freq: 1000.0,
@@ -181,9 +181,31 @@ fn ramps_and_eq_crossfades_do_not_allocate() {
                     slope: 12,
                     on: true,
                 };
-                Eq::new(&[band], false, next.sample_rate)
-            };
+                t.chain
+                    .push(Device::eq(100 + i as u64, &[band], next.sample_rate));
+                t.chain.push(Device::new(
+                    200 + i as u64,
+                    DeviceParams::default_for(DeviceKind::Compressor),
+                    next.sample_rate,
+                ));
+            } else {
+                for d in &mut t.chain {
+                    d.on = !d.on;
+                }
+            }
+            for s in &mut t.sends {
+                s.gain *= 0.7;
+            }
         }
+        next.master_chain = if next.master_chain.is_empty() {
+            vec![Device::new(
+                300,
+                DeviceParams::default_for(DeviceKind::Utility),
+                next.sample_rate,
+            )]
+        } else {
+            Vec::new()
+        };
         // A track deleted (fading out) and one added (fading in).
         if let Some(t) = next.tracks.pop() {
             let mut added = t.clone();

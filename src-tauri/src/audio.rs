@@ -118,36 +118,48 @@ impl Audio {
         }
     }
 
-    /// Whether it is playing, the timeline frame being heard, and each
-    /// track's peak level (left, right) since the last call, and the master's.
-    pub fn status(&mut self) -> (bool, u64, Vec<[f32; 2]>, [f32; 2]) {
+    /// Whether it is playing, the timeline frame being heard, each
+    /// channel's peak level (left, right) since the last call, the
+    /// master's, and each compressor's most gain reduction (by device id).
+    pub fn status(&mut self) -> Status {
         let tracks = self.project.as_ref().map_or(0, |p| p.tracks.len());
         match &mut self.output {
             // A preview isn't the session playing.
-            Some(out) if self.previewing => {
+            Some(out) if !self.previewing => {
                 out.handle.collect();
-                (false, 0, Vec::new(), [0.0; 2])
+                Status {
+                    playing: out.handle.playing(),
+                    position: out.handle.position(),
+                    levels: out.handle.take_peaks(tracks),
+                    master: out.handle.take_master_peak(),
+                    reduction: out.handle.take_reduction(),
+                }
             }
             Some(out) => {
                 out.handle.collect();
-                (
-                    out.handle.playing(),
-                    out.handle.position(),
-                    out.handle.take_peaks(tracks),
-                    out.handle.take_master_peak(),
-                )
+                Status::default()
             }
-            None => (false, 0, Vec::new(), [0.0; 2]),
+            None => Status::default(),
         }
     }
 }
 
+/// What the transport reports.
+#[derive(Default)]
+pub struct Status {
+    pub playing: bool,
+    pub position: u64,
+    pub levels: Vec<[f32; 2]>,
+    pub master: [f32; 2],
+    pub reduction: Vec<(u64, f32)>,
+}
+
 impl Audio {
-    /// The spectrum of `track` after its EQ since the last call, and from
-    /// now on listens to it; `None` stops listening.
-    pub fn spectrum(&mut self, track: Option<u64>) -> Option<Spectrum> {
+    /// The spectrum after `device` since the last call, and from now on
+    /// listens to it; `None` stops listening.
+    pub fn spectrum(&mut self, device: Option<u64>) -> Option<Spectrum> {
         let rate = self.project.as_ref()?.sample_rate;
-        self.output.as_mut()?.handle.spectrum(track, rate)
+        self.output.as_mut()?.handle.spectrum(device, rate)
     }
 }
 

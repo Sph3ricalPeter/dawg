@@ -7,8 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::command::gain_to_db;
+use crate::device::{Device, DeviceKind, DeviceParams};
 use crate::eq::{BandKind, EqBand};
-use crate::model::{Clip, FadeCurve, Project, Track};
+use crate::model::{Clip, FadeCurve, Project, Send, Track, MASTER};
 
 /// A history step as the History panel shows it.
 #[derive(Debug, Clone, PartialEq)]
@@ -226,6 +227,27 @@ fn diff(b: &Project, a: &Project, name: &dyn Fn(u64) -> String) -> Vec<Change> {
         });
     }
 
+    if b.master_chain != a.master_chain {
+        let mut push = |kind, part: &[&str], field, text: String, nudge| {
+            let mut place = vec!["Master".to_string()];
+            place.extend(part.iter().map(|s| s.to_string()));
+            out.push(Change {
+                kind,
+                place,
+                field,
+                text,
+                nudge,
+                on_track: false,
+            });
+        };
+        chain_diff(&b.master_chain, &a.master_chain, &mut push);
+    }
+    let names: BTreeMap<u64, String> = b
+        .tracks
+        .iter()
+        .chain(&a.tracks)
+        .map(|t| (t.id, t.name.clone()))
+        .collect();
     let bt: BTreeMap<u64, &Track> = b.tracks.iter().map(|t| (t.id, t)).collect();
     let at: BTreeMap<u64, &Track> = a.tracks.iter().map(|t| (t.id, t)).collect();
     for t in &b.tracks {
@@ -297,7 +319,7 @@ fn diff(b: &Project, a: &Project, name: &dyn Fn(u64) -> String) -> Vec<Change> {
     }
     for t in &a.tracks {
         if let Some(old) = bt.get(&t.id) {
-            track_diff(old, t, &mut out);
+            track_diff(old, t, &names, &mut out);
         }
     }
 
@@ -401,7 +423,7 @@ fn clips(p: &Project) -> BTreeMap<u64, (&Track, &Clip)> {
         .collect()
 }
 
-fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
+fn track_diff(b: &Track, a: &Track, names: &BTreeMap<u64, String>, out: &mut Vec<Change>) {
     let n = &a.name;
     let mut push = |kind, part: &[&str], field, text: String, nudge| {
         let mut place = vec![n.clone()];
@@ -475,16 +497,204 @@ fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
             false,
         );
     }
-    if b.eq.bypass() != a.eq.bypass() {
+    chain_diff(&b.chain, &a.chain, &mut push);
+    if b.sends != a.sends {
+        let fmt = |s: &[Send]| {
+            if s.is_empty() {
+                return "No output".to_string();
+            }
+            s.iter()
+                .map(|s| {
+                    let to = if s.to == MASTER {
+                        "Master".to_string()
+                    } else {
+                        names
+                            .get(&s.to)
+                            .cloned()
+                            .unwrap_or_else(|| format!("{}", s.to))
+                    };
+                    if s.gain == 1.0 {
+                        to
+                    } else {
+                        format!("{to} {}", fmt_db(gain_to_db(s.gain)))
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let level_only = b.sends.len() == a.sends.len()
+            && b.sends.iter().zip(&a.sends).all(|(x, y)| x.to == y.to);
         push(
-            "eq",
-            &["EQ", "Bypass"],
-            "bypass",
-            arrow(on_off(b.eq.bypass()), on_off(a.eq.bypass())),
+            "route",
+            &["Sends"],
+            "sends",
+            arrow(fmt(&b.sends), fmt(&a.sends)),
+            level_only,
+        );
+    }
+    if b.lane != a.lane {
+        push(
+            "route",
+            &["Timeline lane"],
+            "lane",
+            arrow(on_off(b.lane), on_off(a.lane)),
             false,
         );
     }
-    let (bb, ab) = (b.eq.bands(), a.eq.bands());
+}
+
+/// Signature of the closure that records one change at a place under a
+/// track or the master.
+type Push<'a> = dyn FnMut(&'static str, &[&str], &'static str, String, bool) + 'a;
+
+/// Each device's name in a chain: "EQ", "EQ 2" for a second one.
+fn device_names(chain: &[Device]) -> Vec<String> {
+    chain
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let n = chain[..i].iter().filter(|x| x.kind() == d.kind()).count();
+            if n == 0 {
+                d.kind().name().to_string()
+            } else {
+                format!("{} {}", d.kind().name(), n + 1)
+            }
+        })
+        .collect()
+}
+
+fn chain_diff(b: &[Device], a: &[Device], push: &mut Push) {
+    let (bn, an) = (device_names(b), device_names(a));
+    for (i, d) in b.iter().enumerate() {
+        if !a.iter().any(|x| x.id == d.id) {
+            push(device_icon(d), &[&bn[i]], "device", "Deleted".into(), false);
+        }
+    }
+    for (i, d) in a.iter().enumerate() {
+        let Some(j) = b.iter().position(|x| x.id == d.id) else {
+            let what = match d.params() {
+                DeviceParams::Eq { bands } if !bands.is_empty() => {
+                    bands.iter().map(fmt_band).collect::<Vec<_>>().join(", ")
+                }
+                _ => "Added".into(),
+            };
+            push(device_icon(d), &[&an[i]], "device", what, false);
+            continue;
+        };
+        let x = &b[j];
+        let dev = an[i].as_str();
+        if i != j && b.len() == a.len() {
+            push(
+                "move",
+                &[dev],
+                "order",
+                arrow(ordinal(j + 1), ordinal(i + 1)),
+                false,
+            );
+        }
+        if x.on != d.on {
+            push(
+                device_icon(d),
+                &[dev, "Power"],
+                "on",
+                arrow(on_off(x.on), on_off(d.on)),
+                false,
+            );
+        }
+        if x.sidechain != d.sidechain {
+            let sc = |s: Option<u64>| s.map_or("Off".to_string(), |c| format!("channel {c}"));
+            push(
+                device_icon(d),
+                &[dev, "Sidechain"],
+                "sidechain",
+                arrow(sc(x.sidechain), sc(d.sidechain)),
+                false,
+            );
+        }
+        match (x.params(), d.params()) {
+            (DeviceParams::Eq { bands: bb }, DeviceParams::Eq { bands: ab }) => {
+                eq_diff(dev, bb, ab, push)
+            }
+            (DeviceParams::Compressor(p), DeviceParams::Compressor(q)) => {
+                let mut f = |name: &'static str, x: f32, y: f32, fmt: &dyn Fn(f32) -> String| {
+                    if x != y {
+                        push(
+                            "dynamics",
+                            &[dev, name],
+                            name,
+                            format!("{name} {}", arrow(fmt(x), fmt(y))),
+                            true,
+                        );
+                    }
+                };
+                let ms = |v: f32| format!("{} ms", trim(v));
+                f("Threshold", p.threshold_db, q.threshold_db, &|v| fmt_db(v));
+                f("Ratio", p.ratio, q.ratio, &|v| format!("{}:1", trim(v)));
+                f("Attack", p.attack_ms, q.attack_ms, &ms);
+                f("Release", p.release_ms, q.release_ms, &ms);
+                f("Knee", p.knee_db, q.knee_db, &|v| format!("{} dB", trim(v)));
+                f("Makeup", p.makeup_db, q.makeup_db, &|v| fmt_db(v));
+                f("Mix", p.mix, q.mix, &|v| {
+                    format!("{}%", (v * 100.0).round())
+                });
+            }
+            (DeviceParams::Utility(p), DeviceParams::Utility(q)) => {
+                if p.gain_db != q.gain_db {
+                    push(
+                        "volume",
+                        &[dev, "Gain"],
+                        "gain",
+                        arrow(fmt_db(p.gain_db), fmt_db(q.gain_db)),
+                        true,
+                    );
+                }
+                if p.width != q.width {
+                    let pct = |v: f32| format!("{}%", (v * 100.0).round());
+                    push(
+                        "pan",
+                        &[dev, "Width"],
+                        "width",
+                        format!("Width {}", arrow(pct(p.width), pct(q.width))),
+                        true,
+                    );
+                }
+                let mut t = |name: &'static str, x: bool, y: bool| {
+                    if x != y {
+                        push(
+                            "edit",
+                            &[dev, name],
+                            name,
+                            arrow(on_off(x), on_off(y)),
+                            false,
+                        );
+                    }
+                };
+                t("Mono", p.mono, q.mono);
+                t("Flip left", p.flip_l, q.flip_l);
+                t("Flip right", p.flip_r, q.flip_r);
+                t("DC filter", p.dc, q.dc);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The history icon for a device's changes.
+fn device_icon(d: &Device) -> &'static str {
+    match d.kind() {
+        DeviceKind::Eq => "eq",
+        DeviceKind::Compressor => "dynamics",
+        DeviceKind::Utility => "edit",
+    }
+}
+
+/// A number without a trailing ".0".
+fn trim(v: f32) -> String {
+    let s = format!("{v:.1}");
+    s.strip_suffix(".0").map(str::to_string).unwrap_or(s)
+}
+
+fn eq_diff(dev: &str, bb: &[EqBand], ab: &[EqBand], push: &mut Push) {
     if bb != ab {
         let removed = |long: &[EqBand], short: &[EqBand]| {
             (0..long.len()).find(|&i| long[..i] == short[..i] && long[i + 1..] == short[i..])
@@ -493,7 +703,7 @@ fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
             let i = removed(ab, bb).unwrap_or(0);
             push(
                 "eq",
-                &["EQ", &format!("Add band {}", i + 1)],
+                &[dev, &format!("Add band {}", i + 1)],
                 "bands",
                 fmt_band(&ab[i]),
                 false,
@@ -502,7 +712,7 @@ fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
             let i = removed(bb, ab).unwrap_or(0);
             push(
                 "eq",
-                &["EQ", &format!("Delete band {}", i + 1)],
+                &[dev, &format!("Delete band {}", i + 1)],
                 "bands",
                 fmt_band(&bb[i]),
                 false,
@@ -513,7 +723,7 @@ fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
                     continue;
                 }
                 let band = format!("Band {} {}", i + 1, kind_name(y.kind));
-                let part = ["EQ", band.as_str()];
+                let part = [dev, band.as_str()];
                 if x.kind != y.kind {
                     push(
                         "eq",
@@ -569,7 +779,7 @@ fn track_diff(b: &Track, a: &Track, out: &mut Vec<Change>) {
         } else {
             push(
                 "eq",
-                &["EQ"],
+                &[dev],
                 "bands",
                 arrow(format!("{} bands", bb.len()), format!("{} bands", ab.len())),
                 false,

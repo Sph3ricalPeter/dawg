@@ -673,24 +673,30 @@ pub struct Transport {
     levels: Vec<[f32; 2]>,
     /// The master output's peak level, after the master volume.
     master: [f32; 2],
+    /// Each compressor's most gain reduction in dB, by device id.
+    reduction: Vec<(u64, f32)>,
 }
 
 #[tauri::command]
 pub fn transport(state: State<AppState>) -> Transport {
-    let (playing, position, levels, master) = state.lock().audio.status();
+    let s = state.lock().audio.status();
     Transport {
-        playing,
-        position,
-        levels,
-        master,
+        playing: s.playing,
+        position: s.position,
+        levels: s.levels,
+        master: s.master,
+        reduction: s.reduction,
     }
 }
 
-/// The spectrum of `track` after its EQ, from what played since the last
-/// call; `None` when nothing new played. `track: null` stops listening.
+/// The spectrum after `device` (an EQ), from what played since the last
+/// call; `None` when nothing new played. `device: null` stops listening.
 #[tauri::command]
-pub fn spectrum(state: State<AppState>, track: Option<u64>) -> Option<dawg_core::player::Spectrum> {
-    state.lock().audio.spectrum(track)
+pub fn spectrum(
+    state: State<AppState>,
+    device: Option<u64>,
+) -> Option<dawg_core::player::Spectrum> {
+    state.lock().audio.spectrum(device)
 }
 
 #[tauri::command]
@@ -817,8 +823,14 @@ mod tests {
 
     fn edited() -> Session {
         let mut s = Session::new_project();
-        s.apply(&Command::AddTrack { name: "a".into() }, false)
-            .unwrap();
+        s.apply(
+            &Command::AddTrack {
+                name: "a".into(),
+                lane: true,
+            },
+            false,
+        )
+        .unwrap();
         s
     }
 

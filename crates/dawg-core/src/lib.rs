@@ -9,6 +9,7 @@
 pub mod analysis;
 pub mod category;
 pub mod command;
+pub mod device;
 pub mod eq;
 pub mod file;
 pub mod history;
@@ -25,8 +26,9 @@ pub mod stretch;
 pub mod wav;
 
 pub use command::{Command, CommandError};
+pub use device::{Device, DeviceEntry, DeviceKind, DeviceParams};
 pub use eq::{BandKind, Eq, EqBand};
-pub use model::{Clip, EnvPoint, FadeCurve, Project, Source, Track, ENV_MAX};
+pub use model::{Clip, EnvPoint, FadeCurve, Project, Send, Source, Track, ENV_MAX, MASTER};
 pub use render::{render, Renderer, OUT_CHANNELS};
 pub use session::Session;
 
