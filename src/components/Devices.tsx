@@ -367,7 +367,7 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
       x.setTransform(dpr, 0, 0, dpr, 0, 0);
       x.clearRect(0, 0, w, h);
       // Grid.
-      x.font = `10px ${getComputedStyle(c).getPropertyValue("--mono") || "monospace"}`;
+      x.font = `500 10px ${getComputedStyle(c).getPropertyValue("--mono") || "sans-serif"}`;
       x.textBaseline = "top";
       for (const hz of GRID_HZ) {
         if (hz > top) continue;
