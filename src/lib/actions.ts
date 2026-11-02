@@ -7,7 +7,7 @@ import { flushSettings, setSetting, setting } from "./settings";
 import { flushLibrary } from "@/stores/library-store";
 import { flushViews } from "./view-memory";
 import { collapseBrowserForNextScratch } from "@/stores/browser-store";
-import { enqueue, useSession } from "@/stores/session-store";
+import { enqueue, frontName, useSession } from "@/stores/session-store";
 
 const WAV = { name: "WAV audio", extensions: ["wav", "wave"] };
 const MP3 = { name: "MP3 audio", extensions: ["mp3"] };
@@ -117,7 +117,9 @@ export async function saveProjectAs(): Promise<boolean> {
   if (!s.session || !isTauri()) return false;
   const { project, path, name } = s.session;
   const dir = project ? dirOf(project) : (remembered(PROJECT_DIR_KEY) ?? (path ? dirOf(path) : ""));
-  const base = project ? stem(name) : path ? stem(name) : "Untitled";
+  // A tab the user named starts from that name.
+  const label = s.activeTab !== null ? s.labels[s.activeTab] : undefined;
+  const base = label ?? (project ? stem(name) : path ? stem(name) : "Untitled");
   const picked = await save({ filters: [PROJECT], defaultPath: `${dir}${base}.dawg` });
   if (!picked) return false;
   return writeProject(isProject(picked) ? picked : `${picked}.dawg`);
@@ -130,6 +132,8 @@ async function writeProject(path: string | null): Promise<boolean> {
     await s.commit();
     const state = await enqueue(() => api.saveProject(path));
     s.adopt(state);
+    // Saved somewhere new: the file's name is the tab's name from now on.
+    if (path && s.activeTab !== null) s.renameTab(s.activeTab, null);
     if (state.project) remember(PROJECT_DIR_KEY, dirOf(state.project));
     s.showToast(`Saved ${state.name}`);
     return true;
@@ -175,7 +179,8 @@ export function cycleTab(by: number) {
 export function unsavedTabs() {
   const s = useSession.getState();
   return s.tabs
-    .map((t) => (t.id === s.activeTab && s.session ? { ...t, name: s.session.name, dirty: s.session.dirty } : t))
+    .map((t) => (t.id === s.activeTab && s.session ? { ...t, dirty: s.session.dirty } : t))
+    .map((t) => ({ ...t, name: (t.id === s.activeTab ? frontName(s) : s.labels[t.id]) ?? t.name }))
     .filter((t) => t.dirty);
 }
 
@@ -300,7 +305,7 @@ export async function exportTo(options: ExportOptions | null, codec: Codec | nul
       ? lastExport.to.replace(/\.(wave?|mp3)$/i, `.${ext}`)
       : s.session.simple && original
         ? original
-        : `${mixDir}${stem(s.session.name)}${s.session.scratch ? " mix" : ""}.${ext}`;
+        : `${mixDir}${stem(frontName(s) ?? s.session.name)}${s.session.scratch ? " mix" : ""}.${ext}`;
   const path = await save({ filters, defaultPath });
   if (!path) return false;
   lastExport = { from, to: path };

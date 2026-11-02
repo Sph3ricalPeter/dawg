@@ -15,14 +15,57 @@ const MORE_W = 64;
 /** What hiding the menu's "dawg" wordmark gives the tabs. */
 const WORDMARK_W = 36;
 
+/** A tab as shown: `file` is the file's own name, `name` the label the
+ * user gave it if any. */
+type ShownTab = TabInfo & { file: string };
+
 /** The open tabs with the front one as it is now (name, unsaved edits). */
-function useShownTabs(): TabInfo[] {
+function useShownTabs(): ShownTab[] {
   const tabs = useSession((s) => s.tabs);
   const active = useSession((s) => s.activeTab);
+  const labels = useSession((s) => s.labels);
   const name = useSession((s) => s.session?.name);
   const dirty = useSession((s) => !!s.session?.dirty);
   const path = useSession((s) => s.session?.path ?? s.session?.project ?? null);
-  return tabs.map((t) => (t.id === active && name !== undefined ? { ...t, name, dirty, path } : t));
+  return tabs.map((t) => {
+    const now = t.id === active && name !== undefined ? { ...t, name, dirty, path } : t;
+    return { ...now, file: now.name, name: labels[t.id] ?? now.name };
+  });
+}
+
+/** Renaming a tab in place: Enter or leaving keeps it, Esc doesn't. */
+function RenameField({ tab, done }: { tab: ShownTab; done: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const finished = useRef(false);
+  useLayoutEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const finish = (keep: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
+    const v = ref.current?.value.trim() ?? "";
+    // Cleared, or back to the file's name: the label goes.
+    if (keep) useSession.getState().renameTab(tab.id, v && v !== tab.file ? v : null);
+    done();
+  };
+  return (
+    <input
+      ref={ref}
+      className="tabname"
+      defaultValue={tab.name}
+      aria-label="Tab name"
+      spellCheck={false}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") finish(true);
+        else if (e.key === "Escape") finish(false);
+      }}
+      onBlur={() => finish(true)}
+    />
+  );
 }
 
 /** The session tabs in the title bar, where the file name used to be. */
@@ -38,6 +81,7 @@ export function Tabs({ tight: shrunk, onTight }: { tight: boolean; onTight: (tig
   const drag = useRef<{ id: number; x: number; moved: boolean; pointer: number } | null>(null);
   const [order, setOrder] = useState<number[] | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
 
   useLayoutEffect(() => {
     const el = row.current;
@@ -90,9 +134,9 @@ export function Tabs({ tight: shrunk, onTight }: { tight: boolean; onTight: (tig
 
   const store = useSession.getState;
   const byId = new Map(tabs.map((t) => [t.id, t]));
-  const shown = order ? order.map((id) => byId.get(id)).filter((t): t is TabInfo => !!t) : tabs;
+  const shown = order ? order.map((id) => byId.get(id)).filter((t): t is ShownTab => !!t) : tabs;
 
-  const onPointerDown = (e: React.PointerEvent, t: TabInfo) => {
+  const onPointerDown = (e: React.PointerEvent, t: ShownTab) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest(".x")) return;
     void store().switchTab(t.id);
     drag.current = { id: t.id, x: e.clientX, moved: false, pointer: e.pointerId };
@@ -146,7 +190,7 @@ export function Tabs({ tight: shrunk, onTight }: { tight: boolean; onTight: (tig
                 aria-selected={on}
                 className={`stab${on ? " on" : ""}${t.dirty ? " dirty" : ""}${dragId === t.id ? " drag" : ""}`}
                 style={{ width: w }}
-                data-tip={`${t.path ?? "Not saved yet"}${t.dirty ? " · unsaved changes" : ""}`}
+                data-tip={`${t.name !== t.file ? `${t.file} · ` : ""}${t.path ?? "Not saved yet"}${t.dirty ? " · unsaved changes" : ""} · double-click to rename`}
                 onPointerDown={(e) => onPointerDown(e, t)}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -155,11 +199,18 @@ export function Tabs({ tight: shrunk, onTight }: { tight: boolean; onTight: (tig
                 onAuxClick={(e) => {
                   if (e.button === 1) void store().closeTab(t.id);
                 }}
+                onDoubleClick={(e) => {
+                  if (!(e.target as HTMLElement).closest(".x")) setEditing(t.id);
+                }}
               >
-                <span className="nm">
-                  {t.name}
-                  {on && t.dirty && <span className="dot"> •</span>}
-                </span>
+                {editing === t.id ? (
+                  <RenameField tab={t} done={() => setEditing(null)} />
+                ) : (
+                  <span className="nm">
+                    {t.name}
+                    {on && t.dirty && <span className="dot"> •</span>}
+                  </span>
+                )}
                 {t.scratch && <span className="pill">{w < PILL_W ? "S" : "Scratch"}</span>}
                 <span className="gap" />
                 <button

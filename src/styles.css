@@ -212,6 +212,23 @@ body.panning * {
   text-overflow: ellipsis;
   font-weight: 600;
 }
+.stab .tabname {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 20px;
+  padding: 0 4px;
+  margin-left: -5px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  outline: none;
+}
+.stab .tabname:focus {
+  border-color: var(--text-dim);
+}
 .stab .nm .dot {
   color: var(--text-dim);
 }

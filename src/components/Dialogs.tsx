@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { discardAllAndClose, exportDialog, reviewUnsaved, saveProject } from "@/lib/actions";
 import type { TabInfo } from "@/lib/api";
-import { useSession } from "@/stores/session-store";
+import { frontName, useSession } from "@/stores/session-store";
 
 function useEscape(onEscape: () => void) {
   useEffect(() => {
@@ -18,7 +18,7 @@ function useEscape(onEscape: () => void) {
 }
 
 function DiscardDialog({ verb, then }: { verb: string; then: () => void }) {
-  const session = useSession((s) => s.session);
+  const name = useSession(frontName);
   const setDialog = useSession((s) => s.setDialog);
   const primary = useRef<HTMLButtonElement>(null);
   const cancel = () => setDialog(null);
@@ -27,7 +27,7 @@ function DiscardDialog({ verb, then }: { verb: string; then: () => void }) {
   return (
     <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
       <div className="dlg small" role="dialog" aria-label="Unsaved changes">
-        <header>Discard your edits to {session?.name}?</header>
+        <header>Discard your edits to {name}?</header>
         <div className="bd">
           <span className="dim">
             You haven't exported them. To {verb} anyway, discard them, or export first.
@@ -65,7 +65,7 @@ function DiscardDialog({ verb, then }: { verb: string; then: () => void }) {
 
 /** A project asks to save, like any document app. */
 function SaveDialog({ then }: { then: () => void }) {
-  const session = useSession((s) => s.session);
+  const name = useSession(frontName);
   const setDialog = useSession((s) => s.setDialog);
   const primary = useRef<HTMLButtonElement>(null);
   const cancel = () => setDialog(null);
@@ -74,7 +74,7 @@ function SaveDialog({ then }: { then: () => void }) {
   return (
     <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
       <div className="dlg small" role="dialog" aria-label="Unsaved changes">
-        <header>Save changes to {session?.name}?</header>
+        <header>Save changes to {name}?</header>
         <div className="bd">
           <span className="dim">Your changes will be lost if you don't save them.</span>
         </div>

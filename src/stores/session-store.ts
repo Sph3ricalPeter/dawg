@@ -95,6 +95,11 @@ interface SessionStore {
   moveTab: (id: number, index: number) => Promise<void>;
   /** Catches up with tabs opened elsewhere (by an agent). */
   syncTabs: () => Promise<void>;
+  /** Names the user gave tabs (double-click), by tab id. A label only: the
+   * file keeps its name, and "Save as" and Export start from the label. */
+  labels: Record<number, string>;
+  /** Names a tab; empty or null goes back to the file's name. */
+  renameTab: (id: number, label: string | null) => void;
   session: SessionState | null;
   draft: Draft | null;
   /** Selected clip ids. */
@@ -367,6 +372,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     try {
       const f = await enqueue(() => api.closeTab(id));
       memos.delete(id);
+      get().renameTab(id, null);
       show(f);
     } catch (e) {
       get().showToast(apiMessage(e), { error: true });
@@ -385,6 +391,15 @@ export const useSession = create<SessionStore>((set, get) => ({
     } catch {
       // The row is only cosmetic until the next change.
     }
+  },
+
+  labels: {},
+  renameTab: (id, label) => {
+    const labels = { ...get().labels };
+    const name = label?.trim();
+    if (name) labels[id] = name;
+    else delete labels[id];
+    set({ labels });
   },
 
   syncTabs: async () => {
@@ -917,6 +932,12 @@ export const useSession = create<SessionStore>((set, get) => ({
     get().adopt(s);
   },
 }));
+
+/** The front tab's name as shown: the user's label, else the file's. */
+export function frontName(st: { session: SessionState | null; activeTab: number | null; labels: Record<number, string> }): string | undefined {
+  if (!st.session) return undefined;
+  return (st.activeTab !== null ? st.labels[st.activeTab] : undefined) ?? st.session.name;
+}
 
 /** Bumped for every (re)load of a tab's audio: with the tab id, it keys the
  * waveform cache, so a tab brought back to the front draws at once. */

@@ -42,7 +42,7 @@ import { everyFrameAtMost } from "@/lib/frame-loop";
 import { isFloating, type PanelId } from "@/lib/layout";
 import { useBrowser } from "@/stores/browser-store";
 import { useLayout } from "@/stores/layout-store";
-import { useSession } from "@/stores/session-store";
+import { frontName, useSession } from "@/stores/session-store";
 import { CHECK_INTERVAL_MS, DEV_CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
 
 function EmptyState({ dropping }: { dropping: boolean }) {
@@ -353,7 +353,7 @@ function useWindowEvents(setDrop: (d: DropState) => void) {
 
 /** The window title follows the file, for the taskbar. */
 function useWindowTitle(info: AppInfo | null) {
-  const name = useSession((s) => s.session?.name);
+  const name = useSession(frontName);
   const dirty = useSession((s) => !!s.session?.dirty);
   useEffect(() => {
     const app = info?.channel === "dev" ? "dawg dev" : "dawg";

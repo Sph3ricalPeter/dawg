@@ -73,7 +73,9 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   Tabs: `components/Tabs.tsx` is the row in the title bar; the session
   store keeps the front tab's `session` and, per tab in the back, what it
   was left showing (view, playhead, selection, EQ), and the waveform cache
-  is keyed by tab, since source ids repeat between sessions.
+  is keyed by tab, since source ids repeat between sessions. A tab can be
+  renamed (double-click): a label in the store only, which "Save as" and
+  Export start from; the file keeps its name.
   Waveforms: `lib/wave-tiles.ts` draws clip waveforms from power-of-two
   peak levels rendered once into cached tiles fixed in time, drawn by
   workers (`lib/wave-worker.ts`, shared drawing in `lib/wave-draw.ts`); a zoom only
