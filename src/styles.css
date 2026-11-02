@@ -1131,20 +1131,6 @@ body.rsizing * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tinfo {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
-}
-.kv {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 10px;
-}
-.kv span:nth-child(odd) {
-  color: var(--text-faint);
-}
 .warn-note {
   color: var(--warn);
 }

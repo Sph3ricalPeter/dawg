@@ -248,6 +248,8 @@ export function ClipPanel() {
   const env = clip.envelope;
   const envDb = (g: number) => fmtDb(g > 0 ? 20 * Math.log10(g) : null);
   const path = src?.path ?? "";
+  const cutStart = clip.offset;
+  const cutEnd = src ? Math.max(0, src.frames - clip.offset - Math.round(clip.len / clip.stretch)) : 0;
 
   return (
     <div className="clippanel" ref={ref} style={style} role="dialog" aria-label="Clip settings">
@@ -271,7 +273,16 @@ export function ClipPanel() {
         )}
         <div className="dim mono small">
           {fmtTime(clip.start / rate)} · {fmtSeconds(clip.len / rate)}
+          {(cutStart > 0 || cutEnd > 0) && (
+            <span data-hint="Trimmed off the source's start and end">
+              {" "}
+              · cut {(cutStart / rate).toFixed(3)} + {(cutEnd / rate).toFixed(3)} s
+            </span>
+          )}
         </div>
+        {session.truncated && session.path && src?.path === session.path && (
+          <div className="warn-note small">The file ended early; saving writes a repaired header.</div>
+        )}
         <div className="irow">{reverse}</div>
       </div>
       <div className="isec">

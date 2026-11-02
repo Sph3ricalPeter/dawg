@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TrackState } from "@/lib/api";
 import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
-import { clamp, fmtDb, fmtMs, fmtPitch, fmtSeconds, fmtStretch, fmtTime } from "@/lib/format";
+import { clamp, fmtTime } from "@/lib/format";
 import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
 import { knobControl } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
@@ -308,16 +308,13 @@ function TrackMenu({
 function TrackHeader({
   track,
   index,
-  tall,
   onResize,
 }: {
   track: TrackState;
   index: number;
-  tall: boolean;
   onResize: (e: React.PointerEvent) => void;
 }) {
   const session = useSession((s) => s.session);
-  const selected = useSession((s) => s.selected);
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const eqOpen = useSession((s) => s.eqTrack === track.id);
@@ -345,12 +342,6 @@ function TrackHeader({
     void store().apply({ type: "set_track_mix", track: track.id, ...m });
   const pan = Math.round(track.pan * 100);
   const panKnob = knobControl(pan, { rate: 1, min: -100, max: 100, step: 10, res: 1, detent: 4 }, (v, done) => mix({ pan: v / 100 }, done));
-  const rate = session.rate;
-  // In a tall track, details of its selected clip (the scratch session's view).
-  const clip = tall ? (track.clips.find((c) => selected.includes(c.id)) ?? (track.clips.length === 1 ? track.clips[0] : null)) : null;
-  const src = clip ? session.sources.find((s) => s.id === clip.source) : null;
-  const cutStart = clip ? clip.offset : 0;
-  const cutEnd = clip && src ? Math.max(0, src.frames - clip.offset - Math.round(clip.len / clip.stretch)) : 0;
 
   return (
     <div
@@ -433,50 +424,6 @@ function TrackHeader({
             <Knob f={pan / 100} bipolar />
           </div>
         </div>
-        {clip && src && (
-          <div className="tinfo">
-            <div className="dim">{src.name}</div>
-            <div className="kv">
-              <span>Length</span>
-              <span className="mono">{fmtSeconds(clip.len / rate)}</span>
-              {(cutStart > 0 || cutEnd > 0) && (
-                <>
-                  <span>Cut</span>
-                  <span className="mono">
-                    {(cutStart / rate).toFixed(3)} + {(cutEnd / rate).toFixed(3)} s
-                  </span>
-                </>
-              )}
-              <span>Gain</span>
-              <span className="mono">{fmtDb(clip.gainDb)}</span>
-              {clip.stretch !== 1 && (
-                <>
-                  <span>Stretch</span>
-                  <span className="mono">{fmtStretch(clip.stretch)}</span>
-                </>
-              )}
-              {clip.pitch !== 0 && (
-                <>
-                  <span>Pitch</span>
-                  <span className="mono">{fmtPitch(clip.pitch)}</span>
-                </>
-              )}
-              <span>Fades</span>
-              <span className="mono">
-                {fmtMs(clip.fadeIn, rate)} · {fmtMs(clip.fadeOut, rate)}
-              </span>
-              {clip.envelope.length > 0 && (
-                <>
-                  <span>Envelope</span>
-                  <span className="mono">{clip.envelope.length} points</span>
-                </>
-              )}
-            </div>
-            {session.truncated && session.path && src.path === session.path && (
-              <div className="warn-note">The file ended early; saving writes a repaired header.</div>
-            )}
-          </div>
-        )}
       </div>
       {menu && <TrackMenu at={menu} track={track} index={index} count={session.tracks.length} onRename={() => setRenaming(true)} onClose={() => setMenu(null)} />}
     </div>
@@ -691,7 +638,6 @@ export function Editor() {
             <TrackHeader
               track={t}
               index={i}
-              tall={tall}
               onResize={(e) => resize(e, t.id)}
             />
             <Lane track={t} index={i} />
