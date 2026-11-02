@@ -14,7 +14,7 @@ MP3 patents have expired worldwide, so no patent license is needed.
 
 The app also bundles one font:
 
-- **Roboto Mono** (numbers, LCD readouts), SIL Open Font License 1.1,
-  © 2015 The Roboto Mono Project Authors:
-  <https://github.com/googlefonts/robotomono>. Packaged from
-  `@fontsource/roboto-mono`; the license ships in that package.
+- **Manrope** (all UI text and numbers), SIL Open Font License 1.1,
+  © 2018 The Manrope Project Authors:
+  <https://github.com/sharanda/manrope>. Packaged from
+  `@fontsource-variable/manrope`; the license ships in that package.
