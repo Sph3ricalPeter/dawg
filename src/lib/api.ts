@@ -55,7 +55,53 @@ export interface EqBand {
   on: boolean;
 }
 
-/** Mirrors `dawg_core::session::TrackState`. */
+/** Mirrors `dawg_core::device::DeviceKind`. */
+export type DeviceKind = "eq" | "compressor" | "utility";
+
+/** Mirrors `dawg_core::device::CompParams`. */
+export interface CompParams {
+  thresholdDb: number;
+  ratio: number;
+  attackMs: number;
+  releaseMs: number;
+  kneeDb: number;
+  makeupDb: number;
+  /** Wet share, 0 to 1. */
+  mix: number;
+}
+
+/** Mirrors `dawg_core::device::UtilityParams`. */
+export interface UtilityParams {
+  gainDb: number;
+  /** 0 mono, 1 as is, 2 twice as wide. */
+  width: number;
+  mono: boolean;
+  flipL: boolean;
+  flipR: boolean;
+  dc: boolean;
+}
+
+/** Mirrors `dawg_core::device::DeviceParams` (serde tag "kind"). */
+export type DeviceParams =
+  | { kind: "eq"; bands: EqBand[] }
+  | ({ kind: "compressor" } & CompParams)
+  | ({ kind: "utility" } & UtilityParams);
+
+/** Mirrors `dawg_core::device::DeviceEntry`: a device in a chain. */
+export type DeviceState = { id: number; on: boolean; sidechain?: number | null } & DeviceParams;
+
+/** Mirrors `dawg_core::session::SendState`. */
+export interface SendState {
+  /** A channel id, or 0 for the master. */
+  to: number;
+  gainDb: number;
+}
+
+/** The master's channel id in sends and device commands. */
+export const MASTER = 0;
+
+/** Mirrors `dawg_core::session::TrackState`: a mixer channel, with a
+ * timeline lane unless it's mixer-only. */
 export interface TrackState {
   id: number;
   /** Clip palette index; null colours by its category, else by position. */
@@ -68,8 +114,12 @@ export interface TrackState {
   muted: boolean;
   solo: boolean;
   clips: ClipState[];
-  eq: EqBand[];
-  eqBypass: boolean;
+  /** Has a timeline lane; a mixer-only channel doesn't. */
+  lane: boolean;
+  /** Devices in signal order. */
+  chain: DeviceState[];
+  /** Where its output goes; empty is "No output". */
+  sends: SendState[];
 }
 
 /** Mirrors `dawg_core::session::SourceState`. */
@@ -111,6 +161,8 @@ export interface SessionState {
   tracks: TrackState[];
   /** Master volume. */
   masterDb: number;
+  /** The master's devices. */
+  masterChain: DeviceState[];
   /** Tempo of the bars-and-beats grid. */
   bpm: number;
   sources: SourceState[];
@@ -206,8 +258,18 @@ export type Command =
   | { type: "delete_clip"; clip: number }
   | { type: "split_clip"; clip: number; at: number }
   | { type: "duplicate_clip"; clip: number }
-  | { type: "add_track"; name: string }
+  | { type: "add_track"; name: string; lane?: boolean }
   | { type: "delete_track"; track: number }
+  | { type: "duplicate_track"; track: number }
+  | { type: "set_track_lane"; track: number; lane: boolean }
+  | { type: "add_device"; channel: number; kind: DeviceKind; index?: number; params?: DeviceParams }
+  | { type: "set_device"; device: number; params?: DeviceParams; on?: boolean }
+  | { type: "move_device"; device: number; channel: number; index: number }
+  | { type: "copy_device"; device: number; channel: number; index: number }
+  | { type: "remove_device"; device: number }
+  | { type: "set_sidechain"; device: number; from: number | null }
+  | { type: "set_send"; from: number; to: number; gain_db: number }
+  | { type: "remove_send"; from: number; to: number }
   | { type: "rename_track"; track: number; name: string }
   | {
       type: "set_track_mix";
@@ -353,10 +415,17 @@ export const api = {
   setBounds: (to: number, looping: number | null) => invoke<void>("set_bounds", { to, looping }),
   stop: () => invoke<void>("stop"),
   transport: () =>
-    invoke<{ playing: boolean; position: number; levels: [number, number][]; master: [number, number] }>("transport"),
-  /** A track's spectrum after its EQ, from what played since the last call
-   * (null when nothing did); `null` stops listening. */
-  spectrum: (track: number | null) => invoke<Spectrum | null>("spectrum", { track }),
+    invoke<{
+      playing: boolean;
+      position: number;
+      levels: [number, number][];
+      master: [number, number];
+      /** Each compressor's most gain reduction (dB) since the last call. */
+      reduction: [number, number][];
+    }>("transport"),
+  /** The spectrum after a device (an EQ), from what played since the last
+   * call (null when nothing did); `null` stops listening. */
+  spectrum: (device: number | null) => invoke<Spectrum | null>("spectrum", { device }),
   savePreview: () => invoke<SavePreview>("save_preview"),
   replaceOriginal: () =>
     invoke<{ state: SessionState; backup: string }>("replace_original"),

@@ -9,7 +9,7 @@
  * keep their size in px along the split.
  */
 
-export type PanelId = "browser" | "timeline" | "eq";
+export type PanelId = "browser" | "timeline" | "mixer" | "chain";
 export type Side = "left" | "right" | "top" | "bottom";
 export type Dir = "row" | "col";
 
@@ -49,12 +49,13 @@ export interface PanelInfo {
   float: { w: number; h: number } | null;
 }
 
-export const PANEL_IDS: readonly PanelId[] = ["browser", "timeline", "eq"];
+export const PANEL_IDS: readonly PanelId[] = ["browser", "timeline", "mixer", "chain"];
 
 export const PANELS: Record<PanelId, PanelInfo> = {
   browser: { title: "Browser", size: { row: 208, col: 220 }, min: { row: 150, col: 120 }, float: { w: 260, h: 440 } },
   timeline: { title: "Timeline", size: { row: 600, col: 300 }, min: { row: 320, col: 160 }, float: null },
-  eq: { title: "EQ", size: { row: 560, col: 252 }, min: { row: 460, col: 150 }, float: { w: 720, h: 270 } },
+  mixer: { title: "Mixer", size: { row: 520, col: 290 }, min: { row: 220, col: 200 }, float: { w: 760, h: 340 } },
+  chain: { title: "Chain", size: { row: 560, col: 252 }, min: { row: 360, col: 150 }, float: { w: 760, h: 270 } },
 };
 
 /** The header height: a collapsed panel keeps only this. */
@@ -62,33 +63,46 @@ export const HEAD = 26;
 /** The smallest floating panel. */
 export const FLOAT_MIN = { w: 240, h: 140 };
 
-export type PresetName = "side" | "floatEq" | "classic";
+export type PresetName = "side" | "floatChain" | "classic";
 
 export const PRESETS: Record<PresetName, { label: string; make: (browserWidth?: number) => Layout }> = {
   side: {
     label: "Side browser",
     make: (bw = 208) => ({
       version: 1,
-      dock: { split: "row", items: [{ panel: "browser", size: bw }, { split: "col", items: [{ panel: "timeline" }, { panel: "eq", size: 252 }] }] },
+      dock: {
+        split: "row",
+        items: [
+          { panel: "browser", size: bw },
+          { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 290 }, { panel: "chain", size: 252 }] },
+        ],
+      },
       floating: [],
       lastDock: {},
     }),
   },
-  floatEq: {
-    label: "Floating EQ",
+  floatChain: {
+    label: "Floating chain",
     make: (bw = 208) => ({
       version: 1,
-      dock: { split: "row", items: [{ panel: "browser", size: bw }, { panel: "timeline" }] },
+      dock: { split: "row", items: [{ panel: "browser", size: bw }, { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 290 }] }] },
       // Negative x and y: placed at the bottom right when first shown.
-      floating: [{ panel: "eq", x: -1, y: -1, w: 720, h: 270 }],
-      lastDock: { eq: { next: "timeline", side: "bottom" } },
+      floating: [{ panel: "chain", x: -1, y: -1, w: 760, h: 270 }],
+      lastDock: { chain: { next: "mixer", side: "bottom" } },
     }),
   },
   classic: {
     label: "Classic",
     make: (bw = 208) => ({
       version: 1,
-      dock: { split: "col", items: [{ split: "row", items: [{ panel: "browser", size: bw }, { panel: "timeline" }] }, { panel: "eq", size: 252 }] },
+      dock: {
+        split: "col",
+        items: [
+          { split: "row", items: [{ panel: "browser", size: bw }, { panel: "timeline" }] },
+          { panel: "mixer", size: 290 },
+          { panel: "chain", size: 252 },
+        ],
+      },
       floating: [],
       lastDock: {},
     }),
@@ -288,8 +302,12 @@ export function clampFloat(f: FloatRect, w: number, h: number): FloatRect {
   return { panel: f.panel, w: fw, h: fh, x: Math.round(Math.max(0, Math.min(x, w - fw))), y: Math.round(Math.max(0, Math.min(y, h - fh))) };
 }
 
+/** A panel id from a saved layout: the EQ panel became the Chain panel. */
+const savedId = (p: unknown): unknown => (p === "eq" ? "chain" : p);
+
 /** A saved layout, checked: every panel exactly once, the Timeline docked,
- * sizes at least the minimum. Null if it can't be used. */
+ * sizes at least the minimum. Null if it can't be used. A layout saved
+ * before the mixer gets it docked under the Timeline. */
 export function validate(v: unknown): Layout | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Partial<Layout>;
@@ -299,10 +317,11 @@ export function validate(v: unknown): Layout | null {
     if (!n || typeof n !== "object") return null;
     const r = n as Record<string, unknown>;
     const size = typeof r.size === "number" && Number.isFinite(r.size) ? r.size : undefined;
-    if (typeof r.panel === "string") {
-      if (!(PANEL_IDS as readonly string[]).includes(r.panel)) return null;
-      seen.push(r.panel);
-      const p: PanelNode = { panel: r.panel as PanelId };
+    const id = savedId(r.panel);
+    if (typeof id === "string") {
+      if (!(PANEL_IDS as readonly string[]).includes(id)) return null;
+      seen.push(id);
+      const p: PanelNode = { panel: id as PanelId };
       if (size !== undefined && dir) p.size = Math.max(PANELS[p.panel].min[dir], size);
       return p;
     }
@@ -318,17 +337,22 @@ export function validate(v: unknown): Layout | null {
   const dock = node(o.dock, null);
   if (!dock) return null;
   const floating: FloatRect[] = [];
-  for (const f of Array.isArray(o.floating) ? o.floating : []) {
+  for (const raw of Array.isArray(o.floating) ? o.floating : []) {
+    const f = raw && ({ ...raw, panel: savedId(raw.panel) } as FloatRect);
     if (!f || !PANELS[f.panel]?.float || ![f.x, f.y, f.w, f.h].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
     seen.push(f.panel);
     floating.push({ panel: f.panel, x: f.x, y: f.y, w: f.w, h: f.h });
   }
+  const old = !seen.includes("mixer");
+  if (old) seen.push("mixer");
   if (seen.length !== PANEL_IDS.length || !PANEL_IDS.every((p) => seen.includes(p)) || !contains(dock, "timeline")) return null;
   const lastDock: Layout["lastDock"] = {};
-  for (const [k, p] of Object.entries(o.lastDock ?? {})) {
+  for (const [raw, p] of Object.entries(o.lastDock ?? {})) {
+    const k = savedId(raw) as string;
     if ((PANEL_IDS as readonly string[]).includes(k) && p && ["left", "right", "top", "bottom"].includes(p.side)) {
-      lastDock[k as PanelId] = { next: p.next, side: p.side, ...(typeof p.size === "number" ? { size: p.size } : {}) };
+      lastDock[k as PanelId] = { next: savedId(p.next) as PanelId | "window", side: p.side, ...(typeof p.size === "number" ? { size: p.size } : {}) };
     }
   }
-  return { version: 1, dock: fixFlex(dock, noMeasure), floating, lastDock };
+  const out: Layout = { version: 1, dock: fixFlex(dock, noMeasure), floating, lastDock };
+  return old ? dockPanel(out, "mixer", "timeline", "bottom", 2 * PANELS.mixer.size.col) : out;
 }

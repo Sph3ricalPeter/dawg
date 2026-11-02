@@ -1,5 +1,17 @@
-/** The mockup's arc knob. `f` is 0..1, or -1..1 when `bipolar` (centred). */
-export function Knob({ f, bipolar = false, size = 20 }: { f: number; bipolar?: boolean; size?: number }) {
+/** The mockup's arc knob. `f` is 0..1, or -1..1 when `bipolar` (centred).
+ * `color` names its concern: `var(--k-vol)` level, `var(--k-pan)` stereo,
+ * `var(--k-time)` time and shape. */
+export function Knob({
+  f,
+  bipolar = false,
+  size = 20,
+  color = "var(--knob)",
+}: {
+  f: number;
+  bipolar?: boolean;
+  size?: number;
+  color?: string;
+}) {
   const r = size * 0.38;
   const c = size / 2;
   const sw = size > 24 ? 2.4 : 2;
@@ -20,8 +32,8 @@ export function Knob({ f, bipolar = false, size = 20 }: { f: number; bipolar?: b
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <path d={arc(-135, 135)} fill="none" stroke="var(--knob-track)" strokeWidth={sw} />
-      {Math.abs(a - a0) > 0.5 && <path d={arc(Math.min(a0, a), Math.max(a0, a))} fill="none" stroke="var(--knob)" strokeWidth={sw} />}
-      <line x1={n0[0]} y1={n0[1]} x2={n1[0]} y2={n1[1]} stroke="var(--knob)" strokeWidth={sw} strokeLinecap="round" />
+      {Math.abs(a - a0) > 0.5 && <path d={arc(Math.min(a0, a), Math.max(a0, a))} fill="none" stroke={color} strokeWidth={sw} />}
+      <line x1={n0[0]} y1={n0[1]} x2={n1[0]} y2={n1[1]} stroke={color} strokeWidth={sw} strokeLinecap="round" />
     </svg>
   );
 }

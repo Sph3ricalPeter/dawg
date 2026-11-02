@@ -210,15 +210,11 @@ interface MenuAt {
 function TrackMenu({
   at,
   track,
-  index,
-  count,
   onRename,
   onClose,
 }: {
   at: MenuAt;
   track: TrackState;
-  index: number;
-  count: number;
   onRename: () => void;
   onClose: () => void;
 }) {
@@ -235,6 +231,17 @@ function TrackMenu({
     };
   }, [onClose]);
   const store = useSession.getState;
+  // Moves past the next track with a lane, skipping mixer-only channels.
+  const neighbour = (by: -1 | 1) => {
+    const all = store().session?.tracks ?? [];
+    const lanes = all.filter((t) => t.lane);
+    return lanes[lanes.findIndex((t) => t.id === track.id) + by];
+  };
+  const moveTo = (by: -1 | 1) => {
+    const n = neighbour(by);
+    const all = store().session?.tracks ?? [];
+    if (n) void store().apply({ type: "move_track", track: track.id, index: all.indexOf(n) });
+  };
   const item = (label: string, keys: string, run: () => void, disabled = false) => (
     <button
       className="menu-item"
@@ -287,8 +294,10 @@ function TrackMenu({
         ))}
       </div>
       <div className="menu-sep" />
-      {item("Move up", "Alt+↑", () => void store().apply({ type: "move_track", track: track.id, index: Math.max(0, index - 1) }), index === 0)}
-      {item("Move down", "Alt+↓", () => void store().apply({ type: "move_track", track: track.id, index: index + 1 }), index === count - 1)}
+      {item("Show its chain", "", () => store().selectChannel(track.id, true))}
+      <div className="menu-sep" />
+      {item("Move up", "Alt+↑", () => moveTo(-1), !neighbour(-1))}
+      {item("Move down", "Alt+↓", () => moveTo(1), !neighbour(1))}
       <div className="menu-sep" />
       {item("Add track", "Ctrl+Shift+T", () => void store().addTrack())}
       {item("Delete track", "", () => {
@@ -317,7 +326,7 @@ function TrackHeader({
   const session = useSession((s) => s.session);
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<MenuAt | null>(null);
-  const eqOpen = useSession((s) => s.eqTrack === track.id);
+  const selected = useSession((s) => s.channel === track.id);
   const category = categoryById(track.category);
   if (!session) return <div className="th" />;
   const store = useSession.getState;
@@ -345,8 +354,10 @@ function TrackHeader({
 
   return (
     <div
-      className="th"
+      className={`th${selected ? " sel" : ""}`}
+      data-chan={track.id}
       style={{ ["--c" as string]: trackColor(index, track.color, track.category) }}
+      onPointerDown={() => store().channel !== track.id && store().selectChannel(track.id)}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
@@ -388,13 +399,6 @@ function TrackHeader({
               {track.name || `Track ${index + 1}`}
             </span>
           )}
-          <button
-            className={`ms eq${track.eq.some((b) => b.on) && !track.eqBypass ? " on" : ""}${eqOpen ? " open" : ""}`}
-            onClick={() => store().openEq(eqOpen ? null : track.id)}
-            data-hint={`EQ${track.eq.length ? ` · ${track.eq.length} band${track.eq.length === 1 ? "" : "s"}${track.eqBypass ? ", off" : ""}` : ""} · click to open or close it under the playlist`}
-          >
-            EQ
-          </button>
         </div>
         <div className="tcl">
           <button
@@ -421,11 +425,11 @@ function TrackHeader({
             {...panKnob}
             onDoubleClick={() => setMix({ pan: 0 })}
           >
-            <Knob f={pan / 100} bipolar />
+            <Knob f={pan / 100} bipolar color="var(--k-pan)" />
           </div>
         </div>
       </div>
-      {menu && <TrackMenu at={menu} track={track} index={index} count={session.tracks.length} onRename={() => setRenaming(true)} onClose={() => setMenu(null)} />}
+      {menu && <TrackMenu at={menu} track={track} onRename={() => setRenaming(true)} onClose={() => setMenu(null)} />}
     </div>
   );
 }
@@ -490,7 +494,7 @@ const TRACK_MAX_H = 400;
 /** The playlist: a ruler over the tracks, each a header and a lane. */
 /** The Timeline panel's header: its name, track count and rate. */
 export function TimelineHead() {
-  const count = useSession((s) => s.session?.tracks.length ?? null);
+  const count = useSession((s) => s.session?.tracks.filter((t) => t.lane).length ?? null);
   const rate = useSession((s) => s.session?.rate ?? null);
   return (
     <PanelHead id="timeline">
@@ -507,7 +511,10 @@ export function TimelineHead() {
 
 export function Editor() {
   const session = useSession((s) => s.session);
-  const tracks = useTracks();
+  // Every channel, for its number and colour; the timeline shows the ones
+  // with a lane.
+  const channels = useTracks();
+  const tracks = channels.filter((t) => t.lane);
   const ref = useRef<HTMLDivElement>(null);
   // In the store, so they're remembered with the file's view.
   const heights = useSession((s) => s.heights);
@@ -629,18 +636,14 @@ export function Editor() {
         onPointerDownCapture={(e) => panWithMiddle(e, ref.current)}
         onMouseDown={(e) => e.button === 1 && e.preventDefault()}
       >
-        {tracks.map((t, i) => (
+        {tracks.map((t) => (
           <div
             className={`trow${t.muted ? " muted" : ""}${heights[t.id] ? " sized" : ""}`}
             key={t.id}
             style={heights[t.id] ? { height: heights[t.id] } : undefined}
           >
-            <TrackHeader
-              track={t}
-              index={i}
-              onResize={(e) => resize(e, t.id)}
-            />
-            <Lane track={t} index={i} />
+            <TrackHeader track={t} index={channels.indexOf(t)} onResize={(e) => resize(e, t.id)} />
+            <Lane track={t} index={channels.indexOf(t)} />
           </div>
         ))}
         {/* The ghost track: one dashed drop box over header and lane, like

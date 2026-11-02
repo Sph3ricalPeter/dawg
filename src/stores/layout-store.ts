@@ -17,7 +17,11 @@ interface LayoutState {
 
 function initial(): { layout: Layout; preset: PresetName | null } {
   const saved = validate(setting<unknown>("layout", null));
-  if (saved) return { layout: saved, preset: setting<PresetName | null>("layoutPreset", null) };
+  if (saved) {
+    const p = setting<string | null>("layoutPreset", null);
+    const preset = p === "floatEq" ? "floatChain" : p;
+    return { layout: saved, preset: preset && preset in PRESETS ? (preset as PresetName) : null };
+  }
   // First run with panels: keep the Browser width people had set.
   const w = setting<{ width?: unknown } | null>("browser", null)?.width;
   const bw = typeof w === "number" && Number.isFinite(w) ? Math.round(w) : undefined;

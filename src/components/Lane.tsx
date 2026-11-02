@@ -349,7 +349,7 @@ function ClipView({ clip, track, color, height, view, width, selected, toFrame }
     if (!selected) store().select(c0.id);
     // The selection moves together, the dragged clip leading.
     const st = store();
-    const tracks = st.session!.tracks;
+    const tracks = st.session!.tracks.filter((t) => t.lane);
     const ids = st.selected.includes(c0.id) ? st.selected : [c0.id];
     const moving = tracks.flatMap((t, ti) => t.clips.filter((c) => ids.includes(c.id)).map((c) => ({ c, ti })));
     const myTi = tracks.findIndex((t) => t.id === track.id);

@@ -10,13 +10,15 @@ import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { TooltipLayer } from "@/components/Tooltip";
 import { Dock } from "@/components/Dock";
-import { panelHost, type PanelState } from "@/lib/dock";
+import { panelHost, type PanelOption, type PanelState } from "@/lib/dock";
+import { type MixerOptions, useMixer } from "@/stores/mixer-store";
 import { Editor, TimelineHead } from "@/components/Editor";
-import { EqPanel } from "@/components/EqPanel";
+import { ChainPanel } from "@/components/ChainPanel";
+import { MixerPanel } from "@/components/MixerPanel";
 import { ExportDialog } from "@/components/ExportDialog";
 import { RecoverDialog } from "@/components/RecoverDialog";
 import { TitleBar } from "@/components/TitleBar";
-import { api, type RecentProject } from "@/lib/api";
+import { api, MASTER, type RecentProject } from "@/lib/api";
 import {
   addFilesDialog,
   closeFrontTab,
@@ -207,12 +209,14 @@ function useShortcuts() {
       else if (ctrl && k === "e") void s.splitAtPlayhead();
       else if (ctrl && k === "a") s.selectAll();
       else if (ctrl && k === "h" && s.session) s.toggleHistory();
+      else if (!ctrl && e.key === "F9" && s.session) s.toggleMixer();
       else if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && s.session) {
-        // Moves the track of the selected clip.
+        // Moves the track of the selected clip past the next lane.
         const tracks = s.session.tracks;
-        const i = tracks.findIndex((t) => t.clips.some((c) => s.selected.includes(c.id)));
-        const to = i + (e.key === "ArrowUp" ? -1 : 1);
-        if (i >= 0 && to >= 0 && to < tracks.length) void s.apply({ type: "move_track", track: tracks[i].id, index: to });
+        const lanes = tracks.filter((t) => t.lane);
+        const i = lanes.findIndex((t) => t.clips.some((c) => s.selected.includes(c.id)));
+        const next = lanes[i + (e.key === "ArrowUp" ? -1 : 1)];
+        if (i >= 0 && next) void s.apply({ type: "move_track", track: lanes[i].id, index: tracks.indexOf(next) });
       }
       else if (ctrl && k === "w") closeFrontTab();
       else if (ctrl && (k === "0" || k === "f")) s.fit();
@@ -369,7 +373,33 @@ function usePanels(): Record<PanelId, PanelState> {
   const scratch = useSession((s) => !!s.session?.scratch);
   const browserOpen = useBrowser((s) => (scratch ? s.openScratch : s.open));
   const browserFloats = useLayout((s) => isFloating(s.layout, "browser"));
-  const eqShown = useSession((s) => s.eqTrack !== null && !!s.session?.tracks.some((t) => t.id === s.eqTrack));
+  const chainShown = useSession(
+    (s) => s.chainOpen && s.channel !== null && (s.channel === MASTER || !!s.session?.tracks.some((t) => t.id === s.channel)),
+  );
+  const mixerShown = useSession((s) => s.mixerOpen && !!s.session);
+  const mixer = useMixer((s) => s.options);
+  const setOpt = useMixer((s) => s.setOption);
+  const pick = <K extends keyof MixerOptions>(k: K, v: MixerOptions[K], label: string): PanelOption => ({
+    label,
+    on: mixer[k] === v,
+    run: () => setOpt(k, v),
+  });
+  const mixerOptions: PanelOption[] = [
+    { heading: "Layout" },
+    pick("layout", "narrow", "Narrow: devices in the Chain panel"),
+    pick("layout", "expanded", "Expanded: a device list per strip"),
+    { heading: "Meters" },
+    pick("meters", "wide", "Wide"),
+    pick("meters", "narrow", "Narrow"),
+    { heading: "Volume control" },
+    pick("vol", "fader", "Fader"),
+    pick("vol", "mini", "Mini fader"),
+    pick("vol", "knob", "Knob with full meter"),
+    pick("vol", "compact", "Small, as in the track row"),
+    { heading: "Other channels' cables" },
+    pick("cables", "grey", "Grey"),
+    pick("cables", "hidden", "Hidden"),
+  ];
   return {
     browser: {
       shown: browserFloats ? browserOpen : true,
@@ -377,7 +407,8 @@ function usePanels(): Record<PanelId, PanelState> {
       close: { label: browserOpen ? "Hide" : "Show", run: () => useBrowser.getState().toggle() },
     },
     timeline: { shown: true },
-    eq: { shown: eqShown, close: { label: "Close", run: () => useSession.getState().openEq(null) } },
+    mixer: { shown: mixerShown, close: { label: "Close", run: () => useSession.getState().toggleMixer() }, options: mixerOptions },
+    chain: { shown: chainShown, close: { label: "Close", run: () => useSession.getState().setChainOpen(false) } },
   };
 }
 
@@ -453,7 +484,8 @@ export function App() {
         </>,
         panelHost("timeline"),
       )}
-      {createPortal(session ? <EqPanel /> : null, panelHost("eq"))}
+      {createPortal(session ? <MixerPanel /> : null, panelHost("mixer"))}
+      {createPortal(session ? <ChainPanel /> : null, panelHost("chain"))}
       <StatusBar hint={hint} />
       <ClipPanel />
       <Dialogs />

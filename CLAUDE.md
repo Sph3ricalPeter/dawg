@@ -23,10 +23,17 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   `.dawg` JSON format: relative and absolute source paths, missing files open
   as silence and can be relinked), `resample` (offline rate conversion for added files),
   `stretch` (offline clip time-stretch and pitch-shift: a phase vocoder cut
-  at onsets; a clip keeps the result in `Clip::audio`), `eq` (the track EQ:
-  biquads the renderer runs before volume and pan), `analysis`
+  at onsets; a clip keeps the result in `Clip::audio`), `eq` (the EQ
+  device's biquads), `device` (a channel's chain: EQ, Compressor,
+  Utility, each with an id, power and a sidechain input), `analysis`
   (peak, LUFS, onsets, centroid: what an agent "hears"), `player`
-  (the audio callback minus the device, plus the EQ analyser's tap), `peaks`.
+  (the audio callback minus the device, plus the EQ analyser's tap and
+  compressor gain reduction), `peaks`. Every track is a mixer channel
+  (`lane: false` is a mixer-only bus or return): clips and incoming sends
+  → chain → volume, pan → sends (`Track::sends`, to channels or `MASTER`,
+  id 0, which has a chain too). The renderer runs channels in a
+  topological order; sends and sidechains must stay a DAG
+  (`Project::would_loop`).
 - `crates/dawg-cli`: `dawg-cli` for scripts (info, analyze, render a
   waveform PNG, trim/gain/normalize as dry runs until `--yes` or `--out`,
   export) and `dawg-cli mcp`, the MCP server (`mcp.rs`, JSON-RPC on stdio):
@@ -62,14 +69,23 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   track heights, playhead, range) is `lib/view-memory.ts`, saved per file
   path to `views.json` beside the settings; session tabs keep one `SavedView`
   per tab.
-  Panels: the Browser, Timeline and EQ dock and float (`lib/layout.ts` is
+  Panels: the Browser, Timeline, Mixer and Chain dock and float (`lib/layout.ts` is
   the pure dock tree and presets, `stores/layout-store.ts` saves it as
   `layout`, `lib/dock.ts` holds the panel hosts, actions and header drag,
   `components/Dock.tsx` renders it). Each panel renders once, through a
   portal, into a host element that moves between slots, so docking never
   remounts it; give a new panel a `PanelHead` and an entry in `PANELS`.
   Volume: `components/Volume.tsx` is the one volume control (knob, value
-  with dB, meter) for the master and every track; use it for any new one.
+  with dB, meter) for the master and every track; use it for any new one
+  (the mixer's fader is the one other, from the mixer design).
+  Mixer and chain: `components/ChainPanel.tsx` (the selected channel's
+  device cards; bodies in `Devices.tsx`), `components/MixerPanel.tsx`
+  (strips, route row, cables, meters drawn on one canvas),
+  `RouteMenus.tsx` (sends, sidechain, add device), `lib/mixer.ts` (channel
+  numbers, loop checks as the engine's), `lib/chain-edit.ts` (edits as
+  drafts while dragging), `stores/mixer-store.ts` (mixer options). Knob
+  colours mean a concern: `--k-vol` level, `--k-pan` stereo, `--k-time`
+  time and shape. No AI-specific UI in either panel.
   Tabs: `components/Tabs.tsx` is the row in the title bar; the session
   store keeps the front tab's `session` and, per tab in the back, what it
   was left showing (view, playhead, selection, EQ), and the waveform cache
@@ -111,7 +127,9 @@ npm run build:dev   # local installable "dawg dev" build
   enforces no allocation; extend it when you add to the path.
 - **No clicks from live changes**: a new project snapshot never steps the
   sound. `Renderer` ramps volume, pan, mute/solo, clip gain and master over
-  `RAMP_SECONDS`, crossfades a changed EQ over `EQ_FADE_SECONDS`, and
+  `RAMP_SECONDS`, crossfades a changed EQ over `EQ_FADE_SECONDS`, fades devices in and out
+  as they're added, removed or bypassed, ramps sends and compressor
+  settings, and
   crossfades a track whose clips sound different (moved, trimmed,
   stretched, faded, enveloped, added, deleted, or the track added or
   deleted) from the old clips to the new over `EDIT_FADE_SECONDS`, before

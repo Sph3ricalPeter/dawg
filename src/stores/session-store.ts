@@ -3,6 +3,7 @@ import {
   api,
   apiMessage,
   type ClipState,
+  type DeviceState,
   type Command,
   type Front,
   type TabInfo,
@@ -78,6 +79,8 @@ export type Draft =
   | { kind: "track"; track: TrackState }
   /** The master volume, in dB. */
   | { kind: "master"; db: number }
+  /** The master's device chain as it is being edited. */
+  | { kind: "masterChain"; chain: DeviceState[] }
   | { kind: "tempo"; bpm: number };
 
 interface SessionStore {
@@ -128,9 +131,19 @@ interface SessionStore {
   busy: string | null;
   /** Bumped whenever the session's audio is (re)loaded from disk. */
   fileRev: number;
-  /** The track whose EQ is open under the playlist. */
-  eqTrack: number | null;
-  openEq: (track: number | null) => void;
+  /** The selected channel (a track id, or 0 for the master): the one the
+   * Chain panel shows and the mixer highlights. */
+  channel: number | null;
+  /** Selects a channel; the Chain panel follows it, and `open` opens it
+   * if it was closed. */
+  selectChannel: (id: number | null, open?: boolean) => void;
+  /** The Chain panel is open (it closes with its ×; selecting a channel
+   * opens it again). */
+  chainOpen: boolean;
+  setChainOpen: (open: boolean) => void;
+  /** The Mixer panel is open (F9). */
+  mixerOpen: boolean;
+  toggleMixer: () => void;
   /** The clip settings popover: which clip, at a window point. */
   clipPanel: { clip: number; x: number; y: number } | null;
   openClipPanel: (clip: number, x: number, y: number) => void;
@@ -205,6 +218,9 @@ interface SessionStore {
   levels: [number, number][];
   /** The master output's level, and its loudest peak since playback began. */
   master: [number, number];
+  /** Each compressor's gain reduction (dB, since the last poll), by device
+   * id; empty while stopped. */
+  reduction: Record<number, number>;
   masterPeak: number;
   resetMasterPeak: () => void;
   showToast: (text: string, opts?: { error?: boolean; action?: Toast["action"] }) => void;
@@ -321,7 +337,7 @@ export function timelineEnd(s: SessionState): number {
 
 /** The tracks as they should be drawn right now, with any drag applied. */
 export function shownTracks(s: SessionState, draft: Draft | null): TrackState[] {
-  if (!draft || draft.kind === "master" || draft.kind === "tempo") return s.tracks;
+  if (!draft || draft.kind === "master" || draft.kind === "masterChain" || draft.kind === "tempo") return s.tracks;
   if (draft.kind === "track") {
     return s.tracks.map((t) => (t.id === draft.track.id ? { ...draft.track, clips: t.clips } : t));
   }
@@ -420,6 +436,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   playing: false,
   levels: [],
   master: [0, 0],
+  reduction: {},
   masterPeak: 0,
   resetMasterPeak: () => set({ masterPeak: 0 }),
   range: null,
@@ -430,8 +447,16 @@ export const useSession = create<SessionStore>((set, get) => ({
   dialog: null,
   busy: null,
   fileRev: 0,
-  eqTrack: null,
-  openEq: (track) => set({ eqTrack: track }),
+  channel: null,
+  selectChannel: (id, open = false) => set({ channel: id, chainOpen: (open && id !== null) || get().chainOpen }),
+  chainOpen: true,
+  setChainOpen: (open) => set({ chainOpen: open }),
+  mixerOpen: setting<unknown>("mixerOpen", false) === true,
+  toggleMixer: () => {
+    const open = !get().mixerOpen;
+    setSetting("mixerOpen", open);
+    set({ mixerOpen: open });
+  },
   clipPanel: null,
   openClipPanel: (clip, x, y) => {
     const sel = get().selected;
@@ -716,7 +741,7 @@ export const useSession = create<SessionStore>((set, get) => ({
   addTrack: async () => {
     const s = get().session;
     if (!s) return;
-    await get().apply({ type: "add_track", name: `Track ${s.tracks.length + 1}` });
+    await get().apply({ type: "add_track", name: `Track ${s.tracks.filter((t) => t.lane).length + 1}` });
   },
 
   setPlayhead: (frame) => {
@@ -870,7 +895,7 @@ export const useSession = create<SessionStore>((set, get) => ({
     await api.stop().catch(() => undefined);
     // Stop returns to where playback started (UX spec, Space).
     playClock.stop();
-    set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0] });
+    set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0], reduction: {} });
   },
 
   poll: async () => {
@@ -879,22 +904,24 @@ export const useSession = create<SessionStore>((set, get) => ({
     if (!get().playing) return;
     if (!t.playing) {
       playClock.stop();
-      set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0] });
+      set({ playing: false, playhead: get().startPoint, levels: [], master: [0, 0], reduction: {} });
       return;
     }
     // Peaks since the last poll; the meters fall back between them as they
     // draw (see Meter and Master).
     const levels = t.levels;
     const master = t.master;
+    const reduction: Record<number, number> = {};
+    for (const [id, gr] of t.reduction) reduction[id] = gr;
     const masterPeak = Math.max(get().masterPeak, t.master[0], t.master[1]);
     if (get().scrubbing) {
-      set({ levels, master, masterPeak });
+      set({ levels, master, masterPeak, reduction });
       return;
     }
     clockBounds = bounds(get());
     const b = clockBounds;
     playClock.report(t.position, b && b.loopFrom !== null ? b.to - b.loopFrom : null);
-    set({ playhead: t.position, levels, master, masterPeak });
+    set({ playhead: t.position, levels, master, masterPeak, reduction });
   },
 
   showToast: (text, opts) => {
@@ -951,7 +978,7 @@ interface Memo {
   selected: number[];
   heights: Record<number, number>;
   scrollTop: number;
-  eqTrack: number | null;
+  channel: number | null;
   fileRev: number;
 }
 const memos = new Map<number, Memo>();
@@ -968,7 +995,7 @@ function show(f: Front, recovered = false) {
       selected: st.selected,
       heights: st.heights,
       scrollTop: tracksScroll.top,
-      eqTrack: st.eqTrack,
+      channel: st.channel,
       fileRev: st.fileRev,
     });
   }
@@ -978,7 +1005,7 @@ function show(f: Front, recovered = false) {
   const s = f.state;
   if (!s) {
     follow(null, readView);
-    useSession.setState({ session: null, draft: null, range: null, selected: [], playhead: 0, startPoint: 0, eqTrack: null });
+    useSession.setState({ session: null, draft: null, range: null, selected: [], playhead: 0, startPoint: 0, channel: null });
     return;
   }
   // The same tab again (a file that was already open in front).
@@ -993,7 +1020,7 @@ function show(f: Front, recovered = false) {
   const m = f.active !== null ? memos.get(f.active) : undefined;
   if (!m) {
     start(s, recovered);
-    useSession.setState({ eqTrack: null });
+    useSession.setState({ channel: s.tracks[0]?.id ?? null });
     return;
   }
   memos.delete(f.active!);
@@ -1010,7 +1037,7 @@ function show(f: Front, recovered = false) {
     startPoint: m.playhead,
     selected: m.selected.filter((id) => ids.has(id)),
     heights: m.heights,
-    eqTrack: m.eqTrack,
+    channel: m.channel,
     fileRev: m.fileRev,
   });
 }
@@ -1094,4 +1121,11 @@ export function useTracks(): TrackState[] {
   const session = useSession((s) => s.session);
   const draft = useSession((s) => s.draft);
   return session ? shownTracks(session, draft) : [];
+}
+
+/** The master's chain as it should be drawn right now. */
+export function useMasterChain(): DeviceState[] {
+  const chain = useSession((s) => s.session?.masterChain);
+  const draft = useSession((s) => s.draft);
+  return draft?.kind === "masterChain" ? draft.chain : (chain ?? []);
 }
