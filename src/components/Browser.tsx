@@ -642,15 +642,8 @@ function Preview() {
     x.fillStyle = over;
     for (let px = 0; px < w; px++) if (col(px) > 1) x.fillRect(px, 0, 1, 2);
   }, [info, cw]);
-  if (!current) {
-    return (
-      <div className="preview">
-        <div className="pvw none">
-          <span className="hintx">Click a file to hear it here</span>
-        </div>
-      </div>
-    );
-  }
+  // Nothing selected: no preview section at all, the list gets the room.
+  if (!current) return null;
   const len = info?.seconds ?? 0;
   const b = useBrowser.getState;
   return (

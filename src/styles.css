@@ -2791,19 +2791,6 @@ body.secdrag * {
   overflow: hidden;
   cursor: pointer;
 }
-.pvw.none {
-  cursor: default;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.pvw .hintx {
-  padding: 0 12px;
-  color: var(--text-faint);
-  font-size: 12px;
-  text-align: center;
-  white-space: normal;
-}
 .pvw canvas {
   position: absolute;
   inset: 0;
