@@ -24,24 +24,27 @@ function LabelChip({ label, children }: { label: Label; children?: React.ReactNo
 }
 
 /** Keeps a fixed popup inside the window: placed at `at`, moved left or up
- * when it would run off an edge. */
-function usePlace(ref: React.RefObject<HTMLElement | null>, at: PopupAt) {
+ * when it would run off an edge. A submenu that doesn't fit on the right
+ * opens to the left of `flip` (its parent menu's left edge) instead. */
+function usePlace(ref: React.RefObject<HTMLElement | null>, at: PopupAt, flip?: number) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    el.style.left = `${Math.max(4, Math.min(at.x, window.innerWidth - r.width - 4))}px`;
+    const x = flip !== undefined && at.x + r.width > window.innerWidth - 4 ? flip - r.width : at.x;
+    el.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
     el.style.top = `${Math.max(4, Math.min(at.y, window.innerHeight - r.height - 4))}px`;
   });
 }
 
 /** Closes on a press outside `ref`, or on Escape (which goes no further). */
-function useDismiss(ref: React.RefObject<HTMLElement | null>, close: () => void) {
+function useDismiss(ref: React.RefObject<HTMLElement | null>, close: () => void, on = true) {
   const latest = useRef(close);
   useEffect(() => {
     latest.current = close;
   });
   useEffect(() => {
+    if (!on) return;
     const down = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) latest.current();
     };
@@ -57,7 +60,7 @@ function useDismiss(ref: React.RefObject<HTMLElement | null>, close: () => void)
       window.removeEventListener("mousedown", down);
       window.removeEventListener("keydown", key, true);
     };
-  }, [ref]);
+  }, [ref, on]);
 }
 
 /** The favourite star at the end of a file row: filled when starred, an
@@ -122,21 +125,31 @@ export function LabelPicker() {
   return <Picker key={`${picker.path}|${picker.x}|${picker.y}`} path={picker.path} at={picker} />;
 }
 
-function Picker({ path, at }: { path: string; at: PopupAt }) {
+/** The label picker as a submenu of a file's right-click menu, opening to
+ * the right of its "Labels" item. It lives inside that menu, which closes it. */
+export function LabelSubmenu({ path, at, flip, close }: { path: string; at: PopupAt; flip: number; close: () => void }) {
+  return <Picker path={path} at={at} sub={{ flip, close }} />;
+}
+
+function Picker({ path, at, sub }: { path: string; at: PopupAt; sub?: { flip: number; close: () => void } }) {
   const ref = useRef<HTMLDivElement>(null);
   const [q, setQ] = useState("");
   const custom = useLibrary((s) => s.custom);
   const { labels: has } = useFileLibrary(path);
   const br = useBrowser.getState;
   const lib = useLibrary.getState;
-  usePlace(ref, at);
-  useDismiss(ref, () => br().closePopups());
+  usePlace(ref, at, sub?.flip);
+  useDismiss(ref, () => br().closePopups(), !sub);
   const all = lib().all();
   const shown = all.filter((l) => norm(l.name).includes(norm(q)));
   const exact = all.find((l) => norm(l.name) === norm(q));
-  const create = () => br().openLabelDialog({ path, name: q.trim(), x: at.x, y: at.y });
+  const close = () => (sub ? sub.close() : br().closePopups());
+  const create = () => {
+    close();
+    br().openLabelDialog({ path, name: q.trim(), x: at.x, y: at.y });
+  };
   return (
-    <div className="menu lpick" role="menu" ref={ref} aria-label="Labels">
+    <div className={`menu lpick${sub ? " sub" : ""}`} role="menu" ref={ref} aria-label="Labels">
       <div className="lpq">
         <input
           autoFocus
@@ -146,7 +159,7 @@ function Picker({ path, at }: { path: string; at: PopupAt }) {
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation();
-            if (e.key === "Escape") br().closePopups();
+            if (e.key === "Escape") close();
             if (e.key !== "Enter") return;
             const pickIt = exact ?? (shown.length === 1 ? shown[0] : null);
             if (pickIt) {
@@ -174,6 +187,7 @@ function Picker({ path, at }: { path: string; at: PopupAt }) {
                   onContextMenu={(e) => {
                     if (l.group !== "Custom") return;
                     e.preventDefault();
+                    close();
                     br().openLabelDialog({ edit: l.id, x: e.clientX, y: e.clientY });
                   }}
                 >

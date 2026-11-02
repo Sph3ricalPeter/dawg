@@ -10,7 +10,7 @@ import { baseName, dirName, disambiguate, joinPath, previewClock, useBrowser } f
 import { useLayout } from "@/stores/layout-store";
 import { type LibraryFile, type LibraryFilter, libraryKey, matchesEntry, useFileLibrary, useLibrary } from "@/stores/library-store";
 import { TYPE_LABELS } from "@/lib/labels";
-import { FavStar, FileMeta, LabelCloud, LabelDialogView, LabelIcon, LabelPicker, ManageLabels } from "./BrowserLabels";
+import { FavStar, FileMeta, LabelCloud, LabelDialogView, LabelIcon, LabelPicker, LabelSubmenu, ManageLabels } from "./BrowserLabels";
 import { useSession } from "@/stores/session-store";
 import { PanelHead } from "./Dock";
 
@@ -121,6 +121,8 @@ interface MenuItem {
   label: string;
   run?: () => void;
   keys?: string;
+  /** Opens the label picker for this file as a submenu to the right. */
+  labelsFor?: string;
 }
 type MenuEntry = MenuItem | "-";
 interface MenuState {
@@ -221,7 +223,6 @@ function FileRow({
       onPointerDown={onDown}
       onClick={() => void useBrowser.getState().pick(path)}
       onContextMenu={(e) => onMenu(e, path, false)}
-      data-tip={`${path}\n${labels.length ? labels.map((l) => l.name).join(", ") : "No labels"}${fav ? " · Favourite" : ""}`}
       data-hint="Click to preview · drag onto a track or the empty lane below · F favourites it · L opens labels · right-click for more"
     >
       <Guides depth={depth} />
@@ -713,6 +714,13 @@ export function Browser() {
   const asideRef = useRef<HTMLElement>(null);
   const [secDrop, setSecDrop] = useState<SecDrop | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  /** The Labels submenu, open beside its item. */
+  const [sub, setSub] = useState<{ x: number; y: number; flip: number; of: MenuState } | null>(null);
+  const openSub = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const m = el.closest(".menu")?.getBoundingClientRect() ?? r;
+    if (menu) setSub({ x: m.right - 2, y: r.top - 5, flip: m.left + 2, of: menu });
+  };
   const [drag, setDrag] = useState<Drag | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const b = useBrowser.getState;
@@ -764,10 +772,9 @@ export function Browser() {
     const start = Math.round(s.playhead);
     const dir = dirName(path);
     const lib = useLibrary.getState();
-    const at = { x: e.clientX, y: e.clientY };
     const items: MenuEntry[] = [
       { label: lib.isFav(path) ? "Remove from favourites" : "Add to favourites", keys: "F", run: () => lib.toggleFav(path) },
-      { label: "Labels…", keys: "L", run: () => b().openPicker(path, at) },
+      { label: "Labels", keys: "L", labelsFor: path },
       "-",
       { label: "Preview", keys: "Click", run: () => void b().pick(path, true) },
       { label: "Add on a new track", run: () => place(path, null, start) },
@@ -959,11 +966,28 @@ export function Browser() {
           {menu.items.map((it, i) =>
             it === "-" ? (
               <div key={i} className="menu-sep" />
+            ) : it.labelsFor ? (
+              <button
+                key={i}
+                className={`menu-item subm${sub?.of === menu ? " open" : ""}`}
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={sub?.of === menu}
+                onMouseEnter={(e) => openSub(e.currentTarget)}
+                onClick={(e) => openSub(e.currentTarget)}
+              >
+                {it.label}
+                <span className="subr">
+                  {it.keys && <kbd>{it.keys}</kbd>}
+                  <i className="car">▸</i>
+                </span>
+              </button>
             ) : (
               <button
                 key={i}
                 className="menu-item"
                 role="menuitem"
+                onMouseEnter={() => setSub(null)}
                 onClick={() => {
                   setMenu(null);
                   it.run?.();
@@ -974,6 +998,7 @@ export function Browser() {
               </button>
             ),
           )}
+          {sub?.of === menu && <LabelSubmenu path={menu.path} at={sub} flip={sub.flip} close={() => setMenu(null)} />}
         </div>
       )}
       {drag && (

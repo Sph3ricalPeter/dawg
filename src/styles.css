@@ -3126,6 +3126,20 @@ body.secdrag * {
   flex-wrap: wrap;
   gap: 4px;
 }
+/* "Labels ▸" in a file's right-click menu, and its submenu. */
+.menu-item.subm .subr {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.menu-item.subm .car {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.menu-item.subm.open {
+  background: var(--bg-4);
+}
 /* Label picker and the Manage labels menu. */
 .menu.lpick {
   position: fixed;
