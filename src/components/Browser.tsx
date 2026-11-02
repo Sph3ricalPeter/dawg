@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "@/lib/api";
@@ -44,6 +44,16 @@ function BrowserOptions() {
   const typeIcons = useBrowser((s) => s.typeIcons);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // It hangs left from the button; in a narrow Browser by the window's left
+  // edge it moves right to stay on screen.
+  useLayoutEffect(() => {
+    const m = menuRef.current;
+    if (!open || !m) return;
+    m.style.transform = "";
+    const r = m.getBoundingClientRect();
+    if (r.left < 4) m.style.transform = `translateX(${4 - r.left}px)`;
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
@@ -62,11 +72,8 @@ function BrowserOptions() {
   }, [open]);
   const b = useBrowser.getState;
   const item = (text: string, on: boolean, run: () => void) => (
-    <button key={text} className={`menu-item check${on ? " on" : ""}`} role="menuitemcheckbox" aria-checked={on} onClick={run}>
-      <span>
-        <i className="tick">{on ? "✓" : ""}</i>
-        {text}
-      </span>
+    <button key={text} className={`menu-item${on ? " checked" : ""}`} role="menuitemcheckbox" aria-checked={on} onClick={run}>
+      {text}
     </button>
   );
   return (
@@ -88,12 +95,11 @@ function BrowserOptions() {
         <span className="car">▾</span>
       </button>
       {open && (
-        <div className="menu bmenu" role="menu">
-          <div className="menu-h">Preview</div>
+        <div className="menu bmenu" role="menu" ref={menuRef}>
+          <div className="menu-head">
+            <b className="menu-title">Browser settings</b>
+          </div>
           {item("Auto-preview on click", autoPreview, () => b().setAutoPreview(!autoPreview))}
-          <div className="menu-note">{autoPreview ? "Clicking a file plays it" : "Clicking a file only selects it"}</div>
-          <div className="menu-sep" />
-          <div className="menu-h">Files</div>
           {item("Show file type icons", typeIcons, () => b().setTypeIcons(!typeIcons))}
         </div>
       )}

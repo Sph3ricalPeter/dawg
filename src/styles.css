@@ -2373,6 +2373,11 @@ body.rsizing * {
   left: auto;
   right: 0;
   min-width: 200px;
+  /* Not the panel header's faint, bold capitals it sits in. */
+  color: var(--text);
+  font: 12px/1.4 var(--font);
+  letter-spacing: 0;
+  text-transform: none;
 }
 .menu-note {
   padding: 2px 8px 4px 24px;
@@ -3550,7 +3555,8 @@ body.sizing-v * {
   background: var(--bg-4);
   color: var(--text);
 }
-.menu.pmenu .menu-item.checked::after {
+.menu.pmenu .menu-item.checked::after,
+.menu.bmenu .menu-item.checked::after {
   content: "✓";
   color: var(--text-dim);
 }
