@@ -2383,6 +2383,17 @@ body.rsizing * {
   font-size: 11.5px;
   color: var(--text-faint);
 }
+.pnwrap {
+  position: relative;
+}
+.menu.pnmenu {
+  top: 26px;
+  left: 0;
+  min-width: 220px;
+}
+.pnnote {
+  color: var(--text-faint);
+}
 .menu.tlmenu {
   top: 26px;
   left: 0;
