@@ -304,9 +304,6 @@ body.panning * {
   font-size: var(--fs-2xs);
   color: var(--text-faint);
 }
-.menu-item.on {
-  font-weight: var(--fw-semi);
-}
 .titlebar.tight .logo .lw {
   display: none;
 }
@@ -477,63 +474,6 @@ body.panning * {
   color: var(--text-dim);
 }
 
-.menu {
-  position: absolute;
-  top: 28px;
-  left: 4px;
-  z-index: 10;
-  min-width: 230px;
-  padding: 4px;
-  background: var(--bg-3);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow-md);
-}
-.menu-head {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px 8px;
-  border-bottom: 1px solid var(--line-strong);
-  margin-bottom: 4px;
-}
-.menu-item {
-  display: block;
-  width: 100%;
-  padding: 5px 8px;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-md);
-  cursor: pointer;
-}
-.menu-item:hover:not(:disabled) {
-  background: var(--bg-4);
-}
-.menu-item:disabled {
-  color: var(--text-faint);
-  cursor: default;
-}
-.menu-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-}
-.menu-item kbd {
-  color: var(--text-faint);
-  opacity: 1;
-}
-.menu-sep {
-  border-top: 1px solid var(--line-strong);
-  margin: 4px 0;
-}
-.menu-h {
-  padding: 6px 8px 2px;
-  color: var(--text-faint);
-  font-size: var(--fs-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
 
 /* update indicator: one icon button, its icon is the state */
 .upd-wrap {
@@ -1090,17 +1030,6 @@ body.rsizing * {
   align-items: center;
   justify-content: center;
   margin: -2px 0;
-}
-.menu.ctx {
-  position: fixed;
-  z-index: 30;
-  min-width: 190px;
-  max-width: 280px;
-}
-.menu.ctx .menu-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .warn-note {
   color: var(--warn);
@@ -2286,21 +2215,10 @@ body.rsizing * {
   letter-spacing: 0;
   text-transform: none;
 }
-.menu-note {
-  padding: 2px 8px 4px 24px;
-  font-size: var(--fs-md);
-  color: var(--text-faint);
-}
 .menu.tlmenu {
   top: 26px;
   left: 0;
   min-width: 200px;
-}
-.menu-item.check .tick {
-  display: inline-block;
-  width: 16px;
-  font-style: normal;
-  color: var(--text-dim);
 }
 .ruler .tk.maj.sub .lb {
   color: var(--text-faint);
@@ -3449,11 +3367,6 @@ body.sizing-v * {
   background: var(--bg-4);
   color: var(--text);
 }
-.menu.pmenu .menu-item.checked::after,
-.menu.bmenu .menu-item.checked::after {
-  content: "✓";
-  color: var(--text-dim);
-}
 
 .dfloat {
   position: absolute;
@@ -3568,20 +3481,6 @@ body.sizing-v * {
 .mxs.dropchan {
   box-shadow: inset 0 0 0 1px var(--knob);
 }
-.menu-item .mil {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.menu-item.tickable .tick {
-  width: 14px;
-  flex: none;
-  color: var(--text-dim);
-}
 .menu .mno {
   width: 26px;
   flex: none;
@@ -3615,9 +3514,6 @@ body.sizing-v * {
   text-align: right;
   font-size: var(--fs-xs);
   color: var(--text-dim);
-}
-.menu-note.warn {
-  color: var(--danger);
 }
 .sendk {
   display: inline-flex;

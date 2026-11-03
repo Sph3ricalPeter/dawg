@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { newProject } from "@/lib/actions";
 import type { TabInfo } from "@/lib/api";
 import { useSession } from "@/stores/session-store";
+import { Menu, MenuItem } from "@/ui/Menu";
 
 /** Tab widths: they share the room left of the transport, from the widest
  * down to the narrowest; past that the row scrolls to keep the front tab in
@@ -236,23 +237,19 @@ export function Tabs({ tight: shrunk, onTight }: { tight: boolean; onTight: (tig
             {tabs.length} tabs<span className="car">▾</span>
           </button>
           {listOpen && (
-            <div className="menu" role="menu">
+            <Menu>
               {tabs.map((t, i) => (
-                <button
+                <MenuItem
                   key={t.id}
-                  className={`menu-item${t.id === active ? " on" : ""}`}
-                  role="menuitem"
-                  onClick={() => {
-                    setListOpen(false);
-                    void store().switchTab(t.id);
-                  }}
-                >
-                  {t.name}
-                  {t.dirty ? " •" : ""}
-                  {i < 9 && <kbd>Ctrl+{i + 1}</kbd>}
-                </button>
+                  label={`${t.name}${t.dirty ? " •" : ""}`}
+                  checked={t.id === active}
+                  radio
+                  keys={i < 9 ? `Ctrl+${i + 1}` : undefined}
+                  run={() => void store().switchTab(t.id)}
+                  close={() => setListOpen(false)}
+                />
               ))}
-            </div>
+            </Menu>
           )}
         </div>
       )}

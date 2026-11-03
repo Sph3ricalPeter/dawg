@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { shortVersion, updateLine, useUpdaterStore } from "@/stores/updater-store";
 import { registerRichTip } from "@/lib/rich-tips";
+import { Menu } from "@/ui/Menu";
 
 const DownloadIcon = () => (
   <svg viewBox="0 0 16 16">
@@ -218,7 +219,7 @@ export function UpdateIndicator() {
             <ReadyIcon />
           </button>
           {open && (
-            <div className="menu upd-menu" role="menu">
+            <Menu className="upd-menu">
               <UpdateDetails
                 foot={
                   <div className="upd-actions">
@@ -239,7 +240,7 @@ export function UpdateIndicator() {
                   </div>
                 }
               />
-            </div>
+            </Menu>
           )}
         </div>
       );

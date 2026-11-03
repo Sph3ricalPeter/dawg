@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { BUILTIN_LABELS, FALLBACK_ICON, LABEL_COLORS, LABEL_GROUPS, LABEL_ICONS, type Label } from "@/lib/labels";
 import { useBrowser, type PopupAt } from "@/stores/browser-store";
 import { below } from "@/lib/popup";
 import { labelCounts, useFileLibrary, useLibrary } from "@/stores/library-store";
+import { useDismiss } from "@/ui/dismiss";
+import { MenuItem, MenuLabel, MenuNote, MenuSep } from "@/ui/Menu";
 
 /** A label's icon: 12×12 strokes in the label's colour (or the text colour). */
 export function LabelIcon({ icon, color }: { icon: string; color?: string }) {
@@ -35,32 +37,6 @@ function usePlace(ref: React.RefObject<HTMLElement | null>, at: PopupAt, flip?: 
     el.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
     el.style.top = `${Math.max(4, Math.min(at.y, window.innerHeight - r.height - 4))}px`;
   });
-}
-
-/** Closes on a press outside `ref`, or on Escape (which goes no further). */
-function useDismiss(ref: React.RefObject<HTMLElement | null>, close: () => void, on = true) {
-  const latest = useRef(close);
-  useEffect(() => {
-    latest.current = close;
-  });
-  useEffect(() => {
-    if (!on) return;
-    const down = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) latest.current();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      e.preventDefault();
-      latest.current();
-    };
-    window.addEventListener("mousedown", down);
-    window.addEventListener("keydown", key, true);
-    return () => {
-      window.removeEventListener("mousedown", down);
-      window.removeEventListener("keydown", key, true);
-    };
-  }, [ref, on]);
 }
 
 /** The favourite star at the end of a file row: filled when starred, an
@@ -139,7 +115,7 @@ function Picker({ path, at, sub }: { path: string; at: PopupAt; sub?: { flip: nu
   const br = useBrowser.getState;
   const lib = useLibrary.getState;
   usePlace(ref, at, sub?.flip);
-  useDismiss(ref, () => br().closePopups(), !sub);
+  useDismiss(!sub, ref, () => br().closePopups(), true);
   const all = lib().all();
   const shown = all.filter((l) => norm(l.name).includes(norm(q)));
   const exact = all.find((l) => norm(l.name) === norm(q));
@@ -174,42 +150,41 @@ function Picker({ path, at, sub }: { path: string; at: PopupAt; sub?: { flip: nu
         if (!ls.length) return null;
         return (
           <div key={g}>
-            <div className="menu-h">{g}</div>
+            <MenuLabel>{g}</MenuLabel>
             {ls.map((l) => {
               const on = has.some((h) => h.id === l.id);
               return (
-                <button
+                <MenuItem
                   key={l.id}
-                  className={`menu-item check${on ? " on" : ""}`}
-                  role="menuitemcheckbox"
-                  aria-checked={on}
-                  onClick={() => lib().toggleLabel(path, l.id)}
+                  checked={on}
+                  keep
+                  label={
+                    <>
+                      <LabelIcon icon={l.icon} color={l.color} />
+                      {l.name}
+                    </>
+                  }
+                  run={() => lib().toggleLabel(path, l.id)}
                   onContextMenu={(e) => {
                     if (l.group !== "Custom") return;
                     e.preventDefault();
                     close();
                     br().openLabelDialog({ edit: l.id, x: e.clientX, y: e.clientY });
                   }}
-                >
-                  <span>
-                    <i className="tick">{on ? "✓" : ""}</i>
-                    <LabelIcon icon={l.icon} color={l.color} />
-                    {l.name}
-                  </span>
-                </button>
+                />
               );
             })}
           </div>
         );
       })}
-      {!shown.length && <div className="menu-note">No label by that name</div>}
-      <div className="menu-sep" />
+      {!shown.length && <MenuNote>No label by that name</MenuNote>}
+      <MenuSep />
       {!exact && (
         <button className="menu-item new" onClick={create}>
           {q.trim() ? `+ Create "${q.trim()}"` : "+ New custom label…"}
         </button>
       )}
-      {custom.length > 0 && !q && <div className="menu-note">Right-click a custom label to edit it</div>}
+      {custom.length > 0 && !q && <MenuNote>Right-click a custom label to edit it</MenuNote>}
     </div>
   );
 }
@@ -234,7 +209,7 @@ function LabelEditor() {
   const br = useBrowser.getState;
   const lib = useLibrary.getState;
   usePlace(ref, d);
-  useDismiss(ref, () => br().closePopups());
+  useDismiss(true, ref, () => br().closePopups(), true);
   const clash = lib()
     .all()
     .find((l) => l.id !== editing?.id && norm(l.name) === norm(name));
@@ -347,29 +322,27 @@ function ManageMenu({ at, close }: { at: PopupAt; close: () => void }) {
   const files = useLibrary((s) => s.files);
   const counts = labelCounts(files);
   usePlace(ref, at);
-  useDismiss(ref, close);
+  useDismiss(true, ref, close, true);
   const br = useBrowser.getState;
   return (
     <div className="menu lpick" role="menu" ref={ref} aria-label="Manage labels" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="menu-h">Custom labels</div>
+      <MenuLabel>Custom labels</MenuLabel>
       {custom.map((l) => (
-        <button
+        <MenuItem
           key={l.id}
-          className="menu-item"
-          onClick={() => {
-            close();
-            br().openLabelDialog({ edit: l.id, x: at.x, y: at.y });
-          }}
-        >
-          <span>
-            <LabelIcon icon={l.icon} color={l.color} />
-            {l.name}
-          </span>
-          <kbd>{counts.get(l.id) ?? 0}</kbd>
-        </button>
+          label={
+            <>
+              <LabelIcon icon={l.icon} color={l.color} />
+              {l.name}
+            </>
+          }
+          keys={String(counts.get(l.id) ?? 0)}
+          run={() => br().openLabelDialog({ edit: l.id, x: at.x, y: at.y })}
+          close={close}
+        />
       ))}
-      {!custom.length && <div className="menu-note">None yet. Built-in labels can't be changed.</div>}
-      <div className="menu-sep" />
+      {!custom.length && <MenuNote>None yet. Built-in labels can't be changed.</MenuNote>}
+      <MenuSep />
       <button
         className="menu-item new"
         onClick={() => {

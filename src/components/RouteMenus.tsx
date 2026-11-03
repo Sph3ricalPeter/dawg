@@ -19,7 +19,7 @@ import {
 import type { MenuAt } from "@/lib/popup";
 import { useSession, useTracks } from "@/stores/session-store";
 import { Knob } from "@/ui/Knob";
-import { MenuItem, PopMenu } from "./PopMenu";
+import { MenuItem, MenuNote, MenuSep, PopMenu } from "@/ui/Menu";
 import { VOL_MIN } from "./Volume";
 
 const store = useSession.getState;
@@ -86,7 +86,7 @@ export function SendMenu({ from, at, onClose }: { from: number; at: MenuAt; onCl
             </div>
           );
         })}
-      {me.sends.length === 0 && <div className="menu-note warn">No output: this channel is silent</div>}
+      {me.sends.length === 0 && <MenuNote warn>No output: this channel is silent</MenuNote>}
     </PopMenu>
   );
 }
@@ -101,7 +101,7 @@ export function SidechainMenu({ device, channel, at, onClose }: { device: Device
   return (
     <PopMenu at={at} onClose={onClose} title="Sidechain: listen to" className="scmenu">
       <MenuItem close={onClose} checked={device.sidechain == null} label="Off (its own input)" run={() => set(null)} />
-      <div className="menu-sep" />
+      <MenuSep />
       {tracks
         .filter((t) => t.id !== channel)
         .map((t) => {
@@ -140,7 +140,7 @@ export function AddDeviceMenu({ channel, index, at, onClose }: { channel: number
       {DEVICE_KINDS.map((k) => (
         <MenuItem key={k} close={onClose} disabled={full} hint={DEVICE_HINTS[k]} label={DEVICE_NAMES[k]} run={() => add(k)} />
       ))}
-      {full && <div className="menu-note">A chain holds {MAX_DEVICES} devices</div>}
+      {full && <MenuNote>A chain holds {MAX_DEVICES} devices</MenuNote>}
     </PopMenu>
   );
 }
@@ -164,7 +164,7 @@ export function DeviceMenu({ device, channel, at, onClose }: { device: DeviceSta
         disabled={chain.length >= MAX_DEVICES}
         run={() => void store().apply({ type: "copy_device", device: device.id, channel, index: i + 1 })}
       />
-      <div className="menu-sep" />
+      <MenuSep />
       <MenuItem close={onClose} label="Delete" keys="Del" run={() => void store().apply({ type: "remove_device", device: device.id })} />
     </PopMenu>
   );

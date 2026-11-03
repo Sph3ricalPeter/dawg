@@ -56,3 +56,94 @@
   font-size: var(--fs-md);
   font-weight: var(--nw);
 }
+
+/* ------------------------------------------------------------------ */
+/* Menus (ui/Menu.tsx). `.menu` drops under the button it follows;     */
+/* `.menu.ctx` sits at a point.                                         */
+.menu {
+  position: absolute;
+  top: 28px;
+  left: 4px;
+  z-index: 10;
+  min-width: 230px;
+  padding: 4px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-md);
+}
+.menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line-strong);
+  margin-bottom: 4px;
+}
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 5px 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-4);
+}
+.menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.menu-item kbd {
+  color: var(--text-faint);
+  opacity: 1;
+}
+.menu-sep {
+  border-top: 1px solid var(--line-strong);
+  margin: 4px 0;
+}
+.menu-h {
+  padding: 6px 8px 2px;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.menu.ctx {
+  position: fixed;
+  z-index: 30;
+  min-width: 190px;
+  max-width: 280px;
+}
+.menu.ctx .menu-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-note {
+  padding: 2px 8px 4px 24px;
+  font-size: var(--fs-md);
+  color: var(--text-faint);
+}
+.menu-item .mil {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-item.tickable .tick {
+  width: 14px;
+  flex: none;
+  color: var(--text-dim);
+}
+.menu-note.warn {
+  color: var(--danger);
+}

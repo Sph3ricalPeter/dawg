@@ -14,6 +14,8 @@ import { FavStar, FileMeta, LabelCloud, LabelDialogView, LabelIcon, LabelPicker,
 import { useSession } from "@/stores/session-store";
 import { PanelHead } from "./Dock";
 import { token } from "@/ui/tokens";
+import { useDismiss } from "@/ui/dismiss";
+import { Menu, MenuItem, MenuSep } from "@/ui/Menu";
 
 const FOLDER = (
   <svg width="11" height="9" viewBox="0 0 11 9">
@@ -55,28 +57,9 @@ function BrowserOptions() {
     const r = m.getBoundingClientRect();
     if (r.left < 4) m.style.transform = `translateX(${4 - r.left}px)`;
   }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent) {
-        if (e.key !== "Escape") return;
-        e.stopPropagation();
-      } else if (ref.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close, true);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close, true);
-    };
-  }, [open]);
+  useDismiss(open, ref, () => setOpen(false), true);
   const b = useBrowser.getState;
-  const item = (text: string, on: boolean, run: () => void) => (
-    <button key={text} className={`menu-item${on ? " checked" : ""}`} role="menuitemcheckbox" aria-checked={on} onClick={run}>
-      {text}
-    </button>
-  );
+  const item = (text: string, on: boolean, run: () => void) => <MenuItem key={text} label={text} checked={on} keep run={run} />;
   return (
     <div className="bopts" ref={ref}>
       <button
@@ -96,13 +79,10 @@ function BrowserOptions() {
         <span className="car">▾</span>
       </button>
       {open && (
-        <div className="menu bmenu" role="menu" ref={menuRef}>
-          <div className="menu-head">
-            <b className="menu-title">Browser settings</b>
-          </div>
+        <Menu className="bmenu" title="Browser settings" menuRef={menuRef}>
           {item("Auto-preview on click", autoPreview, () => b().setAutoPreview(!autoPreview))}
           {item("Show file type icons", typeIcons, () => b().setTypeIcons(!typeIcons))}
-        </div>
+        </Menu>
       )}
     </div>
   );
@@ -124,14 +104,14 @@ function ext(p: string): string {
   return m ? m[1].toLowerCase() : "";
 }
 
-interface MenuItem {
+interface CtxItem {
   label: string;
   run?: () => void;
   keys?: string;
   /** Opens the label picker for this file as a submenu to the right. */
   labelsFor?: string;
 }
-type MenuEntry = MenuItem | "-";
+type MenuEntry = CtxItem | "-";
 interface MenuState {
   x: number;
   y: number;
@@ -955,15 +935,19 @@ export function Browser() {
       {shownResults === null && shutSecs.length > 0 && <div className="bshut">{order.filter((k) => shutSecs.includes(k)).map(section)}</div>}
       <Preview />
       {menu && (
-        <div className="menu ctx" role="menu" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
-          <div className="menu-head">
+        <Menu
+          className="ctx"
+          menuRef={menuRef}
+          style={{ left: menu.x, top: menu.y }}
+          head={
             <b className="menu-title" data-tip={menu.path}>
               {menu.title}
             </b>
-          </div>
+          }
+        >
           {menu.items.map((it, i) =>
             it === "-" ? (
-              <div key={i} className="menu-sep" />
+              <MenuSep key={i} />
             ) : it.labelsFor ? (
               <button
                 key={i}
@@ -997,7 +981,7 @@ export function Browser() {
             ),
           )}
           {sub?.of === menu && <LabelSubmenu path={menu.path} at={sub} flip={sub.flip} close={() => setMenu(null)} />}
-        </div>
+        </Menu>
       )}
       {drag && (
         <div className="dragchip" style={{ left: drag.x + 12, top: drag.y + 10 }}>

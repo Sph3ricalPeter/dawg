@@ -11,7 +11,7 @@ import { useMasterChain, useSession, useTracks } from "@/stores/session-store";
 import { PanelHead } from "./Dock";
 import { Knob } from "@/ui/Knob";
 import { drawLevel, HOLD_S, meterSegments, MIXER_LAW, PEAK_FALL_DB, RELEASE_DB } from "@/ui/meter-law";
-import { MenuItem, PopMenu } from "./PopMenu";
+import { MenuItem, MenuSep, PopMenu } from "@/ui/Menu";
 import { SendKnob, SendMenu } from "./RouteMenus";
 import { Volume } from "./Volume";
 
@@ -532,7 +532,7 @@ export function MixerPanel() {
             run={() => void store().apply({ type: "set_track_lane", track: menu.chan, lane: !menuChan.track!.lane })}
           />
           <MenuItem close={closeMenu} label="Duplicate" run={() => void store().apply({ type: "duplicate_track", track: menu.chan })} />
-          <div className="menu-sep" />
+          <MenuSep />
           <MenuItem
             close={closeMenu}
             label="Delete channel"

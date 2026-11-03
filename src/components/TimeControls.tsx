@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { fmtTime } from "@/lib/format";
 import { fmtBars, parsePosition, SNAPS, type Units } from "@/lib/grid";
 import { startDrag } from "@/lib/drag";
 import { gridOf, useSession } from "@/stores/session-store";
+import { useDismiss } from "@/ui/dismiss";
+import { Menu, MenuItem, MenuLabel, MenuSep } from "@/ui/Menu";
 
 /** The playhead readout: bars (with seconds under) or time. Double-click to
  * type a position like 5.1.1 or 0:12.5. */
@@ -113,37 +115,11 @@ export function TimelineMenu() {
   const envEdit = useSession((s) => s.envEdit);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [open]);
+  useDismiss(open, ref, () => setOpen(false));
   const store = useSession.getState;
   const label = SNAPS.find((s) => s.v === g.snap)?.label ?? "Off";
-  const item = (text: string, on: boolean, run: () => void, keys = "") => (
-    <button
-      key={text}
-      className={`menu-item check${on ? " on" : ""}`}
-      role="menuitemradio"
-      aria-checked={on}
-      onClick={() => {
-        run();
-        setOpen(false);
-      }}
-    >
-      <span>
-        <i className="tick">{on ? "✓" : ""}</i>
-        {text}
-      </span>
-      {keys && <kbd>{keys}</kbd>}
-    </button>
+  const item = (text: string, on: boolean, run: () => void, keys = "", radio = true) => (
+    <MenuItem key={text} label={text} checked={on} radio={radio} keys={keys} run={run} close={() => setOpen(false)} />
   );
   return (
     <div className="tg tlwrap" ref={ref}>
@@ -158,21 +134,21 @@ export function TimelineMenu() {
         <span className="car">▾</span>
       </button>
       {open && (
-        <div className="menu tlmenu" role="menu">
-          <div className="menu-h">Snap{session?.scratch ? " (this file)" : ""} · hold Alt to bypass</div>
+        <Menu className="tlmenu">
+          <MenuLabel>Snap{session?.scratch ? " (this file)" : ""} · hold Alt to bypass</MenuLabel>
           {SNAPS.map((s) => item(s.label, g.snap === s.v, () => store().setSnap(s.v)))}
-          <div className="menu-sep" />
-          {item("Envelope editing", envEdit, () => store().toggleEnvEdit(), "E")}
+          <MenuSep />
+          {item("Envelope editing", envEdit, () => store().toggleEnvEdit(), "E", false)}
           {!session?.scratch && (
             <>
-              <div className="menu-sep" />
-              <div className="menu-h">Show positions in</div>
+              <MenuSep />
+              <MenuLabel>Show positions in</MenuLabel>
               {(["bars", "time"] as Units[]).map((u) =>
                 item(u === "bars" ? "Bars and beats" : "Minutes and seconds", g.units === u, () => store().setUnits(u)),
               )}
             </>
           )}
-        </div>
+        </Menu>
       )}
     </div>
   );

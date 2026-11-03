@@ -14,6 +14,8 @@ import {
 import { useSession } from "@/stores/session-store";
 import { updateLine, useUpdaterStore } from "@/stores/updater-store";
 import { DawgMark } from "./DawgMark";
+import { useDismiss } from "@/ui/dismiss";
+import { Menu, MenuItem, MenuLabel, MenuSep } from "@/ui/Menu";
 
 /** The logo button and its menu. */
 export function AppMenu({ info }: { info: AppInfo | null }) {
@@ -30,35 +32,15 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
       .recentProjects()
       .then((r) => setRecent(r.filter((p) => p.exists).slice(0, 5)))
       .catch(() => setRecent([]));
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
-    };
   }, [open]);
+  useDismiss(open, ref, () => setOpen(false));
 
   const canCheck = status === "idle" || status === "error";
   const hasFile = useSession((s) => !!s.session);
   const scratch = useSession((s) => !!s.session?.scratch);
+  const close = () => setOpen(false);
   const item = (label: string, keys: string, run: () => void, disabled = false) => (
-    <button
-      className="menu-item"
-      role="menuitem"
-      disabled={disabled}
-      onClick={() => {
-        setOpen(false);
-        run();
-      }}
-    >
-      {label}
-      {keys && <kbd>{keys}</kbd>}
-    </button>
+    <MenuItem label={label} keys={keys} run={run} close={close} disabled={disabled} />
   );
 
   return (
@@ -74,12 +56,15 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
         <span className="car">▾</span>
       </button>
       {open && (
-        <div className="menu" role="menu">
-          <div className="menu-head">
-            <b>dawg {info?.version}</b>
-            <span className="faint">{updateLine(status, lastChecked)}</span>
-          </div>
-          <div className="menu-h">File</div>
+        <Menu
+          head={
+            <>
+              <b>dawg {info?.version}</b>
+              <span className="faint">{updateLine(status, lastChecked)}</span>
+            </>
+          }
+        >
+          <MenuLabel>File</MenuLabel>
           {item("New project", "Ctrl+N", newProject)}
           {item("Open…", "Ctrl+O", () => void openFileDialog())}
           {!scratch && item("Save", "Ctrl+S", () => void saveProject(), !hasFile)}
@@ -89,37 +74,16 @@ export function AppMenu({ info }: { info: AppInfo | null }) {
           {item("Restore last replace", "", () => void restoreLastReplace())}
           {recent.length > 0 && (
             <>
-              <div className="menu-sep" />
-              <div className="menu-h">Recent projects</div>
+              <MenuSep />
+              <MenuLabel>Recent projects</MenuLabel>
               {recent.map((r) => (
-                <button
-                  key={r.path}
-                  className="menu-item"
-                  role="menuitem"
-                  data-tip={r.path}
-                  onClick={() => {
-                    setOpen(false);
-                    void openRecent(r.path);
-                  }}
-                >
-                  {r.name}
-                </button>
+                <MenuItem key={r.path} label={r.name} tip={r.path} run={() => void openRecent(r.path)} close={close} />
               ))}
             </>
           )}
-          <div className="menu-sep" />
-          <button
-            className="menu-item"
-            role="menuitem"
-            disabled={!canCheck}
-            onClick={() => {
-              void checkNow();
-              setOpen(false);
-            }}
-          >
-            Check for updates
-          </button>
-        </div>
+          <MenuSep />
+          <MenuItem label="Check for updates" disabled={!canCheck} run={() => void checkNow()} close={close} />
+        </Menu>
       )}
     </div>
   );

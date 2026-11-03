@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { commit, panelActions, panelHost, setWorkEl, getWorkEl, startDrag, store, type PanelState } from "@/lib/dock";
 import { clampFloat, HEAD, isFloating, moveFloat, nodeKey, PANELS, panelsIn, PRESETS, setSizeAt, type Dir, type DockNode, type FloatRect, type PanelId, type PresetName, type Side } from "@/lib/layout";
 import { useLayout } from "@/stores/layout-store";
+import { MenuItem, MenuLabel, MenuSep, PopMenu } from "@/ui/Menu";
 
 /**
  * The work area between the title bar and the status bar: docked panels in
@@ -273,70 +274,32 @@ function PanelMenu({ panels }: { panels: Record<PanelId, PanelState> }) {
   const menu = useLayout((s) => s.menu);
   const preset = useLayout((s) => s.preset);
   const layout = useLayout((s) => s.layout);
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) store().closeMenu();
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [menu]);
-  useLayoutEffect(() => {
-    if (!menu || !ref.current) return setPos(null);
-    const r = ref.current.getBoundingClientRect();
-    setPos({ x: Math.max(4, Math.min(menu.x, window.innerWidth - r.width - 4)), y: Math.max(4, Math.min(menu.y, window.innerHeight - r.height - 4)) });
-  }, [menu]);
   if (!menu) return null;
   const id = menu.panel;
   const fl = isFloating(layout, id);
   const p = panels[id];
-  const item = (label: string, run: () => void, keys?: string, on?: boolean) => (
-    <button
-      className={`menu-item${on ? " checked" : ""}`}
-      role="menuitem"
-      onClick={() => {
-        store().closeMenu();
-        run();
-      }}
-    >
-      {label}
-      {keys && <kbd>{keys}</kbd>}
-    </button>
-  );
+  const close = () => store().closeMenu();
+  const item = (label: string, run: () => void, keys?: string) => <MenuItem label={label} run={run} keys={keys} close={close} />;
   const sides: Side[] = ["left", "right", "top", "bottom"];
   return (
-    <div
-      className="menu ctx pmenu"
-      role="menu"
-      ref={ref}
-      style={{ left: pos?.x ?? menu.x, top: pos?.y ?? menu.y, visibility: pos ? undefined : "hidden" }}
-    >
-      <div className="menu-head">
-        <b className="menu-title">{PANELS[id].title}</b>
-      </div>
+    <PopMenu at={menu} title={PANELS[id].title} className="pmenu" onClose={close}>
       {PANELS[id].float && (fl ? item("Dock back", () => panelActions.dockBack(id), "Double-click") : item("Float", () => panelActions.float(id), "Double-click"))}
-      <div className="menu-h">Dock to the window's edge</div>
+      <MenuLabel>Dock to the window's edge</MenuLabel>
       {sides.map((s) => (
-        <span key={s}>{item(s[0].toUpperCase() + s.slice(1), () => panelActions.dockTo(id, s))}</span>
+        <MenuItem key={s} label={s[0].toUpperCase() + s.slice(1)} run={() => panelActions.dockTo(id, s)} close={close} />
       ))}
       {p.close && (
         <>
-          <div className="menu-sep" />
+          <MenuSep />
           {item(p.close.label, p.close.run)}
         </>
       )}
-      <div className="menu-sep" />
-      <div className="menu-h">Layout</div>
+      <MenuSep />
+      <MenuLabel>Layout</MenuLabel>
       {(Object.keys(PRESETS) as PresetName[]).map((k) => (
-        <span key={k}>{item(PRESETS[k].label, () => store().applyPreset(k), undefined, preset === k)}</span>
+        <MenuItem key={k} label={PRESETS[k].label} checked={preset === k} radio run={() => store().applyPreset(k)} close={close} />
       ))}
-    </div>
+    </PopMenu>
   );
 }
 

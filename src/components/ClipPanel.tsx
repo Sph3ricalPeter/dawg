@@ -6,6 +6,7 @@ import { knobControl } from "@/lib/knob";
 import { ENV_MAX, trackColor } from "@/lib/timeline";
 import { allClips, useSession } from "@/stores/session-store";
 import { KnobField } from "@/ui/Knob";
+import { MenuItem, MenuSep } from "@/ui/Menu";
 
 /** Envelope shapes from the mockup: `t` is 0..1 along the clip and `v` the
  * height, where 0.8 is 0 dB (as on the clip). */
@@ -153,17 +154,7 @@ export function ClipPanel() {
       clips.length > 1 ? `Reset ${clips.length} clips` : "Reset clip",
     );
   const act = (label: string, keys: string, run: () => void, disabled = false) => (
-    <button
-      className="menu-item"
-      disabled={disabled}
-      onClick={() => {
-        close();
-        run();
-      }}
-    >
-      {label}
-      {keys && <kbd>{keys}</kbd>}
-    </button>
+    <MenuItem label={label} keys={keys} run={run} close={close} disabled={disabled} />
   );
   const style = pos ?? { left: at.x, top: at.y, visibility: "hidden" as const };
 
@@ -320,7 +311,7 @@ export function ClipPanel() {
         {act("Duplicate", "Ctrl+B", () => void store().duplicateSelected())}
         {act("Split at playhead", "Ctrl+E", () => void store().splitAtPlayhead())}
         {act("Crop to range", "Ctrl+T", () => void store().cropToRange(), !range)}
-        <div className="menu-sep" />
+        <MenuSep />
         {act("Reset gain, fades and envelope", "", reset)}
         {isTauri() &&
           path &&

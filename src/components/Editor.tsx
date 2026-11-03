@@ -10,6 +10,7 @@ import { ease } from "@/lib/smooth-view";
 import { touched, tracksScroll } from "@/lib/view-memory";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
 import { Knob } from "@/ui/Knob";
+import { MenuItem, MenuSep, PopMenu } from "@/ui/Menu";
 import { LevelMeter } from "@/ui/Meter";
 import { HEADER_LAW } from "@/ui/meter-law";
 import { onFrame } from "@/lib/frame-loop";
@@ -190,18 +191,6 @@ function TrackMenu({
   onRename: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [onClose]);
   const store = useSession.getState;
   // Moves past the next track with a lane, skipping mixer-only channels.
   const neighbour = (by: -1 | 1) => {
@@ -215,26 +204,13 @@ function TrackMenu({
     if (n) void store().apply({ type: "move_track", track: track.id, index: all.indexOf(n) });
   };
   const item = (label: string, keys: string, run: () => void, disabled = false) => (
-    <button
-      className="menu-item"
-      role="menuitem"
-      disabled={disabled}
-      onClick={() => {
-        onClose();
-        run();
-      }}
-    >
-      {label}
-      {keys && <kbd>{keys}</kbd>}
-    </button>
+    <MenuItem label={label} keys={keys} run={run} close={onClose} disabled={disabled} />
   );
+
   return (
-    <div className="menu ctx" role="menu" ref={ref} style={{ left: at.x, top: at.y }}>
-      <div className="menu-head">
-        <b>{track.name || "Track"}</b>
-      </div>
+    <PopMenu at={at} title={track.name || "Track"} onClose={onClose}>
       {item("Rename…", "Dbl-click", onRename)}
-      <div className="menu-sep" />
+      <MenuSep />
       <div className="cats" role="group" aria-label="Track category">
         {CATEGORIES.map((k) => (
           <button
@@ -265,12 +241,12 @@ function TrackMenu({
           />
         ))}
       </div>
-      <div className="menu-sep" />
+      <MenuSep />
       {item("Show its chain", "", () => store().selectChannel(track.id, true))}
-      <div className="menu-sep" />
+      <MenuSep />
       {item("Move up", "Alt+↑", () => moveTo(-1), !neighbour(-1))}
       {item("Move down", "Alt+↓", () => moveTo(1), !neighbour(1))}
-      <div className="menu-sep" />
+      <MenuSep />
       {item("Add track", "Ctrl+Shift+T", () => void store().addTrack())}
       {item("Delete track", "", () => {
         void store()
@@ -282,7 +258,7 @@ function TrackMenu({
               });
           });
       })}
-    </div>
+    </PopMenu>
   );
 }
 
