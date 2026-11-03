@@ -1805,32 +1805,6 @@ body.rsizing * {
   font: inherit;
   padding: 0 4px;
 }
-.eqk {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 96px;
-  padding: 2px 4px 2px 2px;
-  border-radius: var(--r-md);
-  cursor: ns-resize;
-}
-.eqk:hover {
-  background: var(--bg-4);
-}
-.eqk svg {
-  display: block;
-  overflow: visible;
-  pointer-events: none;
-}
-.eql {
-  font-size: var(--fs-sm);
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-.eqv {
-  font-size: var(--fs-md);
-}
 .eqslope {
   display: flex;
   gap: 2px;
@@ -1935,28 +1909,6 @@ body.rsizing * {
   display: flex;
   gap: 4px;
   justify-content: space-between;
-}
-.clippanel .kc {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  cursor: ns-resize;
-  width: 76px;
-  padding: 2px 0;
-  user-select: none;
-}
-.clippanel .kc:hover {
-  background: var(--bg-3);
-  border-radius: var(--r-xs);
-}
-.clippanel .kc .kl {
-  font-size: var(--fs-md);
-  color: var(--text-dim);
-}
-.clippanel .kc .kv {
-  font: var(--nw) var(--fs-sm) var(--mono);
-  color: var(--text);
 }
 .seg {
   display: inline-flex;
@@ -3868,34 +3820,6 @@ body.sizing-v * {
 }
 .kgrid.two {
   grid-template-columns: repeat(2, 58px);
-}
-.pk {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  padding: 2px 0;
-  border-radius: var(--r-md);
-  cursor: ns-resize;
-}
-.pk:hover {
-  background: var(--bg-3);
-}
-.pk svg {
-  display: block;
-  overflow: visible;
-  pointer-events: none;
-}
-.pk b {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-regular);
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-.pk label {
-  font-size: var(--fs-xs);
-  color: var(--text-faint);
-  cursor: inherit;
 }
 .grm {
   width: 34px;

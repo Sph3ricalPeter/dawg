@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { clamp, fmtDb, MIN_GAIN_DB } from "@/lib/format";
 import { knobControl, parseDb, volKnobFrac } from "@/lib/knob";
-import { Knob } from "./Knob";
+import { Knob } from "@/ui/Knob";
 
 /** The volume knob's travel; the bottom of it is off (−∞). */
 export const VOL_MIN = -48;

@@ -8,7 +8,7 @@ import { usePeaks } from "@/lib/peak-cache";
 import { onWaveReady, paintWave, type WaveSource } from "@/lib/wave-tiles";
 import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/stores/session-store";
 import { gridLines, snapTo } from "@/lib/grid";
-import { Knob } from "./Knob";
+import { Knob } from "@/ui/Knob";
 import { Playhead } from "./Playhead";
 import { alpha } from "@/ui/tokens";
 

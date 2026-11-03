@@ -8,6 +8,7 @@ import { loadLibrary } from "@/stores/library-store";
 // subset loads only when text in it appears (unicode-range).
 import "@fontsource-variable/manrope/wght.css";
 import "./tokens.css";
+import "./ui/ui.css";
 import "./styles.css";
 
 // Canvas text (EQ axis labels) can't wait on CSS to fetch the font lazily.

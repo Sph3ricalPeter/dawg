@@ -18,7 +18,7 @@ import {
 } from "@/lib/mixer";
 import type { MenuAt } from "@/lib/popup";
 import { useSession, useTracks } from "@/stores/session-store";
-import { Knob } from "./Knob";
+import { Knob } from "@/ui/Knob";
 import { MenuItem, PopMenu } from "./PopMenu";
 import { VOL_MIN } from "./Volume";
 

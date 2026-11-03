@@ -3,14 +3,16 @@ import type { TrackState } from "@/lib/api";
 import { addFilesDialog } from "@/lib/actions";
 import { startDrag } from "@/lib/drag";
 import { clamp, fmtTime } from "@/lib/format";
-import { METER_FALL_DB, meterStep, onFrame, toDb } from "@/lib/frame-loop";
 import { knobControl } from "@/lib/knob";
 import { gridOf, scrollSpan, snapStep, timelineLimit, useSession, useTracks } from "@/stores/session-store";
 import { COLORS, rulerStep, trackColor, useWheel } from "@/lib/timeline";
 import { ease } from "@/lib/smooth-view";
 import { touched, tracksScroll } from "@/lib/view-memory";
 import { BEATS_PER_BAR, barStep, beatFrames, snapTo } from "@/lib/grid";
-import { Knob } from "./Knob";
+import { Knob } from "@/ui/Knob";
+import { LevelMeter } from "@/ui/Meter";
+import { HEADER_LAW } from "@/ui/meter-law";
+import { onFrame } from "@/lib/frame-loop";
 import { Volume } from "./Volume";
 import { Lane } from "./Lane";
 import { PanelHead } from "./Dock";
@@ -159,47 +161,17 @@ function fmtRate(rate: number): string {
   return `${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`;
 }
 
+/** The track's stereo level meter, live while playing. */
+function TrackMeter({ index }: { index: number }) {
+  const playing = useSession((s) => s.playing);
+  return <LevelMeter className="tm" vertical law={HEADER_LAW} live={playing} read={() => useSession.getState().levels[index]} />;
+}
+
 function fmtPan(p: number): string {
   const v = Math.round(p * 100);
   return v === 0 ? "C" : v < 0 ? `L${v * -1}` : `R${v}`;
 }
 
-/** Meter height for a level in dB: -60 dBFS at the bottom, 0 dBFS where
- * the red starts (15 of 16 px), anything over fills it. */
-function meterPct(db: number): number {
-  return db >= 0 ? 100 : Math.max(0, ((db + 60) / 60) * (15 / 16) * 100);
-}
-
-/** The track's stereo level meter, live while playing, drawn every frame
- * from the latest peaks so it rises and falls smoothly. */
-function Meter({ index }: { index: number }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const playing = useSession((s) => s.playing);
-  useEffect(() => {
-    const bars = [...(ref.current?.querySelectorAll("b") ?? [])];
-    const shown = [-120, -120];
-    const draw = () => bars.forEach((b, i) => (b.style.height = `${meterPct(shown[i])}%`));
-    if (!playing) {
-      draw();
-      return;
-    }
-    return onFrame((_, dt) => {
-      const level = useSession.getState().levels[index];
-      for (let i = 0; i < 2; i++) shown[i] = meterStep(shown[i], toDb(level?.[i] ?? 0), dt, METER_FALL_DB);
-      draw();
-    });
-  }, [playing, index]);
-  return (
-    <span className="tm" ref={ref}>
-      <i>
-        <b />
-      </i>
-      <i>
-        <b />
-      </i>
-    </span>
-  );
-}
 
 interface MenuAt {
   x: number;
@@ -417,7 +389,7 @@ function TrackHeader({
             hint="Track volume"
             onDrag={(gain_db, done) => mix({ gain_db }, done)}
             onSet={(gain_db) => setMix({ gain_db })}
-            before={<Meter index={index} />}
+            before={<TrackMeter index={index} />}
           />
           <div
             className="pan"

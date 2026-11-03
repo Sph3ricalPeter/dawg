@@ -1,0 +1,58 @@
+/* The shared components in src/ui. Values come from tokens.css; screens
+   place these components but don't restyle them. Loads before styles.css. */
+
+/* ------------------------------------------------------------------ */
+/* KnobField: a knob with its value and name (ui/Knob.tsx).             */
+.kf {
+  display: flex;
+  border-radius: var(--r-md);
+  cursor: ns-resize;
+}
+.kf svg {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+.kf .kl {
+  cursor: inherit;
+}
+.kf.stack {
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: var(--sp-1) 0;
+}
+.kf.stack:hover {
+  background: var(--bg-3);
+}
+.kf.stack .kv {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.kf.stack .kl {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.kf.side {
+  align-items: center;
+  gap: 5px;
+  min-width: 96px;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1);
+}
+.kf.side:hover {
+  background: var(--bg-4);
+}
+.kf.side .kl {
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.kf.side .kv {
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  font-weight: var(--nw);
+}

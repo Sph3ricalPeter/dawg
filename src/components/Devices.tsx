@@ -25,14 +25,13 @@ import { type KnobControl, knobControl } from "@/lib/knob";
 import { paramsOf } from "@/lib/mixer";
 import { choice, setSetting } from "@/lib/settings";
 import { useSession } from "@/stores/session-store";
-import { Knob } from "./Knob";
+import { type Concern, KnobField } from "@/ui/Knob";
+import { RELEASE_DB } from "@/ui/meter-law";
 import { alpha, token } from "@/ui/tokens";
 
 /* ------------------------------------------------------------------ */
 /* Knobs with real units                                               */
 /* ------------------------------------------------------------------ */
-
-type Concern = "vol" | "pan" | "time";
 
 /** A device parameter: its range, unit and what its knob colour means. */
 export interface ParamDef<K extends string> {
@@ -93,16 +92,16 @@ export function ParamKnob<K extends string>({
 }) {
   const ctl: KnobControl = knobControl(norm(def, value), TRAVEL, (n, done) => onValue(tidy(def, denorm(def, n)), done));
   return (
-    <div
-      className="pk"
-      {...ctl}
-      onDoubleClick={() => onValue(reset, true)}
-      data-hint={`${def.label} ${fmtParam(def, value)} · ${def.hint} · drag up or down (Shift fine) · double-click resets`}
-    >
-      <Knob f={norm(def, value)} size={size} color={`var(--k-${def.concern})`} />
-      <b className="mono">{fmtParam(def, value)}</b>
-      <label>{def.label}</label>
-    </div>
+    <KnobField
+      label={def.label}
+      value={fmtParam(def, value)}
+      f={norm(def, value)}
+      size={size}
+      concern={def.concern}
+      control={ctl}
+      onReset={() => onValue(reset, true)}
+      hint={`${def.label} ${fmtParam(def, value)} · ${def.hint} · drag up or down (Shift fine) · double-click resets`}
+    />
   );
 }
 
@@ -157,10 +156,10 @@ function GrMeter({ device }: { device: number }) {
       }
       const x = c.getContext("2d");
       if (!x) return;
-      x.fillStyle = "#060606";
+      x.fillStyle = token("--meter-bg");
       x.fillRect(0, 0, w, h);
       const f = clamp(shown / GR_RANGE, 0, 1);
-      x.fillStyle = "#e07a3c";
+      x.fillStyle = token("--gr");
       x.fillRect(0, 0, w, Math.round(f * h));
       const t = shown >= 0.05 ? `−${shown.toFixed(1)}` : "0.0";
       if (text.current && t !== lastText) text.current.textContent = lastText = t;
@@ -172,7 +171,7 @@ function GrMeter({ device }: { device: number }) {
     return onFrame((_, dt) => {
       const gr = useSession.getState().reduction[device] ?? 0;
       // Attack instant, release at 24 dB/s, as the level meters.
-      shown = gr >= shown ? gr : Math.max(gr, shown - 24 * dt);
+      shown = gr >= shown ? gr : Math.max(gr, shown - RELEASE_DB * dt);
       draw();
     });
   }, [playing, device]);
@@ -529,13 +528,18 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
     hint: string,
     concern: Concern,
   ) => (
-    <div className="eqk" {...onDown} onDoubleClick={onReset ?? undefined} data-hint={hint}>
-      <Knob f={f} bipolar={bipolar} size={26} color={`var(--k-${concern})`} />
-      <div>
-        <div className="eql">{label}</div>
-        <div className="eqv mono">{value}</div>
-      </div>
-    </div>
+    <KnobField
+      layout="side"
+      label={label}
+      value={value}
+      f={f}
+      bipolar={bipolar}
+      size={26}
+      concern={concern}
+      control={onDown}
+      onReset={onReset ?? undefined}
+      hint={hint}
+    />
   );
 
   const lf = (hz: number) => (Math.log(hz) - Math.log(MIN_FREQ)) / (Math.log(MAX_FREQ) - Math.log(MIN_FREQ));

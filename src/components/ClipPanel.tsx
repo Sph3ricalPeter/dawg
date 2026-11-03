@@ -2,10 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { api, apiMessage, type ClipState, type Command, type EnvPoint, type FadeCurve } from "@/lib/api";
 import { clamp, fmtDb, fmtMs, fmtSeconds, fmtTime, MAX_GAIN_DB, MIN_GAIN_DB, srcAt } from "@/lib/format";
-import { type KnobControl, knobControl } from "@/lib/knob";
+import { knobControl } from "@/lib/knob";
 import { ENV_MAX, trackColor } from "@/lib/timeline";
 import { allClips, useSession } from "@/stores/session-store";
-import { Knob } from "./Knob";
+import { KnobField } from "@/ui/Knob";
 
 /** Envelope shapes from the mockup: `t` is 0..1 along the clip and `v` the
  * height, where 0.8 is 0 dB (as on the clip). */
@@ -50,30 +50,6 @@ function fadeFrac(frames: number, len: number): number {
 }
 
 const GAIN_KNOB_MIN = -36;
-
-function KnobCell({
-  label,
-  value,
-  f,
-  hint,
-  onDrag,
-  onReset,
-}: {
-  label: string;
-  value: string;
-  f: number;
-  hint: string;
-  onDrag: KnobControl;
-  onReset: () => void;
-}) {
-  return (
-    <div className="kc" data-hint={hint} {...onDrag} onDoubleClick={onReset}>
-      <span className="kl">{label}</span>
-      <Knob f={f} size={28} />
-      <span className="kv">{value}</span>
-    </div>
-  );
-}
 
 /** The clip settings popover from the mockup: what the clip is, its level
  * and fades, envelope presets and the clip's actions. With several clips
@@ -288,28 +264,30 @@ export function ClipPanel() {
       <div className="isec">
         <h4>Level</h4>
         <div className="krow">
-          <KnobCell
+          <KnobField
             label="Gain"
             value={fmtDb(clip.gainDb)}
             f={clamp((Math.max(clip.gainDb, GAIN_KNOB_MIN) - GAIN_KNOB_MIN) / (MAX_GAIN_DB - GAIN_KNOB_MIN), 0, 1)}
             hint="Clip gain · drag up/down (Shift fine, Ctrl 1 dB steps) · double-click resets to 0 dB"
-            onDrag={gainKnob}
+            control={gainKnob}
             onReset={() => batch([{ type: "set_clip_gain", clip: clip.id, gain_db: 0 }])}
           />
-          <KnobCell
+          <KnobField
             label="Fade in"
             value={fmtMs(clip.fadeIn, rate)}
             f={fadeFrac(clip.fadeIn, clip.len)}
             hint="Fade in length · drag up/down (Shift fine) · double-click removes it"
-            onDrag={fadeKnob("in")}
+            concern="time"
+            control={fadeKnob("in")}
             onReset={() => batch([fades(0, clip.fadeOut)])}
           />
-          <KnobCell
+          <KnobField
             label="Fade out"
             value={fmtMs(clip.fadeOut, rate)}
             f={fadeFrac(clip.fadeOut, clip.len)}
             hint="Fade out length · drag up/down (Shift fine) · double-click removes it"
-            onDrag={fadeKnob("out")}
+            concern="time"
+            control={fadeKnob("out")}
             onReset={() => batch([fades(clip.fadeIn, 0)])}
           />
         </div>

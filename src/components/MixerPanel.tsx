@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MASTER, type SessionState, type TrackState, type DeviceState } from "@/lib/api";
 import { commitDrag, removeSend, setMasterGain, setMix, setSend } from "@/lib/chain-edit";
 import { startDrag } from "@/lib/drag";
-import { clamp } from "@/lib/format";
 import { onFrame, toDb } from "@/lib/frame-loop";
 import { knobControl } from "@/lib/knob";
 import { chanLabel, channelName, channelNumber, fmtPan, MASTER_COLOR, wouldLoop } from "@/lib/mixer";
@@ -10,7 +9,8 @@ import { type MenuAt, under } from "@/lib/popup";
 import { trackColor } from "@/lib/timeline";
 import { useMasterChain, useSession, useTracks } from "@/stores/session-store";
 import { PanelHead } from "./Dock";
-import { Knob } from "./Knob";
+import { Knob } from "@/ui/Knob";
+import { drawLevel, HOLD_S, meterSegments, MIXER_LAW, PEAK_FALL_DB, RELEASE_DB } from "@/ui/meter-law";
 import { MenuItem, PopMenu } from "./PopMenu";
 import { SendKnob, SendMenu } from "./RouteMenus";
 import { Volume } from "./Volume";
@@ -21,18 +21,6 @@ const store = useSession.getState;
 /* Laws and meters                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Meter scale: −60 dB at the bottom, +6 dB at the top. */
-const mfr = (db: number) => clamp((db + 60) / 66, 0, 1);
-const SEG: [number, number, string][] = [
-  [0, mfr(-12), "#3fd46a"],
-  [mfr(-12), mfr(0), "#ffd23f"],
-  [mfr(0), 1, "#ff4d4d"],
-];
-/** Meter ballistics, per the spec: instant attack, 24 dB/s release, peak
- * hold for 1 s then a 12 dB/s fall. */
-const RELEASE_DB = 24;
-const HOLD_S = 1;
-const PEAK_FALL_DB = 12;
 const FLOOR = -70;
 
 interface MeterState {
@@ -385,6 +373,7 @@ export function MixerPanel() {
       });
     };
     measure();
+    const segs = meterSegments(MIXER_LAW);
     const draw = () => {
       x.setTransform(dpr, 0, 0, dpr, 0, 0);
       x.clearRect(0, 0, size.w, size.h);
@@ -392,22 +381,7 @@ export function MixerPanel() {
         const m = meters.current.get(i);
         const bw = Math.max(1, Math.floor((mw - 1) / 2));
         for (let ch = 0; ch < 2; ch++) {
-          const bx = mx + ch * (bw + 1);
-          x.fillStyle = "#060606";
-          x.fillRect(bx, my, bw, mh);
-          if (!m) continue;
-          const f = mfr(m.v[ch]);
-          for (const [a, b, col] of SEG) {
-            const e = Math.min(b, f);
-            if (e > a) {
-              x.fillStyle = col;
-              x.fillRect(bx, my + mh - e * mh, bw, (e - a) * mh);
-            }
-          }
-          if (m.pk[ch] > -59) {
-            x.fillStyle = m.pk[ch] > 0 ? "#ff4d4d" : "#d0d0d0";
-            x.fillRect(bx, Math.round(my + mh - mfr(m.pk[ch]) * mh), bw, 1);
-          }
+          drawLevel(x, mx + ch * (bw + 1), my, bw, mh, m ? m.v[ch] : null, m ? m.pk[ch] : null, MIXER_LAW, segs);
         }
       }
     };
