@@ -203,6 +203,11 @@
   background: var(--bg-4);
   color: var(--text);
 }
+/* Lit while its thing is on: the Browser, Loop, Mixer and History toggles. */
+.tb.on {
+  background: var(--bg-4);
+  color: var(--text);
+}
 .tb:disabled {
   opacity: 0.35;
   cursor: default;
