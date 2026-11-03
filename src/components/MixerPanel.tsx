@@ -10,6 +10,7 @@ import { trackColor } from "@/lib/timeline";
 import { useMasterChain, useSession, useTracks } from "@/stores/session-store";
 import { PanelHead } from "./Dock";
 import { Knob } from "@/ui/Knob";
+import { KNOB } from "@/ui/tokens";
 import { drawLevel, HOLD_S, meterSegments, MIXER_LAW, PEAK_FALL_DB, RELEASE_DB } from "@/ui/meter-law";
 import { MenuItem, MenuSep, PopMenu } from "@/ui/Menu";
 import { SendKnob, SendMenu } from "./RouteMenus";
@@ -166,7 +167,7 @@ function Strip({
             onDoubleClick={() => t && setMix(t, { pan: 0 }, false)}
             data-hint={`Pan ${fmtPan(t!.pan)} · drag up or down (Shift fine, Ctrl 10% steps) · double-click centres`}
           >
-            <Knob f={pan / 100} bipolar size={20} color="var(--k-pan)" />
+            <Knob f={pan / 100} bipolar size={KNOB.md} color="var(--k-pan)" />
           </span>
         )}
         <span className="msrow">

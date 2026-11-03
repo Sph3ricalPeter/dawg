@@ -1,4 +1,5 @@
 import type { KnobControl } from "@/lib/knob";
+import { KNOB } from "./tokens";
 
 /** The mockup's arc knob. `f` is 0..1, or -1..1 when `bipolar` (centred).
  * `color` names its concern: `var(--k-vol)` level, `var(--k-pan)` stereo,
@@ -6,7 +7,7 @@ import type { KnobControl } from "@/lib/knob";
 export function Knob({
   f,
   bipolar = false,
-  size = 20,
+  size = KNOB.md,
   color = "var(--knob)",
 }: {
   f: number;
@@ -16,7 +17,7 @@ export function Knob({
 }) {
   const r = size * 0.38;
   const c = size / 2;
-  const sw = size > 24 ? 2.4 : 2;
+  const sw = size > 30 ? 2.6 : size > 20 ? 2.4 : 2;
   const P = (deg: number, k = 1) => {
     const a = (deg * Math.PI) / 180;
     return [(c + r * k * Math.sin(a)).toFixed(2), (c - r * k * Math.cos(a)).toFixed(2)];
@@ -52,7 +53,7 @@ export function KnobField({
   value,
   f,
   bipolar = false,
-  size = 28,
+  size = KNOB.lg,
   concern = "vol",
   control,
   onReset,

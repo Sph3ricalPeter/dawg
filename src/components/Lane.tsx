@@ -10,7 +10,7 @@ import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/st
 import { gridLines, snapTo } from "@/lib/grid";
 import { Knob } from "@/ui/Knob";
 import { Playhead } from "./Playhead";
-import { alpha } from "@/ui/tokens";
+import { alpha, KNOB } from "@/ui/tokens";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
@@ -718,7 +718,7 @@ export function GainReadout({ clip, track, className }: { clip: ClipState; track
       onDoubleClick={() => void useSession.getState().apply({ type: "set_clip_gain", clip: clip.id, gain_db: 0 })}
       data-hint="Clip gain · drag up or down (Shift for fine, Alt skips the 0 dB snap) · double-click for 0 dB"
     >
-      {className === "gain" && <Knob f={clamp(clip.gainDb / MAX_GAIN_DB, -1, 1)} bipolar size={12} />}
+      {className === "gain" && <Knob f={clamp(clip.gainDb / MAX_GAIN_DB, -1, 1)} bipolar size={KNOB.badge} />}
       {fmtDb(clip.gainDb, false)}
     </span>
   );

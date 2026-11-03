@@ -11,6 +11,7 @@ import { Menu, MenuItem, MenuLabel, MenuNote, MenuSep } from "../Menu";
 import { LevelMeter } from "../Meter";
 import { drawLevel, HEADER_LAW, MASTER_LAW, meterSegments, MIXER_LAW } from "../meter-law";
 import { Volume } from "../Volume";
+import { KNOB } from "../tokens";
 
 /* Every token and shared component on one page, in each state, so a
  * change to one shows everywhere it's used. Tokens are read from
@@ -186,15 +187,17 @@ export function Gallery() {
 
       <Section title="Knob" note="Arc knob, coloured by concern: level (blue), stereo (orange), time and shape (green). Bipolar knobs fill from the centre.">
         <div className="row panel">
-          {[12, 16, 20, 26, 28].map((s) => (
-            <div className="cell" key={s}>
+          {Object.entries(KNOB).map(([name, s]) => (
+            <div className="cell" key={name}>
               <Knob f={0.62} size={s} />
-              <code className="tag">{s}px</code>
+              <code className="tag">
+                {name} {s}px
+              </code>
             </div>
           ))}
-          <Knob f={0.4} size={26} color="var(--k-time)" />
-          <Knob f={-0.5} bipolar size={26} color="var(--k-pan)" />
-          <Knob f={0.6} bipolar size={26} color="var(--k-pan)" />
+          <Knob f={0.4} size={KNOB.md} color="var(--k-time)" />
+          <Knob f={-0.5} bipolar size={KNOB.md} color="var(--k-pan)" />
+          <Knob f={0.6} bipolar size={KNOB.md} color="var(--k-pan)" />
         </div>
       </Section>
 
@@ -223,7 +226,7 @@ export function Gallery() {
             value={fmtDb(gain)}
             f={gain / 24}
             bipolar
-            size={26}
+            size={KNOB.side}
             control={knobControl(gain, { rate: 0.1, min: -24, max: 24, step: 1, res: 0.1, detent: 0.3 }, (v) => setGain(v))}
             onReset={() => setGain(0)}
             hint="Gain"
@@ -234,7 +237,7 @@ export function Gallery() {
             value={pan === 0 ? "C" : `${pan < 0 ? "L" : "R"}${Math.round(Math.abs(pan) * 100)}`}
             f={pan}
             bipolar
-            size={26}
+            size={KNOB.side}
             concern="pan"
             control={knobControl(pan * 100, { rate: 1, min: -100, max: 100, step: 10, res: 1, detent: 4 }, (v) => setPan(v / 100))}
             onReset={() => setPan(0)}

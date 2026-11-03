@@ -20,3 +20,9 @@ export function alpha(name: `--${string}`, a: number): string {
   const n = parseInt(full, 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
+
+/** The knob sizes, in px. Every knob uses one of these, so a resize is
+ * made here once: `badge` sits inside a clip, `sm` is a send level, `md`
+ * the volume and pan knobs on tracks and mixer strips, `lg` a labelled
+ * param (`KnobField`), `side` a labelled knob in a short row. */
+export const KNOB = { badge: 12, sm: 21, md: 26, side: 34, lg: 36 } as const;

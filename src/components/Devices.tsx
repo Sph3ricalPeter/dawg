@@ -27,7 +27,7 @@ import { choice, setSetting } from "@/lib/settings";
 import { useSession } from "@/stores/session-store";
 import { type Concern, KnobField } from "@/ui/Knob";
 import { RELEASE_DB } from "@/ui/meter-law";
-import { alpha, token } from "@/ui/tokens";
+import { alpha, KNOB, token } from "@/ui/tokens";
 import { CloseButton, PowerButton } from "@/ui/Button";
 
 /* ------------------------------------------------------------------ */
@@ -83,7 +83,7 @@ export function ParamKnob<K extends string>({
   value,
   reset,
   onValue,
-  size = 28,
+  size = KNOB.lg,
 }: {
   def: ParamDef<K>;
   value: number;
@@ -535,7 +535,7 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
       value={value}
       f={f}
       bipolar={bipolar}
-      size={26}
+      size={KNOB.side}
       concern={concern}
       control={onDown}
       onReset={onReset ?? undefined}

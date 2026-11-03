@@ -19,13 +19,14 @@ import {
 import type { MenuAt } from "@/lib/popup";
 import { useSession, useTracks } from "@/stores/session-store";
 import { Knob } from "@/ui/Knob";
+import { KNOB } from "@/ui/tokens";
 import { MenuItem, MenuNote, MenuSep, PopMenu } from "@/ui/Menu";
 import { VOL_MIN } from "@/ui/Volume";
 
 const store = useSession.getState;
 
 /** A send level knob: −∞ at the bottom, 0 dB at 75%, +6 dB at the top. */
-export function SendKnob({ from, to, db, size = 16 }: { from: number; to: number; db: number; size?: number }) {
+export function SendKnob({ from, to, db, size = KNOB.sm }: { from: number; to: number; db: number; size?: number }) {
   const ctl = knobControl(
     db <= MIN_GAIN_DB ? VOL_MIN : db,
     { rate: 0.25, min: VOL_MIN, max: SEND_MAX_DB, step: 1, res: 0.1, detent: 0.3 },

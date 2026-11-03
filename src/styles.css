@@ -898,7 +898,7 @@ body.rsizing * {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 20px;
+  height: 26px;
   padding: 0 3px 0 2px;
   border-radius: var(--r-md);
   cursor: ns-resize;
@@ -965,8 +965,8 @@ body.rsizing * {
   padding: 0 3px;
 }
 .pan {
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   flex: none;
   cursor: ns-resize;
   display: flex;
@@ -3680,9 +3680,9 @@ body.sizing-v * {
 .strips {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 2px;
-  padding: 6px 6px 30px;
+  padding: 6px 6px 24px;
   height: 100%;
   width: max-content;
   min-width: 100%;
@@ -3805,8 +3805,8 @@ body.sizing-v * {
   gap: 3px;
 }
 .prow .pk-pad {
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
 }
 /* The track row's own volume control: knob and small meter, the value
    under them. */
@@ -3814,7 +3814,7 @@ body.sizing-v * {
   flex: none;
   display: flex;
   justify-content: center;
-  padding: 2px 2px 4px;
+  padding: 0 2px 2px;
 }
 .mxvol {
   display: grid;
@@ -3834,10 +3834,10 @@ body.sizing-v * {
 }
 .mtr {
   width: 7px;
-  height: 18px;
+  height: 24px;
 }
 .rrow {
-  height: 60px;
+  height: 50px;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -3878,12 +3878,14 @@ body.sizing-v * {
 .oport.none .ot {
   color: var(--danger);
 }
+/* One row: the selected strip's source chevron, a connect button, or a
+   send's remove × beside its level knob. */
 .rcell {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  gap: var(--sp-1);
 }
 .rcon {
   width: 26px;
@@ -3943,6 +3945,7 @@ body.sizing-v * {
 }
 .addstrip {
   width: 34px;
+  align-self: stretch;
   flex: none;
   border: 1px dashed var(--line-dash);
   border-radius: var(--r-sm);
@@ -3959,13 +3962,16 @@ body.sizing-v * {
 .mxp .mxs {
   width: 52px;
 }
+/* The name block takes the strip's spare height: the one place to click
+   a strip without touching a control. */
 .mxp .sname {
-  height: 30px;
-  padding: 2px 4px;
+  height: auto;
+  flex: 1 0 36px;
+  padding: var(--sp-3) var(--sp-2);
   font-size: var(--fs-sm);
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   line-height: 1.2;
   position: relative;
 }

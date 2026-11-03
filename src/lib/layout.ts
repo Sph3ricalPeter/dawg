@@ -38,6 +38,9 @@ export interface Layout {
   dock: DockNode;
   floating: FloatRect[];
   lastDock: Partial<Record<PanelId, Place>>;
+  /** Set once the mixer has had its one-time resize to the shorter
+   * strips; a layout saved before that gets 3/4 of its mixer height. */
+  mixerFit?: true;
 }
 
 export interface PanelInfo {
@@ -49,12 +52,16 @@ export interface PanelInfo {
   float: { w: number; h: number } | null;
 }
 
+/** The mixer's default height, and the least that shows a whole strip. */
+const MIXER_H = 256;
+const MIXER_MIN_H = 240;
+
 export const PANEL_IDS: readonly PanelId[] = ["browser", "timeline", "mixer", "chain"];
 
 export const PANELS: Record<PanelId, PanelInfo> = {
   browser: { title: "Browser", size: { row: 208, col: 220 }, min: { row: 150, col: 120 }, float: { w: 260, h: 440 } },
   timeline: { title: "Timeline", size: { row: 600, col: 300 }, min: { row: 320, col: 160 }, float: null },
-  mixer: { title: "Mixer", size: { row: 520, col: 230 }, min: { row: 220, col: 200 }, float: { w: 760, h: 340 } },
+  mixer: { title: "Mixer", size: { row: 520, col: MIXER_H }, min: { row: 220, col: MIXER_MIN_H }, float: { w: 760, h: MIXER_H } },
   chain: { title: "Chain", size: { row: 560, col: 252 }, min: { row: 360, col: 150 }, float: { w: 760, h: 270 } },
 };
 
@@ -74,21 +81,23 @@ export const PRESETS: Record<PresetName, { label: string; make: (browserWidth?: 
         split: "row",
         items: [
           { panel: "browser", size: bw },
-          { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 230 }, { panel: "chain", size: 252 }] },
+          { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: MIXER_H }, { panel: "chain", size: 252 }] },
         ],
       },
       floating: [],
       lastDock: {},
+      mixerFit: true,
     }),
   },
   floatChain: {
     label: "Floating chain",
     make: (bw = 208) => ({
       version: 1,
-      dock: { split: "row", items: [{ panel: "browser", size: bw }, { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 230 }] }] },
+      dock: { split: "row", items: [{ panel: "browser", size: bw }, { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: MIXER_H }] }] },
       // Negative x and y: placed at the bottom right when first shown.
       floating: [{ panel: "chain", x: -1, y: -1, w: 760, h: 270 }],
       lastDock: { chain: { next: "mixer", side: "bottom" } },
+      mixerFit: true,
     }),
   },
   classic: {
@@ -99,12 +108,13 @@ export const PRESETS: Record<PresetName, { label: string; make: (browserWidth?: 
         split: "col",
         items: [
           { split: "row", items: [{ panel: "browser", size: bw }, { panel: "timeline" }] },
-          { panel: "mixer", size: 230 },
+          { panel: "mixer", size: MIXER_H },
           { panel: "chain", size: 252 },
         ],
       },
       floating: [],
       lastDock: {},
+      mixerFit: true,
     }),
   },
 };
@@ -322,7 +332,7 @@ export function validate(v: unknown): Layout | null {
       if (!(PANEL_IDS as readonly string[]).includes(id)) return null;
       seen.push(id);
       const p: PanelNode = { panel: id as PanelId };
-      if (size !== undefined && dir) p.size = Math.max(PANELS[p.panel].min[dir], size);
+      if (size !== undefined && dir) p.size = Math.max(PANELS[p.panel].min[dir], p.panel === "mixer" && dir === "col" ? fit(size) : size);
       return p;
     }
     if ((r.split === "row" || r.split === "col") && Array.isArray(r.items) && r.items.length >= 2) {
@@ -334,6 +344,8 @@ export function validate(v: unknown): Layout | null {
     }
     return null;
   };
+  // The one-time mixer resize: 3/4 of the old height, at least a whole strip.
+  const fit = (h: number) => (o.mixerFit ? h : Math.max(MIXER_MIN_H, Math.round(h * 0.75)));
   const dock = node(o.dock, null);
   if (!dock) return null;
   const floating: FloatRect[] = [];
@@ -341,7 +353,7 @@ export function validate(v: unknown): Layout | null {
     const f = raw && ({ ...raw, panel: savedId(raw.panel) } as FloatRect);
     if (!f || !PANELS[f.panel]?.float || ![f.x, f.y, f.w, f.h].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
     seen.push(f.panel);
-    floating.push({ panel: f.panel, x: f.x, y: f.y, w: f.w, h: f.h });
+    floating.push({ panel: f.panel, x: f.x, y: f.y, w: f.w, h: f.panel === "mixer" ? fit(f.h) : f.h });
   }
   const old = !seen.includes("mixer");
   if (old) seen.push("mixer");
@@ -353,6 +365,6 @@ export function validate(v: unknown): Layout | null {
       lastDock[k as PanelId] = { next: savedId(p.next) as PanelId | "window", side: p.side, ...(typeof p.size === "number" ? { size: p.size } : {}) };
     }
   }
-  const out: Layout = { version: 1, dock: fixFlex(dock, noMeasure), floating, lastDock };
+  const out: Layout = { version: 1, dock: fixFlex(dock, noMeasure), floating, lastDock, mixerFit: true };
   return old ? dockPanel(out, "mixer", "timeline", "bottom", 2 * PANELS.mixer.size.col) : out;
 }
