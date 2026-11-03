@@ -12,6 +12,7 @@ import { stepText } from "@/lib/history";
 import { Master } from "./Master";
 import { Bpm, Lcd, TimelineMenu } from "./TimeControls";
 import { UpdateIndicator } from "./UpdateIndicator";
+import { PanelsMenu } from "./PanelsMenu";
 
 function windowAction(action: "minimize" | "toggleMaximize") {
   if (!isTauri()) return;
@@ -51,7 +52,6 @@ function Transport() {
     s.session?.canRedo ? stepText(s.session.future[0]) : undefined,
   );
   const historyOpen = useSession((s) => s.historyOpen);
-  const mixerOpen = useSession((s) => s.mixerOpen);
   const store = useSession.getState;
   return (
     <div className="transport">
@@ -112,20 +112,7 @@ function Transport() {
       )}
       <TimelineMenu />
       <Master />
-      <div className="tg">
-        <button
-          className={`tb hb${mixerOpen ? " on" : ""}`}
-          aria-label="Mixer"
-          data-tip="Mixer (F9)"
-          disabled={!session}
-          onClick={() => store().toggleMixer()}
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-            <path d="M4 2.5v11M8 2.5v11M12 2.5v11" />
-            <path d="M2.5 10h3M6.5 5.5h3M10.5 8.5h3" strokeWidth="2.2" />
-          </svg>
-        </button>
-      </div>
+      <PanelsMenu />
       <div className="tg histwrap">
         <button
           className={`tb hb${historyOpen ? " on" : ""}`}
