@@ -330,6 +330,9 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 360, h: 160 });
   const wheelTimer = useRef<number | undefined>(undefined);
+  // The band a wheel gesture started on keeps the wheel until the gesture
+  // settles, even if the pointer slips off its handle.
+  const wheelBand = useRef<number | null>(null);
   // The grid and analyser go on a canvas of their own under the curve, so
   // the analyser redraws every frame without redrawing the bands.
   const back = useRef<HTMLCanvasElement>(null);
@@ -468,11 +471,16 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
   // Wheel changes Q, as in Pro-Q; the steps settle into one undo step.
   const onWheelBand = (i: number, e: React.WheelEvent) => {
     e.stopPropagation();
+    if (wheelBand.current !== null && wheelBand.current < bands.length) i = wheelBand.current;
     const b = bands[i];
+    wheelBand.current = i;
     setSel(i);
     setBand(i, { ...b, q: b.q * Math.exp(e.deltaY * (e.shiftKey ? 0.0003 : 0.0015)) }, true);
     window.clearTimeout(wheelTimer.current);
-    wheelTimer.current = window.setTimeout(commitDrag, 350);
+    wheelTimer.current = window.setTimeout(() => {
+      wheelBand.current = null;
+      commitDrag();
+    }, 350);
   };
 
   const dragNode = (e: React.PointerEvent, i: number, bs: EqBand[]) => {
@@ -550,13 +558,19 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
         onPointerDown={(e) => {
           if (e.target === e.currentTarget || e.target === canvas.current) setSel(-1);
         }}
+        onWheel={(e) => {
+          if (wheelBand.current !== null) onWheelBand(wheelBand.current, e);
+        }}
         data-hint="Double-click to add a band (a cut at either end, a bell between) · drag a band to move it · wheel over a band for its width · right-click deletes"
       >
         <canvas ref={back} />
         <canvas ref={canvas} />
         {bands.map((b, i) => {
           const nx = ax.x(Math.min(b.freq, top));
-          const ny = hasGain(b.kind) ? y(clamp(b.gainDb, -range, range)) : y(clamp(bandResponse(b, rate)(b.freq), -range, range));
+          // Bands without gain sit on the 0 dB line: the curve at their
+          // frequency moves with Q, and a handle that moved with it would
+          // run away from the wheel adjusting that Q.
+          const ny = y(hasGain(b.kind) ? clamp(b.gainDb, -range, range) : 0);
           return (
             <div
               key={i}
