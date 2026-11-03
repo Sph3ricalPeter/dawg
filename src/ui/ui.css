@@ -210,6 +210,9 @@
 .tb svg {
   width: 12px;
   height: 12px;
+}
+/* Hand-drawn icons that don't say how to paint themselves are filled. */
+.tb svg:not([fill]) {
   fill: currentColor;
 }
 .xbtn {
@@ -268,4 +271,48 @@
 }
 .pw.off::before {
   background: var(--line-hover);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dialog (ui/Dialog.tsx). `.dlg .row` and the rest of a body's layout   */
+/* belong to the dialog that uses them.                                 */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dlg {
+  width: 540px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-2xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+.dlg.small {
+  width: 440px;
+}
+.dlg header {
+  padding: 14px 18px 4px;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semi);
+}
+.dlg .bd {
+  padding: 6px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dlg footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-0);
 }

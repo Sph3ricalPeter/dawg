@@ -13,6 +13,7 @@ import { Master } from "./Master";
 import { Bpm, Lcd, TimelineMenu } from "./TimeControls";
 import { UpdateIndicator } from "./UpdateIndicator";
 import { Icon } from "@/ui/Icon";
+import { ToolButton } from "@/ui/Button";
 
 function windowAction(action: "minimize" | "toggleMaximize") {
   if (!isTauri()) return;
@@ -23,15 +24,14 @@ function BrowserToggle() {
   const scratch = useSession((s) => !!s.session?.scratch);
   const open = useBrowser((s) => (scratch ? s.openScratch : s.open));
   return (
-    <button
-      className={`tb${open ? " on" : ""}`}
+    <ToolButton
+      on={open}
       id="tBrowser"
       aria-label="Browser"
       data-tip="Browser (Ctrl+Alt+B)"
       onClick={() => useBrowser.getState().toggle()}
-    >
-<Icon name="browser" />
-    </button>
+      icon="browser"
+    />
   );
 }
 
@@ -58,37 +58,33 @@ function Transport() {
         <BrowserToggle />
       </div>
       <div className="tg">
-        <button
-          className={`tb${playing ? " on" : ""}`}
+        <ToolButton
+          on={playing}
           id="tPlay"
           aria-label={playing ? "Stop" : "Play"}
           data-tip="Play / stop (Space)"
           disabled={!session}
           onClick={() => void store().togglePlay()}
-        >
-<Icon name="play" />
-        </button>
-        <button
-          className="tb"
+          icon="play"
+        />
+        <ToolButton
           aria-label="Stop and return"
           data-tip="Stop and return to where playback started"
           disabled={!session}
           onClick={() => {
             void store().stop();
           }}
-        >
-<Icon name="stop" />
-        </button>
-        <button
-          className={`tb${loop ? " on" : ""}`}
+          icon="stop"
+        />
+        <ToolButton
+          on={loop}
           aria-label="Loop"
           aria-pressed={loop}
           data-tip={`Loop (L) · ${hasRange ? "the range" : "from 0 to the end of the last clip"}`}
           disabled={!session}
           onClick={() => store().toggleLoop()}
-        >
-<Icon name="loop" />
-        </button>
+          icon="loop"
+        />
       </div>
       <div className="tg">
         <Lcd />
@@ -101,33 +97,33 @@ function Transport() {
       <TimelineMenu />
       <Master />
       <div className="tg">
-        <button
-          className={`tb hb${mixerOpen ? " on" : ""}`}
+        <ToolButton
+          className="hb"
+          on={mixerOpen}
           aria-label="Mixer"
           data-tip="Mixer (F9)"
           disabled={!session}
           onClick={() => store().toggleMixer()}
-        >
-<Icon name="mixer" />
-        </button>
+          icon="mixer"
+        />
       </div>
       <div className="tg histwrap">
-        <button
-          className={`tb hb${historyOpen ? " on" : ""}`}
+        <ToolButton
+          className="hb"
+          on={historyOpen}
           id="tHist"
           aria-label="History"
           data-tip="History (Ctrl+H)"
           disabled={!session}
           onClick={() => store().toggleHistory()}
+          icon="history"
         >
-<Icon name="history" />
           <span className="car">▾</span>
-        </button>
+        </ToolButton>
         {historyOpen && session && (
           <HistoryPanel onClose={() => store().toggleHistory(false)} />
         )}
-        <button
-          className="tb"
+        <ToolButton
           data-tip={
             undoLabel
               ? `Undo ${undoLabel} (Ctrl+Z)`
@@ -136,11 +132,9 @@ function Transport() {
           aria-label={undoLabel ? `Undo ${undoLabel}` : "Undo"}
           disabled={!canUndo}
           onClick={() => void store().undo()}
-        >
-<Icon name="undo" />
-        </button>
-        <button
-          className="tb"
+          icon="undo"
+        />
+        <ToolButton
           data-tip={
             redoLabel
               ? `Redo ${redoLabel} (Ctrl+Y)`
@@ -149,9 +143,8 @@ function Transport() {
           aria-label={redoLabel ? `Redo ${redoLabel}` : "Redo"}
           disabled={!canRedo}
           onClick={() => void store().redo()}
-        >
-<Icon name="redo" />
-        </button>
+          icon="redo"
+        />
       </div>
     </div>
   );
@@ -176,8 +169,7 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
       <div className="tright" data-tauri-drag-region>
         <UpdateIndicator />
         <div className="tg">
-          <button
-            className="tb"
+          <ToolButton
             id="tExport"
             aria-label="Export"
             disabled={!session}
@@ -187,9 +179,8 @@ export function TitleBar({ info }: { info: AppInfo | null }) {
                 ? "Export (Ctrl+S) · the dialog starts on the original file; saving there replaces it, with a backup"
                 : "Export a mixdown (Ctrl+R)"
             }
-          >
-<Icon name="export" />
-          </button>
+            icon="export"
+          />
         </div>
         <div className="winctl">
           <button

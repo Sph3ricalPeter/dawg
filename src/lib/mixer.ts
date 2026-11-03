@@ -6,7 +6,7 @@
  */
 
 import { MASTER, type DeviceKind, type DeviceParams, type DeviceState, type SessionState, type TrackState } from "./api";
-import { VOL_MAX, VOL_MIN } from "@/components/Volume";
+import { VOL_MAX, VOL_MIN } from "@/ui/Volume";
 
 export const DEVICE_KINDS: DeviceKind[] = ["eq", "compressor", "utility"];
 

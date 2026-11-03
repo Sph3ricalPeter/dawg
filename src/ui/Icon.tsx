@@ -3,7 +3,9 @@ import type { ReactNode } from "react";
 /* The app's icons, by name, so a screen asks for "undo" instead of
  * pasting path data. Toolbar icons (16×16) are filled or 1.4 px strokes
  * and take their colour from the button (`currentColor`); the window
- * controls are 10×10 hairlines. Add new icons here. */
+ * controls are 10×10 hairlines. Each icon carries its own fill and stroke,
+ * so it draws the same in any button; the button sets only its size. Add
+ * new icons here. */
 
 const stroke = (d: ReactNode, w = 1.4, extra: React.SVGProps<SVGSVGElement> = {}) => (
   <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={w} {...extra}>
@@ -11,12 +13,12 @@ const stroke = (d: ReactNode, w = 1.4, extra: React.SVGProps<SVGSVGElement> = {}
   </svg>
 );
 const fill = (d: string, extra: React.SVGProps<SVGSVGElement> = {}) => (
-  <svg viewBox="0 0 16 16" aria-hidden="true" {...extra}>
+  <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" {...extra}>
     <path d={d} />
   </svg>
 );
 const win = (d: string) => (
-  <svg viewBox="0 0 10 10" aria-hidden="true">
+  <svg viewBox="0 0 10 10" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1}>
     <path d={d} />
   </svg>
 );
@@ -41,7 +43,7 @@ const ICONS = {
   history: stroke(<path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.6h2.6M8 5v3.2l2.2 1.4" />),
   undo: fill(UNDO),
   redo: fill(UNDO, { style: { transform: "scaleX(-1)" } }),
-  export: fill("M8 10V2.5M5 5.2 8 2.3l3 2.9M2.5 9.5v3.5h11V9.5"),
+  export: stroke(<path d="M8 10V2.5M5 5.2 8 2.3l3 2.9M2.5 9.5v3.5h11V9.5" />, 1.5, { strokeLinecap: "round", strokeLinejoin: "round" }),
   minimize: win("M0 5h10"),
   maximize: win("M.5.5h9v9h-9z"),
   "win-close": win("M0 0l10 10M10 0 0 10"),

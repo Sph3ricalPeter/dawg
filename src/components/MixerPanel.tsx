@@ -13,7 +13,7 @@ import { Knob } from "@/ui/Knob";
 import { drawLevel, HOLD_S, meterSegments, MIXER_LAW, PEAK_FALL_DB, RELEASE_DB } from "@/ui/meter-law";
 import { MenuItem, MenuSep, PopMenu } from "@/ui/Menu";
 import { SendKnob, SendMenu } from "./RouteMenus";
-import { Volume } from "./Volume";
+import { Volume } from "@/ui/Volume";
 import { Icon } from "@/ui/Icon";
 import { CloseButton } from "@/ui/Button";
 

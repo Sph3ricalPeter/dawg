@@ -79,9 +79,18 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   `components/Dock.tsx` renders it). Each panel renders once, through a
   portal, into a host element that moves between slots, so docking never
   remounts it; give a new panel a `PanelHead` and an entry in `PANELS`.
-  Volume: `components/Volume.tsx` is the one volume control (knob, value
-  with dB, meter) for the master and every track; use it for any new one,
-  the mixer's strips included.
+  Design system: `src/ui` holds the shared components the screens are
+  built from: `Knob` and `KnobField` (a knob with its value and name),
+  `Volume` (the one volume control, knob, dB and meter, for the master,
+  every track and the mixer's strips), `LevelMeter` and `meter-law.ts`
+  (every meter's scale, colours and canvas drawing), `Menu`/`PopMenu`/
+  `MenuItem`/`MenuLabel`/`MenuSep`/`MenuNote`, `useDismiss` (outside click
+  and Escape), `Dialog`, `Button`/`ToolButton`/`CloseButton`/`PowerButton`
+  and `Icon` (named icons). Their CSS is `src/ui/ui.css`. Build new UI from
+  these and add a variant here rather than restyling one on a screen; a
+  new shared component goes in `src/ui`, `ui.css` and the gallery
+  (`npm run dev`, then `/gallery.html`; dev only, not shipped). The rules
+  are in `design/design-system.md` in the project files.
   Mixer and chain: `components/ChainPanel.tsx` (the selected channel's
   device cards; bodies in `Devices.tsx`), `components/MixerPanel.tsx`
   (strips, route row, cables, meters drawn on one canvas),

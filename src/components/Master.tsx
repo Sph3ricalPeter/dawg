@@ -1,7 +1,7 @@
 import { useSession } from "@/stores/session-store";
 import { LevelMeter } from "@/ui/Meter";
 import { MASTER_LAW } from "@/ui/meter-law";
-import { Volume } from "./Volume";
+import { Volume } from "@/ui/Volume";
 
 /** The master meter, live while playing. */
 function MasterMeter() {

@@ -1353,43 +1353,11 @@ body.rsizing * {
 }
 
 /* dialogs */
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: var(--scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.dlg {
-  width: 540px;
-  max-width: calc(100vw - 32px);
-  background: var(--bg-1);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-2xl);
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
-}
-.dlg.small {
-  width: 440px;
-}
-.dlg header {
-  padding: 14px 18px 4px;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semi);
-}
 .dlg .sub {
   padding: 0 18px 10px;
   color: var(--text-dim);
   font: var(--nw) var(--fs-sm) var(--mono);
   word-break: break-all;
-}
-.dlg .bd {
-  padding: 6px 18px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 .dlg .row {
   display: flex;
@@ -1407,14 +1375,6 @@ body.rsizing * {
 }
 .dlg .bad {
   color: var(--danger);
-}
-.dlg footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--line);
-  background: var(--bg-0);
 }
 .kept {
   position: relative;

@@ -20,7 +20,7 @@ import type { MenuAt } from "@/lib/popup";
 import { useSession, useTracks } from "@/stores/session-store";
 import { Knob } from "@/ui/Knob";
 import { MenuItem, MenuNote, MenuSep, PopMenu } from "@/ui/Menu";
-import { VOL_MIN } from "./Volume";
+import { VOL_MIN } from "@/ui/Volume";
 
 const store = useSession.getState;
 

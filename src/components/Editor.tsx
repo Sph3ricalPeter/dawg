@@ -14,7 +14,7 @@ import { MenuItem, MenuSep, PopMenu } from "@/ui/Menu";
 import { LevelMeter } from "@/ui/Meter";
 import { HEADER_LAW } from "@/ui/meter-law";
 import { onFrame } from "@/lib/frame-loop";
-import { Volume } from "./Volume";
+import { Volume } from "@/ui/Volume";
 import { Lane } from "./Lane";
 import { PanelHead } from "./Dock";
 import { LabelIcon } from "./BrowserLabels";
