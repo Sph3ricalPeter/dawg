@@ -1,39 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { MASTER, type DeviceState, type SessionState, type TrackState } from "@/lib/api";
-import { commitDrag, removeSend, setDeviceOn, setMasterGain, setMix, setSend } from "@/lib/chain-edit";
+import { MASTER, type SessionState, type TrackState, type DeviceState } from "@/lib/api";
+import { commitDrag, removeSend, setMasterGain, setMix, setSend } from "@/lib/chain-edit";
 import { startDrag } from "@/lib/drag";
-import { clamp, fmtDb, MIN_GAIN_DB } from "@/lib/format";
+import { clamp } from "@/lib/format";
 import { onFrame, toDb } from "@/lib/frame-loop";
-import { knobControl, parseDb } from "@/lib/knob";
-import { chanLabel, channelName, channelNumber, chainOf, deviceNames, fmtPan, MASTER_COLOR, MAX_DEVICES, wouldLoop } from "@/lib/mixer";
+import { knobControl } from "@/lib/knob";
+import { chanLabel, channelName, channelNumber, fmtPan, MASTER_COLOR, wouldLoop } from "@/lib/mixer";
 import { type MenuAt, under } from "@/lib/popup";
 import { trackColor } from "@/lib/timeline";
-import { useMixer, type MixerOptions } from "@/stores/mixer-store";
 import { useMasterChain, useSession, useTracks } from "@/stores/session-store";
-import { DeviceCard } from "./ChainPanel";
 import { PanelHead } from "./Dock";
 import { Knob } from "./Knob";
 import { MenuItem, PopMenu } from "./PopMenu";
-import { AddDeviceMenu, DeviceMenu, SendKnob, SendMenu, SidechainMenu } from "./RouteMenus";
-import { TypeIn, VOL_MIN, Volume } from "./Volume";
+import { SendKnob, SendMenu } from "./RouteMenus";
+import { Volume } from "./Volume";
 
 const store = useSession.getState;
 
 /* ------------------------------------------------------------------ */
 /* Laws and meters                                                     */
 /* ------------------------------------------------------------------ */
-
-/** Fader travel for a level: 0 dB at 75%, +6 dB at the top, the knob's law. */
-function dbToFrac(db: number): number {
-  if (db <= MIN_GAIN_DB) return 0;
-  return db >= 0 ? 0.75 + (0.25 * db) / 6 : 0.75 * Math.pow(10, db / 40);
-}
-function fracToDb(p: number): number {
-  if (p <= 0.002) return MIN_GAIN_DB;
-  const db = p < 0.75 ? 40 * Math.log10(p / 0.75) : ((p - 0.75) / 0.25) * 6;
-  return db < -70 ? MIN_GAIN_DB : Math.round(db * 10) / 10;
-}
 
 /** Meter scale: −60 dB at the bottom, +6 dB at the top. */
 const mfr = (db: number) => clamp((db + 60) / 66, 0, 1);
@@ -98,92 +84,19 @@ interface Chan {
 
 type Menu =
   | { kind: "chan"; chan: number; at: MenuAt }
-  | { kind: "out"; chan: number; at: MenuAt }
-  | { kind: "add"; chan: number; at: MenuAt }
-  | { kind: "device"; device: DeviceState; chan: number; at: MenuAt };
-
-/** The fader: drag it (Shift fine), double-click for 0 dB. */
-function Fader({ db, onDrag, onSet, hint }: { db: number; onDrag: (db: number, done: boolean) => void; onSet: (db: number) => void; hint: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  return (
-    <div
-      className="fader"
-      ref={ref}
-      style={{ ["--p" as string]: dbToFrac(db).toFixed(4) }}
-      data-hint={`${hint} ${fmtDb(db)} · drag (Shift fine, Alt skips the 0 dB snap) · double-click for 0 dB`}
-      onDoubleClick={() => onSet(0)}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || !ref.current) return;
-        const travel = Math.max(20, ref.current.clientHeight - 10);
-        let p = dbToFrac(db);
-        let lastDy = 0;
-        let v = db;
-        startDrag(e, {
-          slop: 1,
-          move: (_dx, dy, ev) => {
-            p = clamp(p - ((dy - lastDy) / travel) * (ev.shiftKey ? 0.1 : 1), 0, 1);
-            lastDy = dy;
-            v = fracToDb(p);
-            if (!ev.altKey && Math.abs(v) < 0.3) v = 0;
-            onDrag(v, false);
-          },
-          end: (moved) => {
-            if (moved) onDrag(v, true);
-          },
-        });
-      }}
-    >
-      <div className="ftrack" />
-      <div className="zero" />
-      <div className="thumb" />
-    </div>
-  );
-}
-
-/** The dB readout under the fader: double-click to type. */
-function Value({ db, onSet }: { db: number; onSet: (db: number) => void }) {
-  const [typing, setTyping] = useState(false);
-  if (typing)
-    return (
-      <div className="val">
-        <TypeIn
-          value={fmtDb(db, false).replace("dB", "")}
-          onDone={(t) => {
-            setTyping(false);
-            if (t === null) return;
-            const v = parseDb(t);
-            if (v === -Infinity) onSet(MIN_GAIN_DB);
-            else if (Number.isFinite(v)) onSet(clamp(v, VOL_MIN, 12));
-          }}
-        />
-      </div>
-    );
-  return (
-    <div className="val mono" onDoubleClick={() => setTyping(true)} data-hint="Volume · double-click to type">
-      {fmtDb(db, false)}
-    </div>
-  );
-}
+  | { kind: "out"; chan: number; at: MenuAt };
 
 function Strip({
   c,
   s,
   sel,
-  opts,
-  floatDev,
   onMenu,
-  onSlot,
-  onSlotDown,
   onSourceDown,
 }: {
   c: Chan;
   s: SessionState;
   sel: number | null;
-  opts: MixerOptions;
-  floatDev: number | null;
   onMenu: (m: Menu) => void;
-  onSlot: (d: DeviceState) => void;
-  onSlotDown: (e: React.PointerEvent, d: DeviceState, chan: number) => void;
   onSourceDown: (e: React.PointerEvent) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
@@ -200,8 +113,6 @@ function Strip({
   const panCtl = knobControl(pan, { rate: 1, min: -100, max: 100, step: 10, res: 1, detent: 4 }, (v, done) =>
     done ? commitDrag() : t && setMix(t, { pan: v / 100 }, true),
   );
-  const names = deviceNames(c.chain);
-  const knobVol = opts.vol === "knob" || opts.vol === "compact";
 
   // The route cell: relative to the selected strip, as in FL.
   const src = sel !== null && sel !== MASTER ? s.tracks.find((x) => x.id === sel) : undefined;
@@ -280,34 +191,6 @@ function Strip({
           </button>
         )}
       </div>
-      {opts.layout === "expanded" && (
-        <div className="slots">
-          {c.chain.map((d, i) => (
-            <div
-              key={d.id}
-              className={`slot${d.on ? "" : " off"}${floatDev === d.id ? " sel" : ""}`}
-              data-dev={d.id}
-              data-kind={d.kind}
-              onPointerDown={(e) => !(e.target as HTMLElement).closest("button") && onSlotDown(e, d, c.id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onMenu({ kind: "device", device: d, chan: c.id, at: { x: e.clientX, y: e.clientY } });
-              }}
-              data-hint="Click to open · drag to reorder · Alt+drag onto another strip copies · right-click for options"
-            >
-              <button className="pw sm" onClick={() => setDeviceOn(d.id, !d.on)} data-hint={d.on ? "On · click to bypass" : "Bypassed · click to turn on"} />
-              <span className="sl" onClick={() => onSlot(d)}>
-                {names[i]}
-              </span>
-            </div>
-          ))}
-          {c.chain.length < MAX_DEVICES && (
-            <button className="slot add" onClick={(e) => onMenu({ kind: "add", chan: c.id, at: under(e.currentTarget) })} data-hint="Add a device to the end of the chain">
-              +
-            </button>
-          )}
-        </div>
-      )}
       <div className="prow">
         {isMaster ? (
           <span className="pk-pad" />
@@ -347,23 +230,15 @@ function Strip({
         </span>
       </div>
       <div className="fz">
-        {knobVol ? (
-          <Volume className="mxvol" db={c.db} hint={isMaster ? "Master volume" : "Volume"} onDrag={onVol} onSet={setVol} />
-        ) : (
-          <Fader db={c.db} onDrag={onVol} onSet={setVol} hint={isMaster ? "Master volume" : "Volume"} />
-        )}
-        <div className="mtr" data-mtr={c.index} />
-        {opts.layout === "expanded" && opts.vol !== "compact" && (
-          <div className="scale mono">
-            {[6, 0, -12, -24, -48].map((d) => (
-              <span key={d} style={{ top: `${((1 - mfr(d)) * 100).toFixed(2)}%` }}>
-                {d > 0 ? `+${d}` : d === 0 ? "0" : `−${-d}`}
-              </span>
-            ))}
-          </div>
-        )}
+        <Volume
+          className="mxvol"
+          db={c.db}
+          hint={isMaster ? "Master volume" : "Volume"}
+          onDrag={onVol}
+          onSet={setVol}
+          after={<div className="mtr" data-mtr={c.index} />}
+        />
       </div>
-      {!knobVol && <Value db={c.db} onSet={setVol} />}
       <div className="rrow" data-rr={c.id}>
         {isMaster ? (
           <span className="oport static">
@@ -410,9 +285,7 @@ export function MixerPanel() {
   const masterDraft = useSession((s) => (s.draft?.kind === "master" ? s.draft.db : null));
   const sel = useSession((s) => s.channel);
   const playing = useSession((s) => s.playing);
-  const opts = useMixer((s) => s.options);
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [float, setFloat] = useState<{ device: number; x: number; y: number } | null>(null);
   const [cables, setCables] = useState<Cable[]>([]);
   const [ghost, setGhost] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -462,7 +335,6 @@ export function MixerPanel() {
         tracks.map((t) => [t.id, t.sends.map((x) => x.to), t.chain.map((d) => d.sidechain ?? 0)]),
         masterChain.length,
         sel,
-        opts,
         size,
       ])
     : "";
@@ -480,7 +352,6 @@ export function MixerPanel() {
     };
     const out: Cable[] = [];
     const line = (a: number, b: number, on: boolean) => {
-      if (!on && opts.cables === "hidden") return;
       const p = at(a);
       const q = at(b);
       if (p && q) out.push({ d: cablePath(p[0], p[1], q[0], q[1], h), on });
@@ -577,7 +448,7 @@ export function MixerPanel() {
       stop?.();
     };
     // Re-measured whenever the strips change.
-  }, [playing, size, routing, tracks.length, opts]);
+  }, [playing, size, routing, tracks.length]);
 
   if (!s) return null;
 
@@ -591,8 +462,8 @@ export function MixerPanel() {
       });
   };
 
-  /** Drags a cable from the selected strip's source chevron: onto a strip
-   * sends there, onto a compressor slot sets its sidechain. */
+  /** Drags a cable from the selected strip's source chevron onto a strip
+   * to send there. */
   const dragSource = (e: React.PointerEvent) => {
     const from = sel;
     const el = inner.current;
@@ -602,23 +473,16 @@ export function MixerPanel() {
     if (!r) return;
     const x0 = r.left - box.left + r.width / 2;
     const y0 = r.bottom - box.top - 3;
-    const clear = () => document.querySelectorAll(".mxs.drop, .mxs.nogo, .slot.drop").forEach((x) => x.classList.remove("drop", "nogo"));
-    const targetAt = (cx: number, cy: number) => {
-      const over = document.elementFromPoint(cx, cy) as HTMLElement | null;
-      const slot = over?.closest<HTMLElement>(".slot[data-kind='compressor']");
-      const strip = over?.closest<HTMLElement>(".mxs[data-chan]");
-      return { slot, strip };
-    };
+    const clear = () => document.querySelectorAll(".mxs.drop, .mxs.nogo").forEach((x) => x.classList.remove("drop", "nogo"));
+    const targetAt = (cx: number, cy: number) =>
+      (document.elementFromPoint(cx, cy) as HTMLElement | null)?.closest<HTMLElement>(".mxs[data-chan]") ?? null;
     startDrag(e, {
       slop: 3,
       move: (_dx, _dy, ev) => {
         clear();
-        const { slot, strip } = targetAt(ev.clientX, ev.clientY);
+        const strip = targetAt(ev.clientX, ev.clientY);
         const to = strip ? Number(strip.dataset.chan) : null;
-        if (to !== null && to !== from) {
-          const ok = !wouldLoop(s, from, to);
-          (slot && ok ? slot : strip!).classList.add(ok ? "drop" : "nogo");
-        }
+        if (strip && to !== from) strip.classList.add(wouldLoop(s, from, to!) ? "nogo" : "drop");
         const b = el.getBoundingClientRect();
         setGhost(cablePath(x0, y0, ev.clientX - b.left, ev.clientY - b.top, el.scrollHeight));
       },
@@ -626,61 +490,19 @@ export function MixerPanel() {
         clear();
         setGhost(null);
         if (!moved) return;
-        const { slot, strip } = targetAt(ev.clientX, ev.clientY);
+        const strip = targetAt(ev.clientX, ev.clientY);
         const to = strip ? Number(strip.dataset.chan) : null;
-        if (to === null || to === from) return;
-        if (slot) void store().apply({ type: "set_sidechain", device: Number(slot.dataset.dev), from });
-        else if (!tracks.find((t) => t.id === from)?.sends.some((x) => x.to === to)) setSend(from, to, 0, false);
+        if (to === null || to === from || wouldLoop(s, from, to)) return;
+        if (!tracks.find((t) => t.id === from)?.sends.some((x) => x.to === to)) setSend(from, to, 0, false);
       },
     });
   };
-
-  /** Drags a slot: within its strip to reorder, onto another strip to move
-   * it there (Alt copies). A click without a drag opens it. */
-  const dragSlot = (e: React.PointerEvent, d: DeviceState, chan: number) => {
-    const from = chainOf(s, chan).findIndex((x) => x.id === d.id);
-    startDrag(e, {
-      slop: 3,
-      move: (_dx, _dy, ev) => {
-        document.querySelectorAll(".mxs.drop").forEach((x) => x.classList.remove("drop"));
-        const strip = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>(".mxs[data-chan]");
-        strip?.classList.add("drop");
-      },
-      end: (moved, ev) => {
-        document.querySelectorAll(".mxs.drop").forEach((x) => x.classList.remove("drop"));
-        if (!moved) return;
-        const over = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
-        const strip = over?.closest<HTMLElement>(".mxs[data-chan]");
-        if (!strip) return;
-        const to = Number(strip.dataset.chan);
-        const slots = [...strip.querySelectorAll<HTMLElement>(".slot[data-dev]")];
-        let gap = slots.findIndex((x) => {
-          const r = x.getBoundingClientRect();
-          return ev.clientY < r.top + r.height / 2;
-        });
-        if (gap < 0) gap = slots.length;
-        if (ev.altKey || to !== chan) {
-          void store().apply({ type: ev.altKey ? "copy_device" : "move_device", device: d.id, channel: to, index: gap });
-        } else {
-          const at = gap > from ? gap - 1 : gap;
-          if (at !== from) void store().apply({ type: "move_device", device: d.id, channel: to, index: at });
-        }
-      },
-    });
-  };
-
-  const openFloat = (d: DeviceState) => {
-    const r = body.current?.getBoundingClientRect();
-    setFloat((f) => (f?.device === d.id ? null : { device: d.id, x: f?.x ?? (r ? r.left + 240 : 200), y: f?.y ?? (r ? Math.max(40, r.top - 140) : 80) }));
-  };
-  const floatChan = float ? chans.find((c) => c.chain.some((d) => d.id === float.device)) : undefined;
-  const floatDev = floatChan?.chain.find((d) => d.id === float?.device);
 
   const menuChan = menu && "chan" in menu ? chans.find((c) => c.id === menu.chan) : undefined;
   const closeMenu = () => setMenu(null);
 
   return (
-    <section className={`mxp l-${opts.layout} m-${opts.meters} v-${opts.vol}`}>
+    <section className="mxp">
       <PanelHead id="mixer" className="eqh">
         <b>Mixer</b>
         <span className="dim mxhint">
@@ -701,11 +523,7 @@ export function MixerPanel() {
               c={c}
               s={s}
               sel={sel}
-              opts={opts}
-              floatDev={float?.device ?? null}
               onMenu={setMenu}
-              onSlot={openFloat}
-              onSlotDown={dragSlot}
               onSourceDown={dragSource}
             />
           ))}
@@ -755,77 +573,6 @@ export function MixerPanel() {
         </PopMenu>
       )}
       {menu?.kind === "out" && <SendMenu from={menu.chan} at={menu.at} onClose={closeMenu} />}
-      {menu?.kind === "add" && <AddDeviceMenu channel={menu.chan} at={menu.at} onClose={closeMenu} />}
-      {menu?.kind === "device" && <DeviceMenu device={menu.device} channel={menu.chan} at={menu.at} onClose={closeMenu} />}
-      {opts.layout === "expanded" && float && floatChan && floatDev && (
-        <FloatDevice
-          chan={floatChan}
-          device={floatDev}
-          x={float.x}
-          y={float.y}
-          onMove={(x, y) => setFloat({ device: floatDev.id, x, y })}
-          onClose={() => setFloat(null)}
-        />
-      )}
     </section>
-  );
-}
-
-/** The floating device panel: one window that follows the last clicked
- * slot, draggable by its header. */
-function FloatDevice({
-  chan,
-  device,
-  x,
-  y,
-  onMove,
-  onClose,
-}: {
-  chan: Chan;
-  device: DeviceState;
-  x: number;
-  y: number;
-  onMove: (x: number, y: number) => void;
-  onClose: () => void;
-}) {
-  const [menu, setMenu] = useState<{ kind: "device" | "sidechain"; at: MenuAt } | null>(null);
-  const names = deviceNames(chan.chain);
-  const i = chan.chain.findIndex((d) => d.id === device.id);
-  return createPortal(
-    <div className="devfloat" style={{ transform: `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)` }}>
-      <div
-        className="fhead"
-        onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest("button")) return;
-          startDrag(e, {
-            move: (dx, dy) => onMove(clamp(x + dx, 0, window.innerWidth - 120), clamp(y + dy, 0, window.innerHeight - 40)),
-            end: () => undefined,
-          });
-        }}
-      >
-        <span className="fchip" style={{ background: chan.color }}>
-          C{chan.number} {chan.name}
-        </span>
-        <span className="sp" />
-        <button className="eqx" onClick={onClose} data-hint="Close">
-          ✕
-        </button>
-      </div>
-      <DeviceCard
-        device={device}
-        name={names[i] ?? ""}
-        color={chan.color}
-        selected={false}
-        folded={false}
-        listen
-        onSelect={() => undefined}
-        onFold={() => undefined}
-        onMenu={(at) => setMenu({ kind: "device", at })}
-        onSidechain={(at) => setMenu({ kind: "sidechain", at })}
-      />
-      {menu?.kind === "device" && <DeviceMenu device={device} channel={chan.id} at={menu.at} onClose={() => setMenu(null)} />}
-      {menu?.kind === "sidechain" && <SidechainMenu device={device} channel={chan.id} at={menu.at} onClose={() => setMenu(null)} />}
-    </div>,
-    document.body,
   );
 }

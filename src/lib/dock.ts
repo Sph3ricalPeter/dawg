@@ -29,12 +29,7 @@ export interface PanelState {
   collapsed?: boolean;
   /** The menu's Close or Hide. */
   close?: { label: string; run: () => void };
-  /** The panel's own options, shown first in its menu: headings and
-   * ticked choices. */
-  options?: PanelOption[];
 }
-
-export type PanelOption = { heading: string } | { label: string; on: boolean; run: () => void };
 
 const hosts: Partial<Record<PanelId, HTMLDivElement>> = {};
 

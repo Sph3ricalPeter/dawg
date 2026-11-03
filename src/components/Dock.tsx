@@ -320,16 +320,6 @@ function PanelMenu({ panels }: { panels: Record<PanelId, PanelState> }) {
       <div className="menu-head">
         <b className="menu-title">{PANELS[id].title}</b>
       </div>
-      {p.options?.map((o, i) =>
-        "heading" in o ? (
-          <div key={i} className="menu-h">
-            {o.heading}
-          </div>
-        ) : (
-          <span key={i}>{item(o.label, o.run, undefined, o.on)}</span>
-        ),
-      )}
-      {p.options && <div className="menu-sep" />}
       {PANELS[id].float && (fl ? item("Dock back", () => panelActions.dockBack(id), "Double-click") : item("Float", () => panelActions.float(id), "Double-click"))}
       <div className="menu-h">Dock to the window's edge</div>
       {sides.map((s) => (

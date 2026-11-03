@@ -76,14 +76,15 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   portal, into a host element that moves between slots, so docking never
   remounts it; give a new panel a `PanelHead` and an entry in `PANELS`.
   Volume: `components/Volume.tsx` is the one volume control (knob, value
-  with dB, meter) for the master and every track; use it for any new one
-  (the mixer's fader is the one other, from the mixer design).
+  with dB, meter) for the master and every track; use it for any new one,
+  the mixer's strips included.
   Mixer and chain: `components/ChainPanel.tsx` (the selected channel's
   device cards; bodies in `Devices.tsx`), `components/MixerPanel.tsx`
   (strips, route row, cables, meters drawn on one canvas),
   `RouteMenus.tsx` (sends, sidechain, add device), `lib/mixer.ts` (channel
   numbers, loop checks as the engine's), `lib/chain-edit.ts` (edits as
-  drafts while dragging), `stores/mixer-store.ts` (mixer options). Knob
+  drafts while dragging). The mixer is one fixed design (narrow strips,
+  compact volume, cables always shown): don't add layout options. Knob
   colours mean a concern: `--k-vol` level, `--k-pan` stereo, `--k-time`
   time and shape. No AI-specific UI in either panel.
   Tabs: `components/Tabs.tsx` is the row in the title bar; the session

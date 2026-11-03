@@ -10,8 +10,7 @@ import { ClipPanel } from "@/components/ClipPanel";
 import { Dialogs } from "@/components/Dialogs";
 import { TooltipLayer } from "@/components/Tooltip";
 import { Dock } from "@/components/Dock";
-import { panelHost, type PanelOption, type PanelState } from "@/lib/dock";
-import { type MixerOptions, useMixer } from "@/stores/mixer-store";
+import { panelHost, type PanelState } from "@/lib/dock";
 import { Editor, TimelineHead } from "@/components/Editor";
 import { ChainPanel } from "@/components/ChainPanel";
 import { MixerPanel } from "@/components/MixerPanel";
@@ -377,29 +376,6 @@ function usePanels(): Record<PanelId, PanelState> {
     (s) => s.chainOpen && s.channel !== null && (s.channel === MASTER || !!s.session?.tracks.some((t) => t.id === s.channel)),
   );
   const mixerShown = useSession((s) => s.mixerOpen && !!s.session);
-  const mixer = useMixer((s) => s.options);
-  const setOpt = useMixer((s) => s.setOption);
-  const pick = <K extends keyof MixerOptions>(k: K, v: MixerOptions[K], label: string): PanelOption => ({
-    label,
-    on: mixer[k] === v,
-    run: () => setOpt(k, v),
-  });
-  const mixerOptions: PanelOption[] = [
-    { heading: "Layout" },
-    pick("layout", "narrow", "Narrow: devices in the Chain panel"),
-    pick("layout", "expanded", "Expanded: a device list per strip"),
-    { heading: "Meters" },
-    pick("meters", "wide", "Wide"),
-    pick("meters", "narrow", "Narrow"),
-    { heading: "Volume control" },
-    pick("vol", "fader", "Fader"),
-    pick("vol", "mini", "Mini fader"),
-    pick("vol", "knob", "Knob with full meter"),
-    pick("vol", "compact", "Small, as in the track row"),
-    { heading: "Other channels' cables" },
-    pick("cables", "grey", "Grey"),
-    pick("cables", "hidden", "Hidden"),
-  ];
   return {
     browser: {
       shown: browserFloats ? browserOpen : true,
@@ -407,7 +383,7 @@ function usePanels(): Record<PanelId, PanelState> {
       close: { label: browserOpen ? "Hide" : "Show", run: () => useBrowser.getState().toggle() },
     },
     timeline: { shown: true },
-    mixer: { shown: mixerShown, close: { label: "Close", run: () => useSession.getState().toggleMixer() }, options: mixerOptions },
+    mixer: { shown: mixerShown, close: { label: "Close", run: () => useSession.getState().toggleMixer() } },
     chain: { shown: chainShown, close: { label: "Close", run: () => useSession.getState().setChainOpen(false) } },
   };
 }

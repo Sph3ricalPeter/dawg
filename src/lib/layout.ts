@@ -54,7 +54,7 @@ export const PANEL_IDS: readonly PanelId[] = ["browser", "timeline", "mixer", "c
 export const PANELS: Record<PanelId, PanelInfo> = {
   browser: { title: "Browser", size: { row: 208, col: 220 }, min: { row: 150, col: 120 }, float: { w: 260, h: 440 } },
   timeline: { title: "Timeline", size: { row: 600, col: 300 }, min: { row: 320, col: 160 }, float: null },
-  mixer: { title: "Mixer", size: { row: 520, col: 290 }, min: { row: 220, col: 200 }, float: { w: 760, h: 340 } },
+  mixer: { title: "Mixer", size: { row: 520, col: 230 }, min: { row: 220, col: 200 }, float: { w: 760, h: 340 } },
   chain: { title: "Chain", size: { row: 560, col: 252 }, min: { row: 360, col: 150 }, float: { w: 760, h: 270 } },
 };
 
@@ -74,7 +74,7 @@ export const PRESETS: Record<PresetName, { label: string; make: (browserWidth?: 
         split: "row",
         items: [
           { panel: "browser", size: bw },
-          { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 290 }, { panel: "chain", size: 252 }] },
+          { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 230 }, { panel: "chain", size: 252 }] },
         ],
       },
       floating: [],
@@ -85,7 +85,7 @@ export const PRESETS: Record<PresetName, { label: string; make: (browserWidth?: 
     label: "Floating chain",
     make: (bw = 208) => ({
       version: 1,
-      dock: { split: "row", items: [{ panel: "browser", size: bw }, { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 290 }] }] },
+      dock: { split: "row", items: [{ panel: "browser", size: bw }, { split: "col", items: [{ panel: "timeline" }, { panel: "mixer", size: 230 }] }] },
       // Negative x and y: placed at the bottom right when first shown.
       floating: [{ panel: "chain", x: -1, y: -1, w: 760, h: 270 }],
       lastDock: { chain: { next: "mixer", side: "bottom" } },
@@ -99,7 +99,7 @@ export const PRESETS: Record<PresetName, { label: string; make: (browserWidth?: 
         split: "col",
         items: [
           { split: "row", items: [{ panel: "browser", size: bw }, { panel: "timeline" }] },
-          { panel: "mixer", size: 290 },
+          { panel: "mixer", size: 230 },
           { panel: "chain", size: 252 },
         ],
       },

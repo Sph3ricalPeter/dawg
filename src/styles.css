@@ -3742,20 +3742,11 @@ body.sizing-v * {
   border-radius: 50%;
   background: var(--ok);
 }
-.pw.sm {
-  width: 12px;
-  height: 12px;
-}
-.pw.sm::before {
-  width: 6px;
-  height: 6px;
-}
 .pw:hover::before {
   box-shadow: 0 0 0 2px #2e2e2e;
 }
 .pw.off::before,
-.card.off .ctitle .pw::before,
-.slot.off .pw::before {
+.card.off .ctitle .pw::before {
   background: #3a3a3a;
 }
 .hb {
@@ -4063,6 +4054,7 @@ body.sizing-v * {
 .strips {
   position: relative;
   display: flex;
+  align-items: flex-start;
   gap: 2px;
   padding: 6px 6px 30px;
   height: 100%;
@@ -4174,62 +4166,6 @@ body.sizing-v * {
 .sname .cm:hover {
   opacity: 1;
 }
-.slots {
-  flex: 0 1 96px;
-  min-height: 42px;
-  padding: 3px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow: hidden auto;
-  border-bottom: 1px solid var(--line);
-}
-.slot {
-  height: 18px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 4px 0 2px;
-  background: var(--bg-3);
-  border-radius: 2px;
-  font-size: 10.5px;
-  color: var(--text);
-  cursor: grab;
-  border: 1px solid transparent;
-}
-.slot:hover {
-  background: var(--bg-4);
-}
-.slot.sel,
-.slot.drop {
-  border-color: #5a5a5a;
-}
-.slot.drop {
-  border-color: var(--knob);
-}
-.slot.off {
-  color: var(--text-faint);
-}
-.slot .sl {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.slot.add {
-  justify-content: center;
-  color: var(--text-faint);
-  background: transparent;
-  border: 1px dashed #2c2c2c;
-  cursor: pointer;
-}
-.slot.add:hover {
-  color: var(--text);
-  border-color: #4a4a4a;
-}
 .prow {
   height: 28px;
   flex: none;
@@ -4246,131 +4182,33 @@ body.sizing-v * {
   width: 20px;
   height: 20px;
 }
+/* The track row's own volume control: knob and small meter, the value
+   under them. */
 .fz {
-  flex: 1;
-  min-height: 64px;
+  flex: none;
   display: flex;
   justify-content: center;
-  gap: 4px;
-  padding: 4px 6px 2px;
-  position: relative;
-}
-.fader {
-  width: 14px;
-  position: relative;
-  cursor: ns-resize;
-  flex: none;
-}
-.fader .ftrack {
-  position: absolute;
-  left: 6px;
-  width: 2px;
-  top: 5px;
-  bottom: 5px;
-  background: #2a2a2a;
-}
-.fader .zero {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #3a3a3a;
-  top: calc(5px + 0.25 * (100% - 10px));
-}
-.fader .thumb {
-  position: absolute;
-  left: 0;
-  width: 14px;
-  height: 10px;
-  border-radius: 2px;
-  background: #d8d8d8;
-  top: calc((1 - var(--p)) * (100% - 10px));
-  box-shadow: 0 1px 0 #000;
-}
-.fader .thumb::after {
-  content: "";
-  position: absolute;
-  left: 2px;
-  right: 2px;
-  top: 4px;
-  height: 2px;
-  background: #555;
-}
-.mtr {
-  width: 13px;
-  flex: none;
-}
-.mxp.m-narrow .mtr {
-  width: 7px;
-}
-.mxp.v-mini .fader {
-  width: 8px;
-}
-.mxp.v-mini .fader .ftrack {
-  left: 3px;
-}
-.mxp.v-mini .fader .thumb {
-  width: 8px;
-  height: 6px;
-  top: calc((1 - var(--p)) * (100% - 6px));
-}
-.mxp.v-mini .fader .thumb::after {
-  display: none;
+  padding: 2px 2px 4px;
 }
 .mxvol {
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-items: center;
+  gap: 3px 4px;
   height: auto;
-  align-self: flex-start;
-  gap: 2px;
   padding: 2px;
 }
 .mxvol .vv,
 .mxvol .ktype {
+  grid-column: 1 / span 2;
+  grid-row: 2;
   width: auto;
   font-size: 9.5px;
 }
-.mxp.v-compact .fz {
-  flex: none;
-  height: 34px;
-  align-items: center;
-  padding: 2px 4px;
-}
-.mxp.v-compact .mxvol {
-  flex-direction: row;
-  align-self: center;
-}
-.mxp.v-compact .mtr {
+.mtr {
   width: 7px;
   height: 18px;
-}
-.mxp.v-compact .slots {
-  height: auto;
-  flex: 1;
-}
-.scale {
-  position: relative;
-  width: 18px;
-  flex: none;
-  font-size: 8.5px;
-  color: var(--text-faint);
-}
-.scale span {
-  position: absolute;
-  left: 0;
-  transform: translateY(-50%);
-}
-.val {
-  height: 22px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  color: var(--text-dim);
-  cursor: text;
-}
-.val .ktype {
-  width: 44px;
 }
 .rrow {
   height: 60px;
@@ -4491,11 +4329,11 @@ body.sizing-v * {
   color: var(--text);
   border-color: #4a4a4a;
 }
-/* Narrow: half-width strips, no device lists or scale. */
-.mxp.l-narrow .mxs {
+/* Half-width strips: the Chain panel does the device work. */
+.mxp .mxs {
   width: 52px;
 }
-.mxp.l-narrow .sname {
+.mxp .sname {
   height: 30px;
   padding: 2px 4px;
   font-size: 10.5px;
@@ -4505,74 +4343,31 @@ body.sizing-v * {
   line-height: 1.2;
   position: relative;
 }
-.mxp.l-narrow .sname .cno {
+.mxp .sname .cno {
   margin: 0;
 }
-.mxp.l-narrow .sname .nm {
+.mxp .sname .nm {
   max-width: 100%;
 }
-.mxp.l-narrow .sname .cm {
+.mxp .sname .cm {
   position: absolute;
   right: 0;
   top: 0;
 }
-.mxp.l-narrow .prow {
+.mxp .prow {
   height: auto;
   flex-direction: column;
   gap: 3px;
   padding: 5px 2px 4px;
 }
-.mxp.l-narrow .rrow {
+.mxp .rrow {
   padding: 4px 2px 3px;
 }
-.mxp.l-narrow .oport {
+.mxp .oport {
   font-size: 9.5px;
   padding: 0 3px;
 }
-.mxp.l-narrow .val {
-  font-size: 9.5px;
-}
 
-/* the floating device panel (Expanded mixer): one window, follows the slot */
-.devfloat {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 25;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  border: 1px solid #333;
-  border-radius: 4px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
-  will-change: transform;
-}
-.devfloat .fhead {
-  height: 26px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 4px 0 6px;
-  background: var(--bg-3);
-  border-bottom: 1px solid var(--line-strong);
-  cursor: grab;
-  border-radius: 4px 4px 0 0;
-}
-.devfloat .fhead .sp {
-  flex: 1;
-}
-.devfloat .fchip {
-  color: #111;
-  font-weight: 600;
-  padding: 0 6px;
-  border-radius: 1px;
-  font-size: 11px;
-}
-.devfloat .card {
-  border: 0;
-  border-radius: 0 0 4px 4px;
-  height: 210px;
-}
 .ms.mm.on {
   background: #e3b341;
   color: #111;
