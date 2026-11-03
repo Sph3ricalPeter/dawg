@@ -36,7 +36,7 @@ interface MeterState {
 /* One strip                                                           */
 /* ------------------------------------------------------------------ */
 
-interface Chan {
+export interface Chan {
   id: number;
   /** In `session.tracks`, for meters and colours; -1 for the master. */
   index: number;
@@ -52,7 +52,7 @@ type Menu =
   | { kind: "chan"; chan: number; at: MenuAt }
   | { kind: "out"; chan: number; at: MenuAt };
 
-function Strip({
+export function Strip({
   c,
   s,
   sel,

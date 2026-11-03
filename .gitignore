@@ -24,3 +24,8 @@ src-tauri/gen/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Design kit build output (npm run design:build)
+design-kit/out/
+# Local harness for the real app with a demo song
+.design-mock/

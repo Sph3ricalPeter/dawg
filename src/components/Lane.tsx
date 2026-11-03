@@ -228,7 +228,7 @@ interface ClipProps {
   toFrame: (clientX: number) => number;
 }
 
-function ClipView({ clip, track, color, height, view, width, selected, toFrame }: ClipProps) {
+export function ClipView({ clip, track, color, height, view, width, selected, toFrame }: ClipProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const envEdit = useSession((s) => s.envEdit);

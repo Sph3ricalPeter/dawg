@@ -1,0 +1,53 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>dawg</title>
+<style>
+  body { margin: 0; background: var(--bg-1); }
+  .cover { position: relative; width: 960px; height: 288px; overflow: hidden; background: var(--bg-1); font-family: var(--font-sans); }
+  .cover svg { position: absolute; left: 0; top: 0; }
+  .ground { fill: var(--page); }
+  .c-vol { fill: var(--k-vol); }
+  .c-pan { fill: var(--k-pan); }
+  .c-time { fill: var(--k-time); }
+  .c-raised { fill: var(--bg-3); }
+  .c-ai { fill: var(--ai); }
+  .blk { rx: var(--r-xl); }
+  .arc { fill: none; stroke-width: 6; stroke-linecap: round; }
+  .arc.track { stroke: var(--knob-track); }
+  .arc.on-vol { stroke: var(--k-vol); }
+  .arc.on-pan { stroke: var(--k-pan); }
+  .arc.on-time { stroke: var(--k-time); }
+  .arc.ink { stroke: var(--knob-ink); }
+  .name { position: absolute; left: 48px; bottom: 76px; margin: 0; font-size: 120px; line-height: 0.92; font-weight: 800; color: var(--text); letter-spacing: -2px; }
+  .tag { position: absolute; left: 52px; bottom: 36px; margin: 0; font-size: 14px; color: var(--text-dim); max-width: 400px; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <!--
+    blocks: k-vol 192x160, k-pan 112x112, k-time 112x160, bg-3 192x96, ai 64x64; corners r-xl
+    arrangement: a staggered stack right of x=480, the tallest bleeding off the top edge
+    pattern: knob arcs (the 270-degree arc every control in dawg is drawn with), a literal motif chosen because the knob is the app's signature shape
+    scales: gaps of sp-5 (12px) and sp-6 (16px), arc stroke 6, corners r-xl (8px)
+  -->
+  <svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true">
+    <rect class="c-raised blk" x="496" y="176" width="192" height="96" />
+    <rect class="c-vol blk" x="704" y="-16" width="192" height="160" />
+    <rect class="c-pan blk" x="580" y="40" width="112" height="112" />
+    <rect class="c-time blk" x="704" y="160" width="112" height="160" />
+    <rect class="c-ai blk" x="832" y="208" width="64" height="64" />
+    <!-- Knob arcs: centre, r, 270 degrees from -135 to 135. -->
+    <path class="arc ink" d="M760.6 116.6A40 40 0 1 1 817.2 116.6" transform="translate(0 -24)" />
+    <path class="arc ink" d="M612.3 125.7A28 28 0 1 1 659.7 125.7" transform="translate(0 -24)" />
+    <path class="arc ink" d="M733.9 263.1A26 26 0 1 1 786.1 263.1" transform="translate(0 -24)" />
+    <path class="arc track" d="M519.0 255.0A24 24 0 1 1 553.0 255.0" transform="translate(0 -40)" />
+    <path class="arc on-vol" d="M519.0 255.0A24 24 0 1 1 560.0 223.0" transform="translate(0 -40)" />
+    <path class="arc track" d="M599.0 255.0A24 24 0 1 1 633.0 255.0" transform="translate(0 -40)" />
+    <path class="arc on-pan" d="M616.0 207.0A24 24 0 0 0 593.0 222.0" transform="translate(0 -40)" />
+  </svg>
+  <h1 class="name">dawg</h1>
+  <p class="tag">Quick sound design: drop files, shape clips, export.</p>
+</div>
+</body>
+</html>

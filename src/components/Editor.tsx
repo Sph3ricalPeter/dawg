@@ -263,7 +263,7 @@ function TrackMenu({
   );
 }
 
-function TrackHeader({
+export function TrackHeader({
   track,
   index,
   onResize,

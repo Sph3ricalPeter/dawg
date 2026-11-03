@@ -46,7 +46,7 @@ import { useLayout } from "@/stores/layout-store";
 import { frontName, useSession } from "@/stores/session-store";
 import { CHECK_INTERVAL_MS, DEV_CHECK_INTERVAL_MS, useUpdaterStore } from "@/stores/updater-store";
 
-function EmptyState({ dropping }: { dropping: boolean }) {
+export function EmptyState({ dropping }: { dropping: boolean }) {
   // An empty project takes the files it is given; with nothing open, one
   // file opens as a scratch session.
   const project = useSession((s) => !!s.session && !s.session.scratch);
@@ -94,7 +94,7 @@ function EmptyState({ dropping }: { dropping: boolean }) {
   );
 }
 
-function StatusBar({ hint }: { hint: string }) {
+export function StatusBar({ hint }: { hint: string }) {
   const session = useSession((s) => s.session);
   const busy = useSession((s) => s.busy);
   const fallback = session
