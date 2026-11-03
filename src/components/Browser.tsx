@@ -13,6 +13,7 @@ import { TYPE_LABELS } from "@/lib/labels";
 import { FavStar, FileMeta, LabelCloud, LabelDialogView, LabelIcon, LabelPicker, LabelSubmenu, ManageLabels } from "./BrowserLabels";
 import { useSession } from "@/stores/session-store";
 import { PanelHead } from "./Dock";
+import { token } from "@/ui/tokens";
 
 const FOLDER = (
   <svg width="11" height="9" viewBox="0 0 11 9">
@@ -628,18 +629,16 @@ function Preview() {
     x.scale(dpr, dpr);
     x.clearRect(0, 0, w, h);
     if (!info) return;
-    const css = getComputedStyle(document.documentElement);
     const mid = h / 2;
     const half = h / 2 - 3;
     const n = info.peaks.length;
     const col = (i: number) => info.peaks[Math.min(n - 1, Math.floor((i / w) * n))] ?? 0;
-    x.fillStyle = css.getPropertyValue("--text-dim").trim() || "#a3a3a3";
+    x.fillStyle = token("--text-dim");
     for (let px = 0; px < w; px++) {
       const a = Math.min(1, col(px));
       x.fillRect(px, mid - Math.max(0.5, a * half), 1, Math.max(1, 2 * a * half));
     }
-    const over = css.getPropertyValue("--danger").trim() || "#ff4d4d";
-    x.fillStyle = over;
+    x.fillStyle = token("--danger");
     for (let px = 0; px < w; px++) if (col(px) > 1) x.fillRect(px, 0, 1, 2);
   }, [info, cw]);
   // Nothing selected: no preview section at all, the list gets the room.

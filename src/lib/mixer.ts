@@ -57,8 +57,7 @@ export function paramsOf<D extends DeviceState>(d: D): Omit<D, "id" | "on" | "si
   return p as Omit<D, "id" | "on" | "sidechain">;
 }
 
-/** The master's colour in chips and strips. */
-export const MASTER_COLOR = "#d6d6d6";
+export { MASTER_COLOR } from "@/ui/palette";
 
 /** "C3 Snare" */
 export function chanLabel(s: SessionState, id: number): string {

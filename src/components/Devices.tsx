@@ -26,6 +26,7 @@ import { paramsOf } from "@/lib/mixer";
 import { choice, setSetting } from "@/lib/settings";
 import { useSession } from "@/stores/session-store";
 import { Knob } from "./Knob";
+import { alpha, token } from "@/ui/tokens";
 
 /* ------------------------------------------------------------------ */
 /* Knobs with real units                                               */
@@ -372,18 +373,18 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
       for (const hz of GRID_HZ) {
         if (hz > top) continue;
         const gx = Math.round(ax.x(hz)) + 0.5;
-        x.fillStyle = "#1f1f1f";
+        x.fillStyle = token("--line");
         x.fillRect(gx, 0, 1, h);
-        x.fillStyle = "#5a5a5a";
+        x.fillStyle = token("--fill-strong");
         x.fillText(fmtHzShort(hz), gx + 3, h - 12);
       }
       const step = range <= 12 ? 6 : 10;
       for (let db = -range; db <= range; db += step) {
         const gy = Math.round(y(db)) + 0.5;
-        x.fillStyle = db === 0 ? "#2e2e2e" : "#1a1a1a";
+        x.fillStyle = db === 0 ? token("--line-dash") : token("--bg-3");
         x.fillRect(0, gy, w, 1);
         if (db !== -range && db !== range) {
-          x.fillStyle = "#5a5a5a";
+          x.fillStyle = token("--fill-strong");
           x.fillText(`${db > 0 ? "+" : ""}${db}`, w - 22, gy + 2);
         }
       }
@@ -402,9 +403,9 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
         }
         x.lineTo(w, h);
         x.closePath();
-        x.fillStyle = "rgba(255,255,255,.07)";
+        x.fillStyle = alpha("--white", 0.07);
         x.fill();
-        x.strokeStyle = "rgba(255,255,255,.16)";
+        x.strokeStyle = alpha("--white", 0.16);
         x.lineWidth = 1;
         x.stroke();
       }
@@ -446,7 +447,7 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
       x.lineTo(w, y(0));
       x.lineTo(0, y(0));
       x.closePath();
-      x.fillStyle = selected ? "rgba(255,255,255,.10)" : "rgba(255,255,255,.04)";
+      x.fillStyle = selected ? alpha("--white", 0.1) : alpha("--white", 0.04);
       x.fill();
     });
     x.beginPath();
@@ -455,7 +456,7 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
       if (i === 0) x.moveTo(0, py);
       else x.lineTo(i * 2, py);
     });
-    x.strokeStyle = off ? "#6b6b6b" : color;
+    x.strokeStyle = off ? token("--text-faint") : color;
     x.lineWidth = 2;
     x.stroke();
   }, [bands, off, size, range, rate, sel, color, top]);

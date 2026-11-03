@@ -4,12 +4,13 @@ import { labelFrames } from "@/lib/grid";
 import { clamp } from "@/lib/format";
 import { SmoothScrollTop, smoothScroll, smoothZoom } from "@/lib/smooth-view";
 import { categoryById } from "@/lib/categories";
+import { PALETTE } from "@/ui/palette";
 
 /** Top of the envelope range, as in `dawg_core::ENV_MAX`: 0 dB sits at 80%. */
 export const ENV_MAX = 1.25;
 
 /** Clip colours from the mockup, one per track in turn. */
-export const COLORS = ["#ee9f98", "#f5c55c", "#c3dd76", "#7dd6c4", "#9ec8ea", "#f0a8cf", "#b9c2cf", "#dcc89f"];
+export const COLORS = PALETTE;
 
 /** A track's clip colour: the one picked for it, else its category's, else
  * by position. */

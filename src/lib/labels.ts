@@ -9,6 +9,8 @@
  * them with `labelById` and `TYPE_LABELS`.
  */
 
+import { PALETTE, STATUS } from "@/ui/palette";
+
 export const LABEL_GROUPS = ["Type", "Shape", "Character", "Status", "Custom"] as const;
 export type LabelGroup = (typeof LABEL_GROUPS)[number];
 
@@ -22,9 +24,8 @@ export interface Label {
   icon: string;
 }
 
-/** The clip palette (`COLORS` in `lib/timeline.ts`, which can't be imported
- * here: this module loads before the stores). Custom labels pick from it. */
-export const LABEL_COLORS = ["#ee9f98", "#f5c55c", "#c3dd76", "#7dd6c4", "#9ec8ea", "#f0a8cf", "#b9c2cf", "#dcc89f"];
+/** Custom labels pick from the clip palette. */
+export const LABEL_COLORS = PALETTE;
 
 /** 12×12 stroke icons (path data inside `<svg viewBox="0 0 12 12">`). */
 export const LABEL_ICONS: Record<string, string> = {
@@ -99,9 +100,9 @@ export const BUILTIN_LABELS: readonly Label[] = [
   b("punchy", "Punchy", "Character", P[1]),
   b("soft", "Soft", "Character", P[4]),
   b("metallic", "Metallic", "Character", P[7]),
-  b("final", "Final", "Status", "#3fd46a"),
-  b("wip", "WIP", "Status", "#ffd23f"),
-  b("needsfix", "Needs fix", "Status", "#ff4d4d", "fix"),
+  b("final", "Final", "Status", STATUS.ok),
+  b("wip", "WIP", "Status", STATUS.warn),
+  b("needsfix", "Needs fix", "Status", STATUS.danger, "fix"),
 ];
 
 export const TYPE_LABELS = BUILTIN_LABELS.filter((l) => l.group === "Type");

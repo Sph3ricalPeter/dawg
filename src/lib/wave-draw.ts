@@ -16,6 +16,11 @@ export interface TileJob {
   d: Float32Array;
   /** The clip's level (gain, fades, envelope) at each of those buckets. */
   gs: Float32Array;
+  /** Colours (a worker can't read CSS): the faint full-scale shape, the
+   * levelled body, and the over-full-scale marks. */
+  fill: string;
+  body: string;
+  over: string;
 }
 
 /** Draws `job` on `x`, a canvas `TILE_W + 2` by `job.h`. */
@@ -41,12 +46,12 @@ export function drawTile(x: OffscreenCanvasRenderingContext2D, job: TileJob) {
     x.closePath();
     x.fill();
   };
-  x.fillStyle = "rgba(16,16,16,.2)";
+  x.fillStyle = job.fill;
   shape(() => 1, false);
-  x.fillStyle = "rgba(16,16,16,.8)";
+  x.fillStyle = job.body;
   shape((i) => gs[i], true);
   // Anything over full scale.
-  x.fillStyle = "#ff4d4d";
+  x.fillStyle = job.over;
   for (let i = 1; i < n - 1; i++) {
     if (d[2 * i + 1] * gs[i] > 1 || d[2 * i] * gs[i] < -1) {
       x.fillRect(i - 1, dpr, 1, 2 * dpr);

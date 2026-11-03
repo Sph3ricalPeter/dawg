@@ -59,8 +59,12 @@ Plan and spec: the "dawg: design" Claude Doc. UI reference: the design mockup
   file association).
 - `integrations/unity`: Unity package (git URL install) that opens audio clips in dawg on
   double-click.
-- `src`: React + TypeScript UI (Vite). Plain CSS with the mockup's tokens in
-  `src/styles.css`; zustand stores in `src/stores`. App-wide UI settings (the
+- `src`: React + TypeScript UI (Vite). Plain CSS: design tokens (colours,
+  type scale, radii, gaps, shadows) in `src/tokens.css`, never literals in
+  `src/styles.css` or components; canvas code reads them with `token()` /
+  `alpha()` from `src/ui/tokens.ts`, and colours that are data (the clip
+  palette, label colours) live in `src/ui/palette.ts`. Zustand stores in
+  `src/stores`. App-wide UI settings (the
   panel layout, Browser folders and pins, units, snap, loop, envelope edit,
   History and export choices) go through `lib/settings.ts`, saved to `settings.json` in the app's
   data folder (`src-tauri/src/settings.rs`), not localStorage; per-project

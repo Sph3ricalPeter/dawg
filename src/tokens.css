@@ -1,0 +1,143 @@
+/* dawg design tokens: every colour, size, radius, gap and shadow the UI
+   uses. Components take values from here, never literals; see
+   design/design-system.md. Canvas code reads the same values through
+   `ui/tokens.ts`. Started from the mockup's tokens (design/mockup.html). */
+:root {
+  /* ---------------------------------------------------------------- */
+  /* Surfaces, darkest to lightest.                                    */
+  --page: #050505;
+  --bg-2: #0a0a0a;
+  --bg-0: #0d0d0d;
+  --bg-2b: #0d0d0d;
+  --bg-1: #141414;
+  --bg-3: #191919;
+  --bg-3b: #1c1c1c;
+  --bg-4: #242424;
+
+  /* Lines and fills on top of the surfaces. */
+  --line: #1e1e1e;
+  --line-strong: #262626;
+  --line-dash: #2c2c2c;
+  /* Popups' and menus' borders. */
+  --line-pop: #333333;
+  --line-hover: #3a3a3a;
+  --line-active: #4a4a4a;
+  --fill-strong: #5a5a5a;
+  /* The thin dark outline around things drawn on a clip colour. */
+  --edge: #121212;
+  --white: #ffffff;
+  --black: #000000;
+  /* Text on a light or coloured fill. */
+  --ink: #111111;
+  /* Dimmed backdrop behind a dialog. */
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  /* Text. */
+  --text: #ececec;
+  --text-dim: #a3a3a3;
+  --text-faint: #6b6b6b;
+  --accent: #e8e8e8;
+  --accent-ink: #0b0b0b;
+
+  /* Timeline. */
+  --grid-bar: #202020;
+  --grid-beat: #141414;
+  --range: rgba(255, 255, 255, 0.05);
+  --playhead: #f0f0f0;
+  --hdr-w: 168px;
+
+  /* Knob colour by concern: level, stereo (pan, width), time and shape. */
+  --knob: #2cc3ee;
+  --k-vol: #2cc3ee;
+  --k-pan: #f5a65b;
+  --k-time: #5fd3a8;
+  --knob-track: #333333;
+  --knob-ink: #04141a;
+
+  /* State. */
+  --ok: #3fd46a;
+  --warn: #ffd23f;
+  --warn-line: #3a3520;
+  --danger: #ff4d4d;
+  /* A missing file's clip and a cut region: red stripes. */
+  --missing: #e5534b;
+  /* Track buttons: the activator (lit = playing), solo, the mixer's mute. */
+  --activator: #cfcfcf;
+  --solo: #47a6f2;
+  --solo-ink: #08121d;
+  --mute: #e3b341;
+  /* A toggle that's on (mixer options) and the hot dock guide. */
+  --on-fill: #1f5566;
+  --on-line: #2a6f87;
+  --on-ink: #e9f8ff;
+  --guide-hot: #0f2a33;
+  /* Gain reduction readout; the route row's source; MP3 files. */
+  --gr: #e07a3c;
+  --route-src: #9be15d;
+  --mp3: #9ec8ea;
+  /* The window's close button on hover (as Windows draws it). */
+  --win-close: #c42b1c;
+
+  /* Reserved for AI: badges, the coproducer chip. */
+  --ai: #a68cf7;
+  --ai-ink: #140f26;
+  --ai-dim: rgba(166, 140, 247, 0.14);
+
+  /* Level meters: green to -12 dB, yellow to 0 dB, red over. */
+  --meter-bg: #060606;
+  --meter-low: #3fd46a;
+  --meter-mid: #ffd23f;
+  --meter-high: #ff4d4d;
+  --meter-peak: #d0d0d0;
+
+  /* ---------------------------------------------------------------- */
+  /* Type. Manrope everywhere, numbers included: tabular figures (set on
+     every element) keep a changing number the same width. */
+  --font: "Manrope Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: var(--font);
+  --fs-3xs: 8px;
+  --fs-2xs: 9px;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  /* Body. */
+  --fs-md: 12px;
+  --fs-lg: 13px;
+  --fs-xl: 15px;
+  --fs-2xl: 18px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semi: 600;
+  --fw-bold: 700;
+  --fw-heavy: 800;
+  /* A value's weight, and an emphasised value's (the LCD). */
+  --nw: 500;
+  --nw2: 600;
+
+  /* ---------------------------------------------------------------- */
+  /* Corners. */
+  --r-hair: 1px;
+  --r-xs: 2px;
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-lg: 6px;
+  --r-xl: 8px;
+  --r-2xl: 10px;
+  --r-round: 50%;
+
+  /* Gaps and padding. */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 24px;
+
+  /* Shadows, by how far a thing floats. */
+  --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.55);
+  --shadow-xl: 0 24px 70px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}

@@ -7,6 +7,7 @@ import { loadLibrary } from "@/stores/library-store";
 // and numbers look the same on every machine, installed or not. Each script
 // subset loads only when text in it appears (unicode-range).
 import "@fontsource-variable/manrope/wght.css";
+import "./tokens.css";
 import "./styles.css";
 
 // Canvas text (EQ axis labels) can't wait on CSS to fetch the font lazily.

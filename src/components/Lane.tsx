@@ -10,6 +10,7 @@ import { MIN_LEN, allClips, gridOf, snapStep, useSession, type View } from "@/st
 import { gridLines, snapTo } from "@/lib/grid";
 import { Knob } from "./Knob";
 import { Playhead } from "./Playhead";
+import { alpha } from "@/ui/tokens";
 
 const TITLE_H = 14;
 /** Grab width of the trim zones at each clip edge. */
@@ -87,8 +88,8 @@ function drawClip(
   const px = (f: number) => (f - f0) / fpp;
   const cx0 = px(clip.start);
   const cx1 = px(clip.start + clip.len);
-  x.fillStyle = "rgba(0,0,0,.28)";
-  x.strokeStyle = "rgba(0,0,0,.4)";
+  x.fillStyle = alpha("--black", 0.28);
+  x.strokeStyle = alpha("--black", 0.4);
   x.lineWidth = 1;
   // The fade's level line from silence at `edge` to full at `inner`.
   const fade = (edge: number, inner: number, curve: FadeCurve) => {
@@ -114,7 +115,7 @@ function drawClip(
 
   // The envelope line.
   if (showEnv) {
-    x.strokeStyle = "rgba(18,18,18,.88)";
+    x.strokeStyle = alpha("--edge", 0.88);
     x.lineWidth = 1.5;
     x.beginPath();
     for (let i = 0; i <= w; i += 2) {
@@ -147,7 +148,7 @@ function Ghost({ clip, view, width, height }: { clip: ClipState; view: View; wid
     const h = height - TITLE_H - 5;
     const x = setupCanvas(c, w, h);
     if (!x || !peaks) return;
-    x.fillStyle = "rgba(255,255,255,.13)";
+    x.fillStyle = alpha("--white", 0.13);
     for (let i = 0; i < w; i++) {
       const t = f0 + i * view.fpp;
       if (t + view.fpp > clip.start && t < clip.start + clip.len) continue;

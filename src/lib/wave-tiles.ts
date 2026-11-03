@@ -3,6 +3,7 @@ import { clamp, dbToGain, envelopeAt, fadeAt, srcAt } from "@/lib/format";
 import { type ClipState } from "@/lib/api";
 import { useSession } from "@/stores/session-store";
 import { drawTile, TILE_W, type TileJob } from "@/lib/wave-draw";
+import { alpha, token } from "@/ui/tokens";
 
 /* Clip waveforms in the playlist, drawn the way DAWs draw them: from
  * precomputed min/max peaks at power-of-two zoom levels, rendered once into
@@ -259,7 +260,7 @@ function jobFor(clip: ClipState, src: Source, lv: number, k: number, H: number, 
     const rc = (b0 + i + 0.5) * per;
     gs[i] = gainAt(clip, gain, plain, mirror === null ? rc : mirror - rc);
   }
-  return { lv, h: H, dpr, d, gs };
+  return { lv, h: H, dpr, d, gs, fill: alpha("--edge", 0.2), body: alpha("--edge", 0.8), over: token("--danger") };
 }
 
 /* Tiles are drawn by a few workers; until one lands, the clip shows what it
@@ -623,17 +624,17 @@ function drawSamples(
     pts[2 * i] = px;
     pts[2 * i + 1] = mid - clamp(g, -1, 1) * half;
   }
-  x.strokeStyle = "rgba(16,16,16,.85)";
+  x.strokeStyle = alpha("--edge", 0.85);
   x.lineWidth = 1.5;
   x.lineJoin = "round";
   x.beginPath();
   for (let i = 0; i < n; i++) (i ? x.lineTo : x.moveTo).call(x, pts[2 * i], pts[2 * i + 1]);
   x.stroke();
   if (fpp / clip.stretch < 1 / 8) {
-    x.fillStyle = "rgba(16,16,16,.85)";
+    x.fillStyle = alpha("--edge", 0.85);
     for (let i = 0; i < n; i++) x.fillRect(pts[2 * i] - 1.5, pts[2 * i + 1] - 1.5, 3, 3);
   }
-  x.fillStyle = "#ff4d4d";
+  x.fillStyle = token("--danger");
   for (const i of over) {
     x.fillRect(i, 1, 1, 2);
     x.fillRect(i, h - 3, 1, 2);
