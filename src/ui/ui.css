@@ -147,3 +147,125 @@
 .menu-note.warn {
   color: var(--danger);
 }
+
+/* ------------------------------------------------------------------ */
+/* Buttons (ui/Button.tsx): labelled, toolbar, close and power.         */
+.btn {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-3);
+  cursor: pointer;
+  font-weight: var(--fw-semi);
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--bg-4);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn.small {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--fs-md);
+}
+.tb {
+  height: 20px;
+  min-width: 22px;
+  padding: 0 5px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-lg);
+  font-size: var(--fs-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--text-dim);
+}
+.tb:hover:not(:disabled) {
+  background: var(--bg-4);
+  color: var(--text);
+}
+.tb:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tb svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+.xbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.xbtn:hover {
+  color: var(--text);
+}
+.xbtn.md {
+  width: 22px;
+  height: 20px;
+  border-radius: var(--r-sm);
+}
+.xbtn.md:hover {
+  background: var(--bg-4);
+}
+.xbtn.md svg {
+  width: 13px;
+  height: 13px;
+}
+.xbtn.sm {
+  padding-left: var(--sp-1);
+}
+.xbtn.sm svg {
+  width: 10px;
+  height: 10px;
+}
+.pw {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-round);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.pw::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-round);
+  background: var(--ok);
+}
+.pw:hover::before {
+  box-shadow: 0 0 0 2px var(--line-dash);
+}
+.pw.off::before {
+  background: var(--line-hover);
+}

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { api, type RecoveryNote } from "@/lib/api";
 import { useSession } from "@/stores/session-store";
+import { Button } from "@/ui/Button";
+import { Dialog } from "@/ui/Dialog";
 
 /** How often unsaved edits are snapshotted for crash recovery. */
 const AUTOSAVE_MS = 30_000;
@@ -48,36 +50,36 @@ export function RecoverDialog() {
   const one = notes.length === 1 ? notes[0] : null;
   const latest = Math.max(...notes.map((n) => n.savedAt));
   return (
-    <div className="scrim">
-      <div className="dlg small" role="dialog" aria-label="Recover unsaved edits">
-        <header>{one ? `Recover ${one.name}?` : `Recover ${notes.length} unsaved sessions?`}</header>
-        <div className="bd">
-          <span className="dim">
-            {one
-              ? `dawg closed before your edits to ${one.name} were saved. The last autosave is from ${when(one.savedAt)}.`
-              : `dawg closed before these were saved. Each opens in a tab of its own. The last autosave is from ${when(latest)}.`}
-          </span>
-          {!one && (
-            <div className="ulist">
-              {notes.map((n) => (
-                <div key={n.key}>
-                  <b>{n.name}</b>
-                  <span className="dim">{when(n.savedAt)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <footer>
-          <button className="btn ghost" onClick={discard}>
+    <Dialog
+      label="Recover unsaved edits"
+      title={one ? `Recover ${one.name}?` : `Recover ${notes.length} unsaved sessions?`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={discard}>
             Discard
-          </button>
+          </Button>
           <span className="spacer" />
-          <button ref={primary} className="btn primary" onClick={recover}>
+          <Button ref={primary} variant="primary" onClick={recover}>
             Recover <kbd>Enter</kbd>
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <span className="dim">
+        {one
+          ? `dawg closed before your edits to ${one.name} were saved. The last autosave is from ${when(one.savedAt)}.`
+          : `dawg closed before these were saved. Each opens in a tab of its own. The last autosave is from ${when(latest)}.`}
+      </span>
+      {!one && (
+        <div className="ulist">
+          {notes.map((n) => (
+            <div key={n.key}>
+              <b>{n.name}</b>
+              <span className="dim">{when(n.savedAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Dialog>
   );
 }

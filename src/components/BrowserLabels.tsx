@@ -5,6 +5,7 @@ import { below } from "@/lib/popup";
 import { labelCounts, useFileLibrary, useLibrary } from "@/stores/library-store";
 import { useDismiss } from "@/ui/dismiss";
 import { MenuItem, MenuLabel, MenuNote, MenuSep } from "@/ui/Menu";
+import { CloseButton } from "@/ui/Button";
 
 /** A label's icon: 12×12 strokes in the label's colour (or the text colour). */
 export function LabelIcon({ icon, color }: { icon: string; color?: string }) {
@@ -73,9 +74,7 @@ export function FileMeta({ path }: { path: string }) {
       <div className="chips">
         {labels.map((l) => (
           <LabelChip key={l.id} label={l}>
-            <button className="chipx" aria-label={`Remove ${l.name}`} onClick={() => lib().toggleLabel(path, l.id)}>
-              ×
-            </button>
+            <CloseButton size="sm" aria-label={`Remove ${l.name}`} onClick={() => lib().toggleLabel(path, l.id)} />
           </LabelChip>
         ))}
         <button

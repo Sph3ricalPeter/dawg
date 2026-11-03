@@ -28,6 +28,7 @@ import { useSession } from "@/stores/session-store";
 import { type Concern, KnobField } from "@/ui/Knob";
 import { RELEASE_DB } from "@/ui/meter-law";
 import { alpha, token } from "@/ui/tokens";
+import { CloseButton, PowerButton } from "@/ui/Button";
 
 /* ------------------------------------------------------------------ */
 /* Knobs with real units                                               */
@@ -604,10 +605,8 @@ export function EqBody({ device, color, listen }: { device: DeviceState & { kind
                   </option>
                 ))}
               </select>
-              <button className={`pw${band.on ? "" : " off"}`} onClick={() => setBand(sel, { ...band, on: !band.on }, false)} data-hint="Turns this band on or off" />
-              <button className="eqx" onClick={() => remove(sel)} data-hint="Deletes this band (or right-click it)">
-                ✕
-              </button>
+              <PowerButton on={band.on} onClick={() => setBand(sel, { ...band, on: !band.on }, false)} data-hint="Turns this band on or off" />
+              <CloseButton onClick={() => remove(sel)} data-hint="Deletes this band (or right-click it)" />
             </div>
             <div className="eqrow knobs">
               {knob(

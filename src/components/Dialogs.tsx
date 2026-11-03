@@ -2,64 +2,49 @@ import { useEffect, useRef } from "react";
 import { discardAllAndClose, exportDialog, reviewUnsaved, saveProject } from "@/lib/actions";
 import type { TabInfo } from "@/lib/api";
 import { frontName, useSession } from "@/stores/session-store";
-
-function useEscape(onEscape: () => void) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        onEscape();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onEscape]);
-}
+import { Button } from "@/ui/Button";
+import { Dialog } from "@/ui/Dialog";
 
 function DiscardDialog({ verb, then }: { verb: string; then: () => void }) {
   const name = useSession(frontName);
   const setDialog = useSession((s) => s.setDialog);
   const primary = useRef<HTMLButtonElement>(null);
   const cancel = () => setDialog(null);
-  useEscape(cancel);
   useEffect(() => primary.current?.focus(), []);
   return (
-    <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
-      <div className="dlg small" role="dialog" aria-label="Unsaved changes">
-        <header>Discard your edits to {name}?</header>
-        <div className="bd">
-          <span className="dim">
-            You haven't exported them. To {verb} anyway, discard them, or export first.
-          </span>
-        </div>
-        <footer>
-          <button className="btn ghost" onClick={cancel}>
+    <Dialog
+      label="Unsaved changes"
+      title={`Discard your edits to ${name}?`}
+      onCancel={cancel}
+      footer={
+        <>
+          <Button variant="ghost" onClick={cancel}>
             Cancel
-          </button>
+          </Button>
           <span className="spacer" />
-          <button
-            className="btn"
+          <Button
             onClick={() => {
               setDialog(null);
               void exportDialog();
             }}
           >
             Export…
-          </button>
-          <button
+          </Button>
+          <Button
             ref={primary}
-            className="btn primary"
+            variant="primary"
             onClick={() => {
               setDialog(null);
               then();
             }}
           >
             Discard
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <span className="dim">You haven't exported them. To {verb} anyway, discard them, or export first.</span>
+    </Dialog>
   );
 }
 
@@ -69,42 +54,41 @@ function SaveDialog({ then }: { then: () => void }) {
   const setDialog = useSession((s) => s.setDialog);
   const primary = useRef<HTMLButtonElement>(null);
   const cancel = () => setDialog(null);
-  useEscape(cancel);
   useEffect(() => primary.current?.focus(), []);
   return (
-    <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
-      <div className="dlg small" role="dialog" aria-label="Unsaved changes">
-        <header>Save changes to {name}?</header>
-        <div className="bd">
-          <span className="dim">Your changes will be lost if you don't save them.</span>
-        </div>
-        <footer>
-          <button className="btn ghost" onClick={cancel}>
+    <Dialog
+      label="Unsaved changes"
+      title={`Save changes to ${name}?`}
+      onCancel={cancel}
+      footer={
+        <>
+          <Button variant="ghost" onClick={cancel}>
             Cancel
-          </button>
+          </Button>
           <span className="spacer" />
-          <button
-            className="btn"
+          <Button
             onClick={() => {
               setDialog(null);
               then();
             }}
           >
             Don't save
-          </button>
-          <button
+          </Button>
+          <Button
             ref={primary}
-            className="btn primary"
+            variant="primary"
             onClick={() => {
               setDialog(null);
               void saveProject().then((saved) => saved && then());
             }}
           >
             Save <kbd>Enter</kbd>
-          </button>
-        </footer>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <span className="dim">Your changes will be lost if you don't save them.</span>
+    </Dialog>
   );
 }
 
@@ -113,49 +97,47 @@ function QuitDialog({ tabs }: { tabs: TabInfo[] }) {
   const setDialog = useSession((s) => s.setDialog);
   const primary = useRef<HTMLButtonElement>(null);
   const cancel = () => setDialog(null);
-  useEscape(cancel);
   useEffect(() => primary.current?.focus(), []);
   return (
-    <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && cancel()}>
-      <div className="dlg small" role="dialog" aria-label="Unsaved tabs">
-        <header>{tabs.length} tabs have unsaved changes</header>
-        <div className="bd">
-          <div className="ulist">
-            {tabs.map((t) => (
-              <div key={t.id}>
-                <b>{t.name}</b>
-                <span className="dim">{t.scratch ? "edit not exported" : t.path ? "edited since saving" : "never saved"}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <footer>
-          <button className="btn ghost" onClick={cancel}>
+    <Dialog
+      label="Unsaved tabs"
+      title={`${tabs.length} tabs have unsaved changes`}
+      onCancel={cancel}
+      footer={
+        <>
+          <Button variant="ghost" onClick={cancel}>
             Cancel
-          </button>
+          </Button>
           <span className="spacer" />
-          <button
+          <Button
             ref={primary}
-            className="btn"
             onClick={() => {
               setDialog(null);
               void reviewUnsaved();
             }}
           >
             Review each…
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setDialog(null);
               discardAllAndClose();
             }}
           >
             Discard all and close
-          </button>
-        </footer>
+          </Button>
+        </>
+      }
+    >
+      <div className="ulist">
+        {tabs.map((t) => (
+          <div key={t.id}>
+            <b>{t.name}</b>
+            <span className="dim">{t.scratch ? "edit not exported" : t.path ? "edited since saving" : "never saved"}</span>
+          </div>
+        ))}
       </div>
-    </div>
+    </Dialog>
   );
 }
 

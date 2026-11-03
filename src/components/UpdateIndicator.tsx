@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { shortVersion, updateLine, useUpdaterStore } from "@/stores/updater-store";
 import { registerRichTip } from "@/lib/rich-tips";
 import { Menu } from "@/ui/Menu";
+import { Button } from "@/ui/Button";
 
 const DownloadIcon = () => (
   <svg viewBox="0 0 16 16">
@@ -223,11 +224,12 @@ export function UpdateIndicator() {
               <UpdateDetails
                 foot={
                   <div className="upd-actions">
-                    <button className="btn ghost small" onClick={() => setOpen(false)}>
+                    <Button variant="ghost" small onClick={() => setOpen(false)}>
                       Later
-                    </button>
-                    <button
-                      className="btn primary small"
+                    </Button>
+                    <Button
+                      variant="primary"
+                      small
                       role="menuitem"
                       autoFocus
                       onClick={() => {
@@ -236,7 +238,7 @@ export function UpdateIndicator() {
                       }}
                     >
                       Restart now
-                    </button>
+                    </Button>
                   </div>
                 }
               />

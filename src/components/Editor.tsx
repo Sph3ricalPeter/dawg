@@ -20,6 +20,7 @@ import { PanelHead } from "./Dock";
 import { LabelIcon } from "./BrowserLabels";
 import { CATEGORIES, categoryById } from "@/lib/categories";
 import { Playhead } from "./Playhead";
+import { Button } from "@/ui/Button";
 
 
 function Ruler() {
@@ -608,16 +609,16 @@ export function Editor() {
               <span>or drop onto a track to add it there</span>
             </div>
             <div className="addsep" />
-            <button
-              className="btn addbtn"
+            <Button
+              className="addbtn"
               onClick={() => void addFilesDialog()}
               data-hint="Add WAV or MP3 files, each on a new track at the playhead (Ctrl+Shift+O)"
             >
               + Add files… <kbd>Ctrl+Shift+O</kbd>
-            </button>
-            <button className="btn ghost addbtn" onClick={() => void useSession.getState().addTrack()} data-hint="Add an empty track">
+            </Button>
+            <Button variant="ghost" className="addbtn" onClick={() => void useSession.getState().addTrack()} data-hint="Add an empty track">
               + Track
-            </button>
+            </Button>
           </div>
         </div>
       </div>

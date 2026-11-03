@@ -16,6 +16,7 @@ import { PanelHead } from "./Dock";
 import { token } from "@/ui/tokens";
 import { useDismiss } from "@/ui/dismiss";
 import { Menu, MenuItem, MenuSep } from "@/ui/Menu";
+import { CloseButton } from "@/ui/Button";
 
 const FOLDER = (
   <svg width="11" height="9" viewBox="0 0 11 9">
@@ -906,9 +907,7 @@ export function Browser() {
             <span key={id} className="chip flt">
               <LabelIcon icon={l.icon} color={l.color} />
               {l.name}
-              <button className="chipx" aria-label={`Stop filtering by ${l.name}`} onClick={() => b().toggleFilter(id)}>
-                ×
-              </button>
+              <CloseButton size="sm" aria-label={`Stop filtering by ${l.name}`} onClick={() => b().toggleFilter(id)} />
             </span>
           );
         })}

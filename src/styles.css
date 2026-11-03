@@ -340,34 +340,6 @@ body.panning * {
 .tright .tg {
   border-right: 0;
 }
-.tb {
-  height: 20px;
-  min-width: 22px;
-  padding: 0 5px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-lg);
-  font-size: var(--fs-md);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  color: var(--text-dim);
-}
-.tb:hover:not(:disabled) {
-  background: var(--bg-4);
-  color: var(--text);
-}
-.tb:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.tb svg {
-  width: 12px;
-  height: 12px;
-  fill: currentColor;
-}
 #tPlay.on {
   color: var(--ok);
 }
@@ -398,35 +370,6 @@ body.panning * {
 }
 
 /* buttons */
-.btn {
-  height: 26px;
-  padding: 0 12px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--line-strong);
-  background: var(--bg-3);
-  cursor: pointer;
-  font-weight: var(--fw-semi);
-  white-space: nowrap;
-}
-.btn:hover:not(:disabled) {
-  background: var(--bg-4);
-}
-.btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-.btn.primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.08);
-}
-.btn.ghost {
-  background: transparent;
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 .spacer {
   flex: 1;
 }
@@ -1637,19 +1580,6 @@ body.rsizing * {
   color: var(--knob-ink);
   font-weight: var(--fw-semi);
 }
-.eqx {
-  width: 22px;
-  height: 20px;
-  border: 0;
-  background: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  border-radius: var(--r-sm);
-}
-.eqx:hover {
-  background: var(--bg-4);
-  color: var(--text);
-}
 .eqbody {
   flex: 1;
   min-height: 0;
@@ -2125,11 +2055,6 @@ body.rsizing * {
 .seg button:disabled {
   color: var(--text-faint);
   cursor: default;
-}
-.btn.small {
-  height: 22px;
-  padding: 0 8px;
-  font-size: var(--fs-md);
 }
 
 /* bars and beats, tempo, timeline settings */
@@ -2766,18 +2691,6 @@ body.secdrag * {
   background: var(--bg-4);
   color: var(--text);
   border-color: var(--line-pop);
-}
-.chipx {
-  border: 0;
-  background: none;
-  color: var(--text-faint);
-  padding: 0 0 0 2px;
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  line-height: 1;
-}
-.chipx:hover {
-  color: var(--text);
 }
 .chip.add {
   cursor: pointer;
@@ -3527,29 +3440,6 @@ body.sizing-v * {
 }
 
 /* one on/bypass toggle everywhere: a green dot, grey when bypassed */
-.pw {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--r-round);
-  border: 0;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-.pw::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: var(--r-round);
-  background: var(--ok);
-}
-.pw:hover::before {
-  box-shadow: 0 0 0 2px var(--line-dash);
-}
-.pw.off::before,
 .card.off .ctitle .pw::before {
   background: var(--line-hover);
 }

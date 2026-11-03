@@ -14,6 +14,8 @@ import { drawLevel, HOLD_S, meterSegments, MIXER_LAW, PEAK_FALL_DB, RELEASE_DB }
 import { MenuItem, MenuSep, PopMenu } from "@/ui/Menu";
 import { SendKnob, SendMenu } from "./RouteMenus";
 import { Volume } from "./Volume";
+import { Icon } from "@/ui/Icon";
+import { CloseButton } from "@/ui/Button";
 
 const store = useSession.getState;
 
@@ -28,31 +30,6 @@ interface MeterState {
   pk: [number, number];
   hold: [number, number];
 }
-
-/* ------------------------------------------------------------------ */
-/* Icons: SVG line icons at the app's stroke                           */
-/* ------------------------------------------------------------------ */
-
-const Icon = ({ d, w = 2 }: { d: React.ReactNode; w?: number }) => (
-  <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round">
-    {d}
-  </svg>
-);
-const IC = {
-  connect: <Icon d={<path d="M4 9.5 8 5.5l4 4" />} />,
-  remove: <Icon d={<path d="M5 5l6 6M11 5l-6 6" />} w={1.8} />,
-  source: <Icon d={<path d="M4.5 6.5 8 10l3.5-3.5" />} />,
-  loop: (
-    <Icon
-      d={
-        <>
-          <path d="M4 9.5 8 5.5l4 4" />
-          <path d="M3 13 13 3" strokeWidth={1.4} />
-        </>
-      }
-    />
-  ),
-};
 
 /* ------------------------------------------------------------------ */
 /* One strip                                                           */
@@ -112,7 +89,7 @@ function Strip({
         onPointerDown={onSourceDown}
         data-hint={`${c.name} is the source · click the chevron on any strip to send there, or drag from here onto a strip (onto a compressor slot to sidechain it)`}
       >
-        {IC.source}
+        <Icon name="source" />
       </span>
     );
   } else if (src && !selected) {
@@ -121,7 +98,7 @@ function Strip({
       route = (
         <>
           <button className="rdel" onClick={() => removeSend(src.id, c.id)} data-hint={`Remove the send from ${channelName(s, src.id)} to ${c.name}`}>
-            {IC.remove}
+            <Icon name="close" />
           </button>
           <SendKnob from={src.id} to={c.id} db={snd.gainDb} />
         </>
@@ -135,7 +112,7 @@ function Strip({
           onClick={() => setSend(src.id, c.id, 0, false)}
           data-hint={loop ? `${c.name} already feeds ${channelName(s, src.id)}, so this would loop` : `Send ${channelName(s, src.id)} to ${c.name}`}
         >
-          {loop ? IC.loop : IC.connect}
+          <Icon name={loop ? "no-loop" : "connect"} />
         </button>
       );
     }
@@ -485,9 +462,7 @@ export function MixerPanel() {
             : "Select a channel, then click the chevron on another strip to send there"}
         </span>
         <span className="sp" />
-        <button className="eqx" onClick={() => store().toggleMixer()} data-hint="Close the mixer (F9)">
-          ✕
-        </button>
+        <CloseButton onClick={() => store().toggleMixer()} data-hint="Close the mixer (F9)" />
       </PanelHead>
       <div className="mxbody" ref={body}>
         <div className="strips" ref={inner}>

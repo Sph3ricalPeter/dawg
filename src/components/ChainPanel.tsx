@@ -10,6 +10,7 @@ import { useMasterChain, useSession, useTracks } from "@/stores/session-store";
 import { CompressorBody, EqBody, UtilityBody } from "./Devices";
 import { PanelHead } from "./Dock";
 import { AddDeviceMenu, DeviceMenu, SendMenu, SidechainMenu } from "./RouteMenus";
+import { CloseButton, PowerButton } from "@/ui/Button";
 
 const store = useSession.getState;
 
@@ -52,8 +53,8 @@ export function DeviceCard({
   const sc = device.sidechain;
   const scLabel = session && sc != null ? chanLabel({ ...session, tracks }, sc) : "Off";
   const power = (
-    <button
-      className="pw"
+    <PowerButton
+      on={device.on}
       onClick={(e) => {
         e.stopPropagation();
         setDeviceOn(device.id, !device.on);
@@ -253,9 +254,7 @@ export function ChainPanel() {
         <button className="eqb" onClick={(e) => setMenu({ kind: "add", at: under(e.currentTarget) })} data-hint="Add a device to the end of the chain">
           + Device
         </button>
-        <button className="eqx" onClick={() => store().setChainOpen(false)} data-hint="Close the Chain panel (click a track header to show it again)">
-          ✕
-        </button>
+        <CloseButton onClick={() => store().setChainOpen(false)} data-hint="Close the Chain panel (click a track header to show it again)" />
       </PanelHead>
       <div className="chbody">
         <div className="cards" ref={cardsRef} onPointerDown={(e) => e.target === e.currentTarget && setSelDev(null)}>
