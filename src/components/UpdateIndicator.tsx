@@ -4,38 +4,55 @@ import { registerRichTip } from "@/lib/rich-tips";
 import { Menu } from "@/ui/Menu";
 import { Button } from "@/ui/Button";
 
-const DownloadIcon = () => (
-  <svg viewBox="0 0 16 16">
-    <path d="M8 2.5V10M5 7.2 8 10.1l3-2.9M2.5 10.5v3h11v-3" />
+/** The updater's line icons. They say how to paint themselves, like the
+ * icons in ui/Icon, because `.tb svg:not([fill])` fills any that don't. */
+const Svg = ({ className, children }: { className?: string; children: React.ReactNode }) => (
+  <svg
+    viewBox="0 0 16 16"
+    className={className}
+    aria-hidden="true"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.4}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    {children}
   </svg>
+);
+
+const DownloadIcon = () => (
+  <Svg>
+    <path d="M8 2.5V10M5 7.2 8 10.1l3-2.9M2.5 10.5v3h11v-3" />
+  </Svg>
 );
 
 const SpinnerIcon = () => (
-  <svg viewBox="0 0 16 16" className="spin">
+  <Svg className="spin">
     <path d="M8 2a6 6 0 1 0 6 6" />
-  </svg>
+  </Svg>
 );
 
 const CheckIcon = () => (
-  <svg viewBox="0 0 16 16">
+  <Svg>
     <circle cx="8" cy="8" r="6" />
     <path d="M5.3 8.2 7.2 10l3.5-3.8" />
-  </svg>
+  </Svg>
 );
 
 /** A green arrow into a tray: an update is downloaded and waits for a restart. */
 const ReadyIcon = () => (
-  <svg viewBox="0 0 16 16">
+  <Svg>
     <path d="M8 2v7.5M5 6.7 8 9.6l3-2.9M2.5 10v3.5h11V10" />
     <circle className="upd-pip" cx="13" cy="3" r="2" />
-  </svg>
+  </Svg>
 );
 
 /** Download progress as a ring filling round an arrow. */
 const ProgressIcon = ({ progress }: { progress: number }) => {
   const C = 2 * Math.PI * 6.5;
   return (
-    <svg viewBox="0 0 16 16">
+    <Svg>
       <circle className="upd-track" cx="8" cy="8" r="6.5" />
       <circle
         className="upd-ring"
@@ -46,14 +63,14 @@ const ProgressIcon = ({ progress }: { progress: number }) => {
         strokeDashoffset={C * (1 - Math.max(0.04, progress / 100))}
       />
       <path d="M8 5v5.5M6 8.6 8 10.6l2-2" />
-    </svg>
+    </Svg>
   );
 };
 
 const WarnIcon = () => (
-  <svg viewBox="0 0 16 16">
+  <Svg>
     <path d="M8 2 1.5 13.5h13zM8 6.5v3.5M8 11.5v.5" />
-  </svg>
+  </Svg>
 );
 
 /** Release notes as short lines: drops the "What's new" heading, the install
